@@ -62,3 +62,66 @@ test("acking a request also closes the stream's inbox message about it", async (
     assert.equal(f.store.state.work['W-1'].requests.at(-1).ack.outcome, 'received');
   } finally { f.close(); }
 });
+
+async function serveWith(opts) {
+  const store = openStore(':memory:', { supervisors: [S1] });
+  const server = http.createServer(createApi({ store, config, now: () => '2026-10-30T20:00:00.000Z', ...opts }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const act = async (seat, action, args) => { const r = await fetch(`${base}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-seat': seat, 'x-factory': '1' }, body: JSON.stringify({ action, args }) }); return [r.status, await r.json()]; };
+  return { store, act, close: () => server.close() };
+}
+const started = f => f.store.appendAll([
+  { kind: 'create', payload: { title: 'Build it', links: { pr: PRURL } } }, { kind: 'update', target: 'W-1', payload: { owner: S1, stream: S1 } },
+  ...['ready', 'queued'].map(to => ({ kind: 'event', target: 'W-1', payload: { type: 'transition', to } })),
+  { kind: 'event', target: 'W-1', payload: { type: 'assign', assignmentId: 'R2', kind: 'implementation', status: 'started', owner: S1, evidence: 'brief' } },
+], { now: 'n', by: 'test' });
+const PRURL = 'https://github.com/builtforteams/built-rails/pull/1';
+
+test('done is checked against a fresh GitHub read of the PR head', async () => {
+  const f = await serveWith({ readPr: async url => ({ url, head: 'bbb2222', state: 'OPEN', isDraft: true }) });
+  try {
+    started(f);
+    const a = f.store.state.work['W-1'].assignments.find(x => x.status === 'started');
+    const [code, body] = await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'aaa1111' });
+    assert.equal(code, 400); assert.match(body.error, /GitHub shows bbb2222/);
+    assert.equal((await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'bbb2222' }))[0], 200);
+  } finally { f.close(); }
+});
+
+test('create records the calling seat as the source and never a poller source or a later phase', async () => {
+  const f = await serveWith({});
+  try {
+    await f.act('local-head', 'create', { title: 'x', source: { type: 'teamwork', key: 'tw-1' }, phase: 'implementation' });
+    const w = f.store.state.work['W-1'];
+    assert.deepEqual([w.source, w.phase], [{ type: 'agent', by: 'local-head' }, 'intake']);
+    await f.act('local-head', 'create', { title: 'y', phase: 'proposed' });
+    assert.equal(f.store.state.work['W-2'].phase, 'proposed');
+  } finally { f.close(); }
+});
+
+test('a retried action with the same eventId is applied once', async () => {
+  const f = await serveWith({});
+  try {
+    await f.act('local-head', 'create', { title: 'x', eventId: 'e-1' });
+    await f.act('local-head', 'create', { title: 'x', eventId: 'e-1' });
+    assert.equal(Object.keys(f.store.state.work).length, 1);
+  } finally { f.close(); }
+});
+
+test('an approval wait is checked against a fresh GitHub read: draft or moved PRs are refused', async () => {
+  let remote = { url: PRURL, head: 'ccc3333', state: 'OPEN', isDraft: true };
+  const f = await serveWith({ readPr: async () => remote });
+  try {
+    f.store.appendAll([{ kind: 'create', payload: { title: 'Ready PR', links: { pr: PRURL } } }, { kind: 'event', target: 'W-1', payload: { type: 'head', sha: 'ccc3333' } }], { now: 'n', by: 'test' });
+    const waiver = { by: 'Alex', reason: 'already marked ready', authorization: 'standing waiver 2026-10-27' };
+    const wait = () => f.act(S1, 'await_approval', { work: 'W-1', head: 'ccc3333', evidence: 'gh pr view', waiver });
+    assert.match((await wait())[1].error, /open and ready/);
+    remote = { ...remote, isDraft: false, head: 'ddd4444' };
+    assert.match((await wait())[1].error, /current GitHub commit/);
+    remote = { ...remote, head: 'ccc3333' };
+    assert.equal((await wait())[0], 200);
+    assert.equal(f.store.state.work['W-1'].phase, 'awaiting_human_approval');
+    assert.match((await f.act('local-head', 'await_approval', { work: 'W-1' }))[1].error, /may not await_approval/);
+  } finally { f.close(); }
+});

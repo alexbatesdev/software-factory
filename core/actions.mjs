@@ -29,7 +29,8 @@ const BUILD = {
     need(a, 'id', 'to');
     return [{ kind: 'route', target: a.id, payload: { to: a.to, note: a.note } }, ...(a.setOwnerOf ? [setOwner({ work: a.setOwnerOf, owner: a.to })] : [])];
   },
-  create: a => [{ kind: 'create', payload: a }],
+  // A created record's source is the seat that created it; pollers' sources come only from observe_source.
+  create: ({ source, phase, eventId, ...a }) => [{ kind: 'create', payload: { ...a, source: { type: 'agent', by: a.by }, ...(phase === 'proposed' ? { phase } : {}), by: undefined } }],
   set_owner: a => { need(a, 'work', 'owner'); return [setOwner(a)]; },
   message: a => { need(a, 'to', 'text'); return [{ kind: 'message', payload: { to: a.to, work: a.work, about: a.about, text: a.text } }]; },
 };
@@ -38,5 +39,7 @@ function setOwner(a) { return { kind: 'update', target: a.work, payload: { owner
 
 /** The log commands one action stands for. */
 export function commandsFor(action, args = {}) {
-  return (BUILD[action] || fail(`"${action}" can't be written; it is read-only or unknown.`))(args);
+  const cmds = (BUILD[action] || fail(`"${action}" can't be written; it is read-only or unknown.`))(args);
+  // A retried call carries the same eventId, so each of its commands is applied once.
+  return args.eventId ? cmds.map((c, i) => ({ ...c, eventId: `${args.eventId}#${i}` })) : cmds;
 }

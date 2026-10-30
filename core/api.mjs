@@ -7,7 +7,7 @@ import { commandsFor } from './actions.mjs';
 /** The role a seat label holds; every stream supervisor label is a stream-supervisor. */
 export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config.routing?.supervisors || {}) ? 'stream-supervisor' : null);
 
-export function createApi({ store, config, verifyPrs = async () => [], now = () => new Date().toISOString() }) {
+export function createApi({ store, config, readPr = async () => null, now = () => new Date().toISOString() }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -17,13 +17,17 @@ export function createApi({ store, config, verifyPrs = async () => [], now = () 
     if (why) return [403, { error: why }];
     const s = store.state;
     if (action === 'route' && args.setOwner) args = { ...args, setOwnerOf: s.questions[args.id]?.work || undefined };
-    // An ack names who acknowledged it: the calling seat, never a claimed name.
-    if (action === 'ack') args = { ...args, by: seat };
+    // An ack or a create names the calling seat, never a claimed name.
+    if (['ack', 'create'].includes(action)) args = { ...args, by: seat };
     let cmds = commandsFor(action, args);
     // Acking a request also closes the seat's inbox message about it.
     if (action === 'ack' && /^W-\d+\/R\d+$/.test(args.ref)) cmds = [...cmds, ...Object.values(s.messages).filter(m => m.to === seat && !m.ackedAt && [m.about?.requests].flat().includes(args.ref)).map(m => ({ kind: 'ack_message', target: m.id, payload: { outcome: args.outcome } }))];
     const ctx = { now: now(), by: seat };
-    if (action === 'await_approval') ctx.verifiedPrs = await verifyPrs([s.work[args.work]?.links?.pr].filter(Boolean));
+    // Done and approval waits are checked against GitHub as it is now, not as last polled.
+    const pr = ['done', 'await_approval'].includes(action) && (args.pr || s.work[args.work]?.links?.pr);
+    const remote = pr ? await readPr(pr) : null;
+    if (action === 'done' && args.assignmentId) Object.assign(ctx, { prHead: remote?.head || null, prState: remote });
+    if (action === 'await_approval') ctx.verifiedPrs = remote ? [remote] : [];
     return [200, { ok: true, results: store.appendAll(cmds, ctx) }];
   }
 

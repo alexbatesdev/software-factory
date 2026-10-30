@@ -83,3 +83,14 @@ test('commands appended together land together or not at all', () => {
   assert.equal(s.rows().length, 1);
   assert.equal(s.state.work[id].updates.length, 1);
 });
+
+test('a question asked on ready work sends it back to re-review', () => {
+  const s = openStore();
+  const a = s.append(build, ctx()).id;
+  for (const p of [{ type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' }, { type: 'transition', to: 'implementation', owner: 'sbx: stream-1' },
+    { type: 'implementation_done', head: 'aaa1111' }, { type: 'review', head: 'aaa1111', by: 'reviewer', result: 'clean' },
+    { type: 'check', name: 'suite', head: 'aaa1111', result: 'pass' }, { type: 'criterion', criterionId: 'C1', accepted: true, head: 'aaa1111' }]) s.append(ev(a, p), ctx());
+  if (s.state.work[a].phase !== 'ready_for_human') s.append(ev(a, { type: 'mark_ready' }), ctx());
+  s.append({ kind: 'ask', payload: { title: 'Wait, which way?', work: a } }, ctx({ by: 'sup: stream-1' }));
+  assert.equal(s.state.work[a].phase, 'rereview');
+});
