@@ -1,0 +1,761 @@
+// Work records: the durable lifecycle behind every board item. Pure functions, no I/O.
+// The ready gate lives here so no route can set `ready_for_human` or `done` around it.
+
+export const PHASES = ['proposed', 'intake', 'clarification', 'ready', 'queued', 'implementation',
+  'review', 'fixes', 'rereview', 'ready_for_human', 'awaiting_human_approval', 'awaiting_alex_review', 'done', 'cancelled'];
+// Kinds that finish as a PR need the review/check gate; the rest finish with an accepted artifact.
+export const PR_KINDS = ['build', 'pr-feedback'];
+
+// Manual transitions only. Review, fixes, re-review, ready and done are reached through events.
+const MANUAL = {
+  proposed: ['intake'],
+  intake: ['clarification', 'ready'],
+  clarification: ['intake', 'ready'],
+  ready: ['clarification', 'queued'],
+  queued: ['ready', 'implementation'],
+};
+// Phase groups. Every rule that asks "is this record active / building / done" uses these; never retype the list.
+export const PRE_QUEUE = ['intake', 'clarification', 'ready'];
+export const BUILDING = ['implementation', 'fixes'];
+export const REVIEWING = ['review', 'rereview'];
+export const AWAITING_HUMAN = ['ready_for_human', 'awaiting_human_approval', 'awaiting_alex_review'];
+export const ACTIVE = ['queued', ...BUILDING, ...REVIEWING, ...AWAITING_HUMAN];
+export const TERMINAL = ['done', 'cancelled'];
+// An assignment still holding its lane.
+export const LIVE_ASSIGNMENT = ['queued', 'started', 'blocked'];
+// Coverage that stops work being queued: an open PR already carries it, or nobody has assessed it. Partial and none are known work left to build.
+export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
+/**
+ * What kind of work a record is; every guard asks this instead of re-deriving it.
+ * @param cfg {mutationBranch, exclude} from config.json (Mutation is Alex's own; never routed, dispatched or drafted)
+ * @returns {'mutation'|'trusted-review'|'stream'}
+ */
+export function trackOf(w, cfg = {}) {
+  if ((cfg.exclude || []).includes(w.id) || new RegExp(cfg.mutationBranch || 'mutation', 'i').test(`${w.links?.branch || ''} ${w.links?.pr || ''}`)) return 'mutation';
+  if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '')) return 'trusted-review';
+  return 'stream';
+}
+// A dependency counts as finished once its work is through internal review.
+export const SATISFIES_DEPS = ['ready_for_human', 'awaiting_human_approval', 'done'];
+const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases'];
+// Phases a reconcile may record. Ready-for-review and done always go through their gates.
+const RECONCILABLE = ['intake', 'clarification', 'ready', 'queued', 'implementation', 'review'];
+
+const nextId = (list, prefix) => `${prefix}${list.length + 1}`;
+const fail = msg => { throw new Error(msg); };
+
+function note(w, ctx, text) {
+  w.updates.push({ at: ctx.now, by: ctx.by || 'board', text });
+  w.updatedAt = ctx.now;
+}
+
+export function createWork(f, ctx) {
+  const phase = f.phase === 'proposed' ? 'proposed' : 'intake';
+  const w = {
+    id: f.id, title: String(f.title || '').trim() || fail('A work item needs a title.'),
+    objective: f.objective || '', kind: f.kind || 'build', repo: f.repo || null,
+    priority: Number.isInteger(f.priority) ? f.priority : 3, deps: f.deps || [], owner: f.owner || null, parent: f.parent || null,
+    phase, source: f.source || { type: 'manual' }, links: f.links || {},
+    criteria: (f.criteria || []).map((text, i) => ({ id: `C${i + 1}`, text, acceptedHead: null, acceptedAt: null })),
+    head: null, headVerified: null, implementer: null, prReadyAuth: null, prReadyOps: [], reviews: [], checks: [], findings: [], requests: [], updates: [],
+    checksApplicable: f.checksApplicable ?? true, requiredChecks: f.requiredChecks || [], completion: null, paused: false,
+    proposedFrom: f.proposedFrom || null, synthetic: f.synthetic === true,
+    externalDeps: f.externalDeps || [], aliases: f.aliases || [], reconciled: null, retro: null, coverage: null, related: [], assignments: [], upstream: f.source?.type && f.source.type !== 'manual' ? 'open' : null,
+    createdAt: ctx.now, updatedAt: ctx.now,
+  };
+  note(w, ctx, phase === 'proposed' ? `Proposed${w.proposedFrom ? ` from ${w.proposedFrom}` : ''}.` : 'Created.');
+  return w;
+}
+
+export function updateWork(work, fields, ctx) {
+  const w = structuredClone(work);
+  for (const k of Object.keys(fields)) {
+    if (k === 'addCriteria') continue;
+    if (!UPDATABLE.includes(k)) fail(`"${k}" can't be changed with an update; use a lifecycle event.`);
+  }
+  const started = !['proposed', ...PRE_QUEUE].includes(w.phase);
+  if (started && 'kind' in fields && fields.kind !== w.kind) fail(`${w.id} has started; its kind can't change (that would change how it finishes).`);
+  if (started && 'checksApplicable' in fields && fields.checksApplicable !== w.checksApplicable) fail(`${w.id} has started; whether checks apply can't change now.`);
+  if (started && 'requiredChecks' in fields && (w.requiredChecks || []).some(c => !fields.requiredChecks.includes(c))) fail(`${w.id} has started; required checks can be added but not removed.`);
+  const prBefore = w.links?.pr;
+  for (const k of UPDATABLE) if (k in fields && k !== 'links') w[k] = fields[k];
+  // Links merge, so a report naming the PR can't erase the task or artifact links; null removes one.
+  if (fields.links) {
+    w.links = { ...(w.links || {}), ...fields.links };
+    for (const [k, v] of Object.entries(fields.links)) if (v === null) delete w.links[k];
+  }
+  if (w.prReadyAuth && w.links?.pr !== prBefore) {
+    w.prReadyAuth = null;
+    note(w, ctx, 'PR-ready authorization dropped: the linked PR changed.');
+  }
+  if (fields.priority !== undefined && !(Number.isInteger(w.priority) && w.priority >= 1 && w.priority <= 4)) fail('Priority is 1 (highest) to 4.');
+  for (const text of fields.addCriteria || []) w.criteria.push({ id: nextId(w.criteria, 'C'), text, acceptedHead: null, acceptedAt: null });
+  note(w, ctx, `Updated ${Object.keys(fields).join(', ')}.`);
+  return normalize(w, ctx);
+}
+
+/** A ready label never outlives evidence that invalidates it. */
+export function normalize(w, ctx = {}) {
+  if (w.phase === 'awaiting_human_approval') {
+    const wait = w.approvalWait;
+    const waived = (w.internalReviewWaivers || []).some(x => x.head === w.head && x.prUrl === w.links?.pr);
+    if (wait?.head === w.head && wait.prUrl === w.links?.pr && w.headVerified && (waived || gate(w, ctx).ok)) return w;
+    w.phase = 'rereview'; w.approvalWait = null;
+    if (ctx.now) note(w, ctx, 'Approval wait invalidated: current PR/head or internal evidence no longer matches. Historical waivers remain history.');
+    return w;
+  }
+  if (w.phase === 'awaiting_alex_review' && !w.reviews.some(r => r.forAlex && sameSha(r.head, w.head))) {
+    w.phase = 'rereview';
+    if (ctx.now) note(w, ctx, `The PR moved to ${w.head}; the trusted review was of an older commit.`);
+    return w;
+  }
+  if (w.phase !== 'ready_for_human') return w;
+  const g = gate(w, ctx);
+  if (g.ok) return w;
+  w.phase = 'rereview';
+  requestRereview(w, ctx);
+  if (ctx.now) note(w, ctx, `No longer ready for human review: ${g.reasons.join(' ')}`);
+  return w;
+}
+
+const isPr = w => PR_KINDS.includes(w.kind);
+const prLinked = w => w.source?.type === 'pr' || !!w.links?.pr;
+const latest = (list, key) => Object.values(Object.fromEntries(list.map(x => [x[key], x])));
+
+/** Why the item may not be marked ready for human review yet; empty when it may. */
+export function gate(w, ctx = {}) {
+  const reasons = [];
+  if (ctx.openQuestions > 0) reasons.push(`${ctx.openQuestions} open question(s).`);
+  if (ctx.openDeps?.length) reasons.push(`Waiting on ${ctx.openDeps.join(', ')}.`);
+  for (const d of w.externalDeps || []) reasons.push(`Waiting on ${d.text || d.ref}.`);
+  if (!isPr(w)) return { ok: false, reasons: ['This kind finishes with an accepted artifact, not the PR ready gate.'] };
+  if (!w.head) reasons.push('No commit recorded yet.');
+  else if (prLinked(w) && !w.headVerified) reasons.push(`The PR's current head is not verified (GitHub isn't showing it); report the current head before marking ready.`);
+  const review = w.reviews.filter(r => r.head === w.head).at(-1);
+  if (!review) reasons.push(`No independent review at ${w.head || 'the current head'}.`);
+  else if (review.result !== 'clean' && w.findings.some(f => f.reviewHead === w.head && f.status === 'open')) reasons.push(`The review at ${w.head} has open findings.`);
+  const open = w.findings.filter(f => f.status === 'open');
+  if (open.length) reasons.push(`${open.length} finding(s) neither resolved nor accepted.`);
+  // Alex, 2026-10-28: "So long as a PR goes through internal review im good with it being marked ready." CI and
+  // separately accepted criteria aren't required; the internal review runs the specs and checks the ACs. Named checks still are.
+  const checks = latest(w.checks.filter(c => c.head === w.head), 'name');
+  for (const name of (w.requiredChecks || []).filter(n => !checks.some(c => c.name === n))) reasons.push(`Required check ${name} has no result at ${w.head || 'the current head'}.`);
+  for (const c of checks.filter(c => c.result !== 'pass')) reasons.push(`Check ${c.name} is ${c.result} at ${w.head}.`);
+  return { ok: reasons.length === 0, reasons };
+}
+
+function setHead(w, sha, ctx, via = 'report') {
+  if (!sha) return;
+  w.headVerified = { via, sha, at: ctx.now };
+  if (sha === w.head) return;
+  // The full form of the current short head (or the reverse) is the same commit: keep the longer one, invalidate nothing.
+  if (sameSha(sha, w.head)) { if (sha.length > w.head.length) expandHead(w, w.head, sha); return; }
+  const had = w.head;
+  w.head = sha;
+  if (w.approvalWait) w.approvalWait = null;
+  if (w.prReadyAuth && w.prReadyAuth.head !== sha) {
+    w.prReadyAuth = null;
+    note(w, ctx, `PR-ready authorization for ${had} dropped: the head is now ${sha}.`);
+  }
+  if (had && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
+    w.phase = 'rereview';
+    note(w, ctx, `New commit ${sha} replaces ${had}; review, checks and criteria from ${had} no longer count.`);
+  }
+}
+
+function expandHead(w, from, to) {
+  const fix = x => { if (x && x.head === from) x.head = to; };
+  w.head = to;
+  for (const list of [w.requests, w.reviews, w.checks]) (list || []).forEach(fix);
+  for (const f of w.findings || []) if (f.reviewHead === from) f.reviewHead = to;
+  for (const c of w.criteria || []) if (c.acceptedHead === from) c.acceptedHead = to;
+  fix(w.prReadyAuth);
+  fix(w.approvalWait);
+  (w.internalReviewWaivers || []).forEach(fix);
+}
+
+/**
+ * Apply one lifecycle event. Returns the new record, plus `spawn` (fields for a new proposed item)
+ * when the event is an out-of-scope discovery. Throws with a readable reason when the event is refused.
+ */
+// Reports often carry an abbreviated SHA; one that abbreviates the current head is that head.
+export const sameSha = (a, b) => !!a && !!b && a.length >= 7 && b.length >= 7 && (a.startsWith(b) || b.startsWith(a));
+
+export function applyEvent(work, e, ctx) {
+  const w = structuredClone(work);
+  if (w.head) for (const k of ['head', 'sha']) if (sameSha(e[k], w.head)) e = { ...e, [k]: w.head };
+  let spawn;
+  const terminal = TERMINAL.includes(w.phase);
+  if (terminal && !['note', 'ack', 'delivery', 'relate'].includes(e.type)) fail(`${w.id} is ${w.phase}.`);
+
+  switch (e.type) {
+    case 'waive_internal_review':
+    case 'await_approval': {
+      const waiverOnly = e.type === 'waive_internal_review';
+      if (waiverOnly && !e.waiver) fail('Recording a waiver requires explicit Alex authorization.');
+      const pr = (ctx.verifiedPrs || []).find(p => p.url === w.links?.pr);
+      if (!e.evidence || !e.head) fail('Approval wait needs current commit and evidence.');
+      if (!pr || pr.state !== 'OPEN' || pr.isDraft !== false) fail('GitHub must show the linked PR open and ready just now.');
+      if (!sameSha(e.head, pr.head) || !sameSha(w.head, pr.head)) fail('Approval wait must name the current GitHub commit.');
+      if (!waiverOnly && liveAssignment(w)) fail('An active assignment must finish before approval wait.');
+      if (!waiverOnly && w.requests.some(r => !r.ack)) fail('A pending request must be acknowledged before approval wait.');
+      if (e.waiver) {
+        if (e.waiver.by !== 'Alex' || !e.waiver.reason || !e.waiver.authorization) fail('An internal-review waiver needs Alex, reason and explicit authorization evidence.');
+      } else if (!gate(w, ctx).ok) fail(`Internal review gate: ${gate(w, ctx).reasons.join(' ')}`);
+      setHead(w, pr.head, ctx, 'github');
+      w.internalReviewWaivers ||= [];
+      if (e.waiver && !w.internalReviewWaivers.some(x => x.head === w.head && x.prUrl === pr.url)) {
+        w.internalReviewWaivers.push({ ...e.waiver, head: w.head, prUrl: pr.url, at: ctx.now, recordedBy: ctx.by, evidence: e.evidence });
+        note(w, ctx, `Alex waived internal review at ${w.head}: ${e.waiver.reason}. Authorization: ${e.waiver.authorization}. This is not a completed review or GitHub approval.`);
+      }
+      if (!waiverOnly) enterApprovalWait(w, ctx, e.evidence);
+      else note(w, ctx, 'Waiver recorded at this head only; phase and current assignment remain unchanged. It never waives later commits.');
+      break;
+    }
+    case 'complete_no_change': {
+      const a = w.assignments?.find(x => x.id === e.assignmentId);
+      if (!a || a.status !== 'done' || !a.noChange) fail('No-change completion needs a finished assignment with verified no-change evidence.');
+      if (Number(e.expectedVersion) !== a.version) fail(`Assignment ${a.id} is at version ${a.version}; re-read it.`);
+      if (!e.evidence) fail('No-change completion needs evidence.');
+      closeNoChange(w, a, ctx, e.evidence);
+      break;
+    }
+    case 'transition': {
+      if (['ready_for_human', 'done', 'cancelled', 'review', 'fixes', 'rereview'].includes(e.to)) fail(`"${e.to}" is reached through its own event, not a transition.`);
+      if (!(MANUAL[w.phase] || []).includes(e.to)) fail(`Can't move ${w.id} from ${w.phase} to ${e.to}.`);
+      if (e.to === 'ready' && ctx.openQuestions > 0) fail(`${w.id} still has ${ctx.openQuestions} open question(s).`);
+      // Covered by an open PR: its feedback lane carries the work, so a second implementation isn't admitted.
+      // Unknown, partial or no coverage must be resolved first.
+      if (['ready', 'queued'].includes(e.to) && w.coverage && COVERAGE_BLOCKS_QUEUE.includes(w.coverage.state))
+        fail(`${w.id} can't be ${e.to === 'ready' ? 'marked ready' : 'queued'}: coverage is ${w.coverage.state}${w.coverage.state === 'open-pr' ? ' (an open PR already carries this work)' : '; resolve it first'}.`);
+      if (['queued', 'implementation'].includes(e.to) && ctx.openDeps?.length) fail(`${w.id} is waiting on ${ctx.openDeps.join(', ')}.`);
+      if (e.to === 'implementation' && w.externalDeps?.length) fail(`${w.id} is waiting on ${w.externalDeps.map(d => d.text || d.ref).join(', ')}.`);
+      if (e.to === 'implementation') { w.owner = e.owner || w.owner; w.implementer = w.owner; }
+      w.phase = e.to;
+      note(w, ctx, `Moved to ${e.to}${e.owner ? ` (owner ${e.owner})` : ''}.`);
+      // Queueing is the dispatch request: the head is notified without another click.
+      if (e.to === 'queued' && !w.requests.some(r => r.type === 'dispatch' && !r.ack)) {
+        w.requests.push({ id: nextId(w.requests, 'R'), type: 'dispatch', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null });
+        note(w, ctx, 'Dispatch requested from the local head.');
+      }
+      break;
+    }
+    case 'implementation_done': {
+      if (e.noChange) fail('No-change completion needs assignment_done with its assignment id, version and verification evidence.');
+      if (!BUILDING.includes(w.phase)) fail(`${w.id} isn't being implemented or fixed (it is ${w.phase}).`);
+      const live = liveAssignment(w, 'work');
+      if (live && !e.viaAssignment) fail(`${w.id} has a current assignment ${live.id}; report done with --assignment ${live.id} --expect-version ${live.version}.`);
+      if (isPr(w) && !e.head) fail('Reporting work done needs the commit (head) it was done at.');
+      const from = w.phase;
+      // A completion report older than what GitHub shows never rolls the head back; it's flagged for triage.
+      if (e.head && w.headVerified?.via === 'github' && w.head && e.head !== w.head) {
+        w.staleReports = [...(w.staleReports || []), { reported: e.head, current: w.head, at: ctx.now, by: ctx.by }];
+        note(w, ctx, `Done reported at ${e.head}, but GitHub shows ${w.head}; review is requested for ${w.head}. Check the report.`);
+      } else setHead(w, e.head, ctx);
+      w.phase = from === 'implementation' ? 'review' : 'rereview';
+      w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head, ...(e.assignmentId ? { assignment: e.assignmentId } : {}) });
+      note(w, ctx, `Worker reported done at ${w.head || 'no commit'}; independent review requested.`);
+      break;
+    }
+    case 'head':
+      setHead(w, e.sha, ctx);
+      break;
+    case 'review': {
+      if (![...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) fail(`${w.id} isn't waiting for review (it is ${w.phase}).`);
+      if (e.head !== w.head) fail(`That review is of ${e.head}, but the current head is ${w.head}.`);
+      if (!e.by || e.by === w.implementer) fail('A review must be independent of the implementer.');
+      if (!['clean', 'findings'].includes(e.result)) fail('A review result is "clean" or "findings".');
+      w.reviews.push({ head: e.head, by: e.by, result: e.result, at: ctx.now, link: e.link || null });
+      for (const f of e.findings || []) w.findings.push({ id: nextId(w.findings, 'F'), text: f.text, severity: f.severity || null, status: 'open', reviewHead: e.head, note: null });
+      if (e.result === 'findings') {
+        w.phase = 'fixes';
+        w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
+      }
+      else if (w.phase === 'ready_for_human') w.phase = 'rereview';
+      note(w, ctx, `Review at ${e.head} by ${e.by}: ${e.result}${e.findings?.length ? ` (${e.findings.length} finding(s))` : ''}.`);
+      if (e.result === 'clean') {
+        // A clean review of a later head saw the fixes, so it settles the earlier rounds' findings.
+        for (const f of w.findings.filter(f => f.status === 'open' && f.reviewHead !== e.head)) Object.assign(f, { status: 'resolved', note: `Resolved by the clean review at ${e.head}.` });
+        if (REVIEWING.includes(w.phase) && gate(w, ctx).ok) { w.phase = 'ready_for_human'; note(w, ctx, `Internal review passed at ${w.head}. This is not merged, deployed or complete in Teamwork.`); }
+      }
+      break;
+    }
+    case 'review_for_alex': {
+      // A trusted review of someone else's PR: Alex reads the result and submits his own review. Not our ready gate.
+      if (!REVIEWING.includes(w.phase)) fail(`${w.id} isn't waiting for review (it is ${w.phase}).`);
+      if (!['clean', 'findings'].includes(e.result) || !e.head || !e.artifact) fail('A review result needs head, result (clean or findings) and the artifact.');
+      w.reviews.push({ head: e.head, by: ctx.by, result: e.result, at: ctx.now, link: e.artifact, forAlex: true });
+      for (const f of e.findings || []) w.findings.push({ id: nextId(w.findings, 'F'), text: f.text, severity: f.severity || null, status: 'open', reviewHead: e.head, note: null });
+      if (sameSha(e.head, w.head)) w.phase = 'awaiting_alex_review';
+      note(w, ctx, `Trusted review at ${e.head}: ${e.result}${e.findings?.length ? ` (${e.findings.length} item(s) for Alex)` : ''}. Result: ${e.artifact}.${w.phase === 'awaiting_alex_review' ? ' Alex to read it and submit his own review.' : ` The PR is now at ${w.head}; that needs a new review.`}`);
+      break;
+    }
+    case 'merged': {
+      // The poller saw the PR(s) this work is implemented in merge, verified on GitHub just now. Teamwork closure stays human.
+      if (!e.prs?.length || e.prs.some(p => p.state !== 'MERGED')) fail('Closing as merged needs every PR verified merged just now.');
+      w.phase = 'done';
+      w.completion = { kind: 'merged', prs: e.prs.map(p => ({ url: p.url, mergedAt: p.mergedAt || null })), at: ctx.now, by: ctx.by };
+      note(w, ctx, `Done: ${e.prs.map(p => `#${String(p.url).split('/pull/')[1]}`).join(', ')} merged. Not closed in Teamwork.`);
+      break;
+    }
+    case 'alex_review_seen': {
+      // The poller saw Alex's own review on GitHub, or the PR closed before he reviewed it.
+      if (!w.reviews.some(r => r.forAlex) || TERMINAL.includes(w.phase)) fail(`${w.id} has no trusted review waiting on Alex.`);
+      w.phase = 'done';
+      if (e.review) {
+        w.completion = { kind: 'alex-review', review: e.review, at: ctx.now, by: ctx.by };
+        note(w, ctx, `Alex submitted his review on GitHub: ${e.review.state} at ${e.review.at}.`);
+      } else {
+        w.completion = { kind: 'closed-before-alex-review', closedAs: e.closedAs, at: ctx.now, by: ctx.by };
+        note(w, ctx, `The PR is ${e.closedAs} without a review from Alex; nothing left to submit.`);
+      }
+      break;
+    }
+    case 'alex_review_submitted':
+      if (w.phase !== 'awaiting_alex_review') fail(`${w.id} isn't waiting for Alex's review (it is ${w.phase}).`);
+      w.phase = 'done';
+      w.completion = { kind: 'alex-review', note: e.note || null, at: ctx.now, by: ctx.by };
+      note(w, ctx, `Alex submitted his review${e.note ? `: ${e.note}` : ''}.`);
+      break;
+    case 'finding': {
+      const f = w.findings.find(x => x.id === e.findingId) || fail(`No finding ${e.findingId}.`);
+      if (!['resolved', 'accepted', 'open'].includes(e.status)) fail('A finding is open, resolved or accepted.');
+      if (e.status === 'accepted' && !e.note) fail('Accepting a finding without fixing it needs a note saying why.');
+      Object.assign(f, { status: e.status, note: e.note || null, at: ctx.now });
+      note(w, ctx, `Finding ${f.id} ${e.status}${e.note ? `: ${e.note}` : ''}.`);
+      break;
+    }
+    case 'check':
+      if (!e.name || !['pass', 'fail'].includes(e.result)) fail('A check needs a name and a result of pass or fail.');
+      if (isPr(w) && e.head !== w.head) fail(`That check ran at ${e.head}, but the current head is ${w.head}.`);
+      w.checks.push({ name: e.name, head: e.head || null, result: e.result, at: ctx.now, evidence: e.evidence || null });
+      note(w, ctx, `Check ${e.name}: ${e.result}${e.head ? ` at ${e.head}` : ''}.`);
+      break;
+    case 'criterion': {
+      const c = w.criteria.find(x => x.id === e.criterionId) || fail(`No criterion ${e.criterionId}.`);
+      if (isPr(w) && e.accepted && e.head !== w.head) fail(`Criteria are accepted against the current head (${w.head}).`);
+      c.acceptedHead = e.accepted ? (isPr(w) ? e.head : null) : null;
+      c.acceptedAt = e.accepted ? ctx.now : null;
+      c.accepted = !!e.accepted;
+      note(w, ctx, `Criterion ${c.id} ${e.accepted ? 'accepted' : 'reopened'}.`);
+      break;
+    }
+    case 'mark_ready': {
+      if (w.phase === 'ready_for_human') break; // a clean review already moved it
+      if (!REVIEWING.includes(w.phase)) fail(`${w.id} is in ${w.phase}; only reviewed work can be marked ready (fixes need re-review first).`);
+      const g = gate(w, ctx);
+      if (!g.ok) fail(`Not ready for review: ${g.reasons.join(' ')}`);
+      w.phase = 'ready_for_human';
+      note(w, ctx, `Ready for human review at ${w.head}. This is not merged, deployed or complete in Teamwork.`);
+      break;
+    }
+    case 'complete': {
+      if (isPr(w)) fail('PR work finishes through the ready gate, not "complete".');
+      if (!e.artifact) fail('Completing non-PR work needs the accepted report or artifact.');
+      const open = w.criteria.filter(c => !c.accepted);
+      if (open.length || !w.criteria.length) fail(`${open.length || 'No'} acceptance criteri${open.length === 1 ? 'on' : 'a'} ${open.length ? 'not accepted' : 'recorded'}.`);
+      w.completion = { artifact: e.artifact, at: ctx.now, by: ctx.by };
+      w.phase = 'done';
+      note(w, ctx, `Completed with ${e.artifact}.`);
+      break;
+    }
+    case 'discovery':
+      if (!e.text) fail('A discovery needs text.');
+      if (e.inScope) {
+        w.findings.push({ id: nextId(w.findings, 'F'), text: e.text, severity: e.severity || null, status: 'open', reviewHead: null, note: null });
+        note(w, ctx, `In-scope discovery recorded as a finding: ${e.text}`);
+      } else {
+        spawn = { title: e.text, objective: e.objective || '', kind: e.kind || w.kind, repo: w.repo, phase: 'proposed', proposedFrom: w.id };
+        note(w, ctx, `Out-of-scope discovery proposed as separate work: ${e.text}`);
+      }
+      break;
+    case 'request': {
+      if (!['pause', 'cancel', 'resume', 'dispatch'].includes(e.request)) fail('A request is pause, resume, cancel or dispatch.');
+      const same = w.requests.find(r => r.type === e.request && !r.ack);
+      if (same) { note(w, ctx, `${e.request} already requested (${same.id}); not repeated.`); break; }
+      w.requests.push({ id: nextId(w.requests, 'R'), type: e.request, at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, detail: e.detail || null });
+      note(w, ctx, `Requested ${e.request}. Nothing changes until it is acknowledged.`);
+      break;
+    }
+    case 'delivery': {
+      const r = w.requests.find(x => x.id === e.requestId) || fail(`No request ${e.requestId}.`);
+      if (!['pending', 'written', 'failed', 'uncertain', 'unsupported'].includes(e.status)) fail('Unknown delivery status.');
+      Object.assign(r, { delivery: e.status, deliveryDetail: e.detail || null, deliveryAt: ctx.now });
+      note(w, ctx, `Request ${r.id} (${r.type}) delivery: ${e.status}${e.detail ? ` (${e.detail})` : ''}.`);
+      break;
+    }
+    case 'ack': {
+      const r = w.requests.find(x => x.id === e.requestId) || fail(`No request ${e.requestId}.`);
+      if (!e.by) fail('An acknowledgment needs who acknowledged it.');
+      if (!['done', 'declined', 'received'].includes(e.outcome)) fail('An ack outcome is received, done or declined.');
+      r.ack = { by: e.by, outcome: e.outcome, note: e.note || null, at: ctx.now };
+      if (e.outcome === 'done') {
+        if (r.type === 'cancel') w.phase = 'cancelled';
+        if (r.type === 'pause') w.paused = true;
+        if (r.type === 'resume') w.paused = false;
+      }
+      note(w, ctx, `${e.by} acknowledged ${r.type} (${r.id}): ${e.outcome}${e.note ? `, ${e.note}` : ''}.`);
+      break;
+    }
+    case 'authorize_pr_ready': {
+      const link = w.links?.pr;
+      if (!link) fail(`${w.id} has no linked PR.`);
+      if (e.prUrl !== link) fail(`That authorization names ${e.prUrl}, but the linked PR is ${link}.`);
+      if (!w.head || e.head !== w.head) fail(`Authorization must name the current head (${w.head || 'none recorded'}).`);
+      w.prReadyAuth = { prUrl: e.prUrl, head: e.head, by: ctx.by, at: ctx.now };
+      note(w, ctx, `Marking ${e.prUrl} ready on GitHub authorized at ${e.head} only. Merging is never authorized here.`);
+      break;
+    }
+    case 'pr_ready_op': {
+      // Server-only: records each attempt's state. Confirmed means a readback showed the head and isDraft=false.
+      const op = w.prReadyOps.find(o => o.id === e.opId);
+      if (op) {
+        // Earlier states stay in the attempt's history; nothing is overwritten without a trace.
+        op.history = [...(op.history || []), { status: op.status, detail: op.detail, at: op.at, ...(op.observed ? { observed: op.observed } : {}) }];
+        Object.assign(op, { status: e.status, detail: e.detail || null, at: ctx.now, ...(e.outcome ? { outcome: e.outcome } : {}), ...(e.observed ? { observed: e.observed } : {}) });
+      } else w.prReadyOps.push({ id: e.opId, status: e.status, head: e.head, prUrl: e.prUrl, detail: e.detail || null, at: ctx.now, history: [] });
+      if (e.status === 'confirmed' && w.phase === 'ready_for_human' && gate(w, ctx).ok) enterApprovalWait(w, ctx, `Confirmed PR-ready operation ${e.opId}`);
+      note(w, ctx, `PR ready on GitHub (${e.opId}): ${e.status}${e.outcome ? `, ${e.outcome}` : ''}${e.detail ? ` (${e.detail})` : ''}.`);
+      break;
+    }
+    case 'reconcile': {
+      // Records work that is already assigned or running. Never a queue command: no request, so no notice.
+      if (!RECONCILABLE.includes(e.phase)) fail(`Can't reconcile to "${e.phase}"; reconcile records ${RECONCILABLE.join(', ')}.`);
+      if (!e.evidence) fail('A reconcile needs evidence (a brief, report or ledger path, or quoted text).');
+      if (liveAssignment(w)) fail(`${w.id} has a current assignment ${liveAssignment(w).id}; report it with progress or done --assignment.`);
+      const from = w.phase;
+      if (e.owner) w.owner = e.owner;
+      if (e.phase === 'implementation') w.implementer = w.owner;
+      // A report can be older than what GitHub shows; a head GitHub verified is never overwritten by one.
+      if (e.head && w.headVerified?.via === 'github' && w.head && e.head !== w.head) note(w, ctx, `Reported head ${e.head} ignored; GitHub shows ${w.head}.`);
+      else if (e.head) setHead(w, e.head, ctx);
+      w.phase = e.phase;
+      w.reconciled = { at: ctx.now, by: ctx.by, evidence: e.evidence, from };
+      note(w, ctx, `Reconciled ${from} → ${e.phase}${e.owner ? ` (owner ${e.owner})` : ''} from evidence: ${e.evidence}. Nothing was dispatched.`);
+      break;
+    }
+    case 'retro_close': {
+      // Work that finished before the board tracked it. Closed with its evidence, never with invented reviews,
+      // checks or accepted criteria, and never by the ordinary ready gate.
+      if (!['completed', 'superseded', 'duplicate', 'settled'].includes(e.outcome)) fail('A retrospective outcome is completed, superseded, duplicate or settled.');
+      // Checked here too, at commit: whatever happened while evidence was being read, active work is never closed this way.
+      if (ACTIVE.includes(w.phase)) fail(`${w.id} is active (${w.phase}); retrospective close is only for work the board never tracked.`);
+      if (w.owner) fail(`${w.id} is assigned to ${w.owner}.`);
+      if (w.requests.some(r => !r.ack)) fail(`${w.id} has an unacknowledged request.`);
+      if (!e.evidence) fail('A retrospective close needs evidence.');
+      let prs = [];
+      if (e.outcome === 'completed') {
+        if (e.coverage !== 'full') fail('Completed needs full coverage of the item\'s scope; record partial coverage instead.');
+        if (!e.prs?.length) fail('Completed needs the PRs that cover it.');
+        for (const p of e.prs) {
+          const v = (ctx.verifiedPrs || []).find(x => x.url === p.url);
+          const n = (p.url.match(/pull\/(\d+)/) || [])[1];
+          if (!v) fail(`#${n} wasn't verified on GitHub just now.`);
+          if (v.state !== 'MERGED') fail(`#${n} is ${v.state}, not merged.`);
+          prs.push({ url: v.url, state: v.state, head: v.head || null, mergedAt: v.mergedAt || null, verifiedAt: ctx.now });
+        }
+      } else if (e.outcome === 'settled') { if (!e.decision) fail('Settled needs the decision that settled it (nothing to build).'); }
+      else if (!e.target) fail(`${e.outcome} needs the target it ${e.outcome === 'duplicate' ? 'duplicates' : 'was superseded by'}.`);
+      w.retro = { outcome: e.outcome, coverage: e.coverage || null, prs, target: e.target || null, decision: e.decision || null, evidence: e.evidence, matrix: e.matrix || null,
+        reason: 'Historical reconciliation: the work finished before the board tracked it. Closed on the cited evidence; no board review, check or criteria acceptance was run or recorded.',
+        by: ctx.by, at: ctx.now, from: w.phase };
+      w.phase = 'done';
+      note(w, ctx, `Closed retrospectively as ${e.outcome}${e.target ? ` (${e.target})` : ''}${prs.length ? ` by ${prs.map(p => '#' + p.url.split('/pull/')[1]).join(', ')} (merged, verified now)` : ''}. Evidence: ${e.evidence}. No board review or gate was run.`);
+      break;
+    }
+    case 'coverage': {
+      // What existing PRs cover, without closing: an open PR is not done and not proof anyone is working on it.
+      if (!['open-pr', 'partial', 'none', 'unknown'].includes(e.state)) fail('Coverage is open-pr, partial, none or unknown.');
+      if (!e.evidence) fail('Coverage needs evidence.');
+      if (e.state === 'open-pr' && !(ctx.verifiedPrs || []).some(p => p.state === 'OPEN'))
+        fail(`None of the cited PRs is open now (${(e.prs || []).map(p => `#${String(p.url).split('/pull/')[1]} ${(ctx.verifiedPrs || []).find(v => v.url === p.url)?.state || 'unreadable'}`).join(', ') || 'none cited'}); record it as unknown or partial and reconcile.`);
+      w.coverage = { state: e.state, prs: e.prs || [], missing: e.missing || null, evidence: e.evidence, by: ctx.by, at: ctx.now };
+      if (e.prs?.[0]?.url && !w.links?.pr && e.prs.length === 1) w.links = { ...(w.links || {}), pr: e.prs[0].url };
+      note(w, ctx, `Coverage: ${e.state}${e.prs?.length ? ` (${e.prs.map(p => `#${p.url.split('/pull/')[1]} ${p.state || ''}`.trim()).join(', ')})` : ''}${e.missing ? `; missing: ${e.missing}` : ''}. Evidence: ${e.evidence}.`);
+      break;
+    }
+    case 'assign': {
+      // Records a dispatch the head made natively; the board never repeats it. No request, so no notice.
+      if (!e.assignmentId || !['implementation', 'fixes', 'review', 'discovery'].includes(e.kind)) fail('assign needs an assignment id and a kind (implementation, fixes, review, discovery).');
+      if (!['queued', 'started', 'done'].includes(e.status)) fail('An assignment is recorded as queued, started or done.');
+      if (!e.evidence) fail('assign needs evidence (the brief or dispatch message).');
+      if ((w.assignments || []).some(a => a.id === e.assignmentId)) fail(`${e.assignmentId} is already recorded on ${w.id}; report its stage with progress.`);
+      if (e.status === 'done') {
+        // History only: the phase, owner and requests already reflect the finished work.
+        if (liveAssignment(w, laneOf(e))) fail(`${liveAssignment(w, laneOf(e)).id} is the current assignment on ${w.id}; finish it with done --assignment.`);
+        if (isPr(w) && !sameSha(e.head, w.head)) fail(`A finished assignment is recorded at the current head (${w.head || 'none'}), not ${e.head || 'none'}.`);
+        w.assignments = [...(w.assignments || []), { id: e.assignmentId, kind: e.kind, owner: e.owner || null, status: 'done', version: 1, brief: e.brief || null, evidence: e.evidence, dependsOn: [], after: [], doneHead: w.head || null, at: ctx.now, by: ctx.by, history: [] }];
+        note(w, ctx, `Assignment ${e.assignmentId} (${e.kind}) recorded as already done${w.head ? ` at ${w.head}` : ''}. Evidence: ${e.evidence}.`);
+        break;
+      }
+      // Reviews and work (implementation, fixes, discovery) are separate lanes, each with one current assignment.
+      const live = liveAssignment(w, laneOf(e)), other = liveAssignment(w, laneOf(e) === 'review' ? 'work' : 'review');
+      const waits = e.afterAssignments || [];
+      if (other && laneOf(e) === 'work' && !e.parallel && !waits.includes(other.id)) fail(`${other.id} (${other.kind}) is running on ${w.id}; queue this with --after-assignment ${other.id}, or --parallel to run alongside it.`);
+      for (const id of waits) if (!(w.assignments || []).some(x => x.id === id)) fail(`${id} isn't recorded on ${w.id}.`);
+      if (live && e.supersedes !== live.id) fail(`${live.id} is the current assignment on ${w.id}; to replace it, assign with --supersedes ${live.id} --expect-version ${live.version}.`);
+      if (live && Number(e.expectedVersion) !== live.version) fail(`${live.id} is at version ${live.version}, not ${e.expectedVersion}; re-read it before replacing it.`);
+      if (live) { live.history.push({ status: live.status, at: ctx.now, by: ctx.by, note: `superseded by ${e.assignmentId}` }); live.status = 'superseded'; }
+      if (e.dependsOn?.length) w.deps = [...new Set([...(w.deps || []), ...e.dependsOn])];
+      const a = { id: e.assignmentId, kind: e.kind, owner: e.owner || null, status: 'queued', version: 1, brief: e.brief || null, evidence: e.evidence, dependsOn: e.dependsOn || [], after: e.after || [], afterAssignments: waits, parallel: !!e.parallel, at: ctx.now, by: ctx.by, history: [], recordedFrom: { phase: w.phase, head: w.head, prUrl: w.links?.pr || null } };
+      w.assignments = [...(w.assignments || []), a];
+      if (e.owner && (!other || e.status === 'started')) w.owner = e.owner;
+      if (PRE_QUEUE.includes(w.phase)) w.phase = 'queued';
+      note(w, ctx, `Assignment ${a.id} (${a.kind}) recorded as queued${a.owner ? ` for ${a.owner}` : ''}${a.dependsOn.length ? `, depending on ${a.dependsOn.join(', ')}` : ''}${a.after.length ? `, after ${a.after.join(', ')}'s worker finishes` : ''}${waits.length ? `, after ${waits.join(', ')} ends` : ''}${a.parallel ? `, in parallel with ${other?.id}` : ''}. Evidence: ${e.evidence}.`);
+      if (e.status === 'started') startAssignment(w, a, ctx, false); // recorded as started: still version 1
+      break;
+    }
+    case 'progress': {
+      const a = currentAssignment(w, e.assignmentId, e.expectedVersion);
+      if (!['started', 'working', 'blocked'].includes(e.stage)) fail('A progress stage is started, working or blocked.');
+      if (e.stage === 'started') { if (a.status !== 'queued' && a.status !== 'blocked') fail(`${a.id} is already ${a.status}.`); startAssignment(w, a, ctx); }
+      else {
+        if (e.stage === 'working' && a.status !== 'started') fail(`${a.id} is ${a.status}; report --stage started before working.`);
+        a.history.push({ status: a.status, at: ctx.now, by: ctx.by }); a.status = e.stage === 'blocked' ? 'blocked' : a.status; a.version++;
+      }
+      if (e.text) note(w, ctx, `${a.id} ${e.stage}: ${e.text}`);
+      break;
+    }
+    case 'cancel_assignment': {
+      // A mis-filed assignment: its history stays, the phase is whatever the record's other evidence says.
+      const a = currentAssignment(w, e.assignmentId, e.expectedVersion);
+      if (!e.evidence) fail('Cancelling an assignment needs evidence.');
+      a.history.push({ status: a.status, at: ctx.now, by: ctx.by }); a.status = 'cancelled'; a.version++;
+      note(w, ctx, `Assignment ${a.id} cancelled. Evidence: ${e.evidence}.`);
+      break;
+    }
+    case 'assignment_done': {
+      const a = currentAssignment(w, e.assignmentId, e.expectedVersion);
+      if (e.noChange) {
+        // A regular check with no code deliverable finishes without an internal code review.
+        if (!e.noChange.verifiedOn || !e.noChange.evidence) fail('A no-change close needs --verified-on <sha> and --evidence.');
+        a.history.push({ status: a.status, at: ctx.now, by: ctx.by }); a.status = 'done'; a.version++; a.noChange = { ...e.noChange, at: ctx.now, by: ctx.by };
+        note(w, ctx, `Assignment ${a.id} closed with no change: already satisfied on ${e.noChange.verifiedOn}. Evidence: ${e.noChange.evidence}. Nothing was built.`);
+        if (e.head && !sameSha(e.head, e.noChange.verifiedOn)) fail('No-change head must match its verified commit.');
+        if (prLinked(w)) finishNoChangeProbe(w, a, ctx);
+        else closeNoChange(w, a, ctx, e.noChange.evidence);
+        break;
+      }
+      if (BUILDING.includes(a.kind) && e.head) {
+        // ctx.prHead is the server's fresh read of the linked PR (null: unreadable or no PR).
+        if (ctx.prHead && !sameSha(e.head, ctx.prHead)) fail(`Done reported at ${e.head}, but GitHub shows ${ctx.prHead}; report done at the pushed head.`);
+        if (ctx.prHead) setHead(w, ctx.prHead, ctx, 'github');
+        else if (w.headVerified?.via === 'github' && w.head && !sameSha(e.head, w.head)) fail(`Done reported at ${e.head}, but GitHub last showed ${w.head} and can't confirm the new head now; retry when the PR is readable.`);
+      }
+      if (BUILDING.includes(a.kind)) {
+        // Same path as a worker's done: independent review is requested, nothing is marked reviewed or ready.
+        const r = applyEvent(w, { type: 'implementation_done', head: ctx.prHead || e.head, viaAssignment: true, assignmentId: a.id }, ctx).work;
+        Object.assign(w, r);
+      }
+      const cur = w.assignments.find(x => x.id === a.id);
+      cur.history.push({ status: cur.status, at: ctx.now, by: ctx.by }); cur.status = 'done'; cur.version++; cur.doneHead = e.head || null;
+      note(w, ctx, `Assignment ${a.id} done${e.head ? ` at ${e.head}` : ''}.`);
+      break;
+    }
+    case 'correct_head': {
+      // Undo a false "new commit" move made before short and full SHAs were treated as one commit. The old entry stays.
+      if (!sameSha(e.from, e.to) || !sameSha(w.head, e.to)) fail(`${e.from} and ${e.to} aren't the same commit as the current head ${w.head}.`);
+      if (w.phase !== 'rereview' || !['review'].includes(e.phase)) fail('correct_head only moves a false rereview back to review.');
+      if (w.reviews.some(r => sameSha(r.head, e.to))) fail(`A review already ran at ${e.to}; nothing to correct.`);
+      if (!e.evidence) fail('correct_head needs evidence.');
+      expandHead(w, e.from, e.to.length > w.head.length ? e.to : w.head);
+      w.phase = e.phase;
+      note(w, ctx, `Correction: ${e.to} is the same commit as ${e.from}, not a new one; back to ${e.phase}. Evidence: ${e.evidence}.`);
+      break;
+    }
+    case 'request_review': {
+      // Refreshes the review request at the current head when work finished without one; never a review itself.
+      if (!REVIEWING.includes(w.phase) || !w.head) fail(`${w.id} isn't waiting for review at a known head.`);
+      if (w.requests.some(r => r.type === 'review' && sameSha(r.head, w.head))) fail(`A review request at ${w.head} is already recorded.`);
+      if (!e.evidence) fail('request_review needs evidence.');
+      w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
+      note(w, ctx, `Review requested at ${w.head}. Evidence: ${e.evidence}.`);
+      break;
+    }
+    case 'relate': {
+      // Two records for the same work (e.g. a Teamwork task and its PR-feedback record): linked, never merged.
+      if (!e.to || e.to === w.id) fail('relate needs another record.');
+      if (!(w.related || []).some(r => r.to === e.to)) w.related = [...(w.related || []), { to: e.to, kind: e.kind || 'same-work', evidence: e.evidence || null, at: ctx.now, by: ctx.by }];
+      note(w, ctx, `Related to ${e.to} (${e.kind || 'same-work'})${e.evidence ? `: ${e.evidence}` : ''}.`);
+      break;
+    }
+    case 'wait': {
+      // Work that waits on someone outside this flow (e.g. a QA owner). Not an Alex decision, not done.
+      if (e.clear) { if (!w.waitingOn) fail(`${w.id} isn't waiting on anyone.`); if (!e.evidence) fail('Clearing a wait needs evidence.'); note(w, ctx, `No longer waiting on ${w.waitingOn.who}. Evidence: ${e.evidence}.`); w.waitingOn = null; break; }
+      if (!e.who || !e.what || !e.evidence) fail('A wait needs who, what and evidence.');
+      w.waitingOn = { who: e.who, what: e.what, evidence: e.evidence, at: ctx.now, by: ctx.by };
+      note(w, ctx, `Waiting on ${e.who}: ${e.what}. Evidence: ${e.evidence}.`);
+      break;
+    }
+    case 'note':
+      if (!e.text) fail('A note needs text.');
+      note(w, ctx, e.text);
+      break;
+    default:
+      fail(`Unknown event "${e.type}".`);
+  }
+  return { work: normalize(w, ctx), spawn };
+}
+
+/** A head seen by a poller. A new SHA invalidates evidence exactly like a reported one. */
+// Work that passed internal review but changed before Alex marked it ready gets a re-review request, so its stream is told.
+function requestRereview(w, ctx) {
+  if (!ctx.now || !w.head || w.requests.some(r => r.type === 'review' && sameSha(r.head, w.head))) return;
+  w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by || 'board', delivery: 'pending', ack: null, head: w.head });
+  note(w, ctx, `Re-review requested at ${w.head}: the PR moved on. If it's already marked ready, the standing waiver applies.`);
+}
+export function observeHead(work, { sha, via, isDraft }, ctx) {
+  if (TERMINAL.includes(work.phase) || !sha) return work;
+  const w = structuredClone(work);
+  setHead(w, sha, ctx, via);
+  // Internal review is only needed before a PR is marked ready (Alex). A new commit on one already marked ready keeps it
+  // waiting for approval, under the standing waiver, at the new commit.
+  if (work.phase === 'awaiting_human_approval' && via === 'github' && isDraft === false && w.head !== work.head && ctx.standingWaiver && w.links?.pr) {
+    w.internalReviewWaivers = [...(w.internalReviewWaivers || []), { ...ctx.standingWaiver, head: w.head, prUrl: w.links.pr, at: ctx.now, recordedBy: ctx.by, evidence: `GitHub shows the PR still marked ready at ${w.head}` }];
+    w.phase = 'awaiting_human_approval';
+    w.approvalWait = { head: w.head, prUrl: w.links.pr, at: ctx.now, by: ctx.by, evidence: 'standing waiver: new commit on a PR already marked ready', requiredApprovals: { qa: 1, dev: 1 } };
+    note(w, ctx, `New commit ${w.head} on a PR already marked ready: still waiting for human review/approval (standing waiver; no internal review).`);
+  }
+  if (w.phase === 'awaiting_human_approval' && isDraft === true) {
+    w.phase = 'rereview'; w.approvalWait = null;
+    note(w, ctx, 'Approval wait invalidated: GitHub shows the PR as draft again. No approvals inferred.');
+  }
+  return normalize(w, ctx);
+}
+
+/** The poller can no longer see the linked PR: a head it verified is no longer verified. Reported heads stand. */
+export function unverifyHead(work, ctx) {
+  if (work.headVerified?.via !== 'github') return work;
+  const w = structuredClone(work);
+  w.headVerified = null;
+  note(w, ctx, 'GitHub no longer shows the linked PR; its head is unverified until someone reports it.');
+  return normalize(w, ctx);
+}
+
+/** Only the request for this commit and work round may describe the current phase. */
+export function phaseRequest(w) {
+  const type = { review: 'review', rereview: 'review', fixes: 'fixes' }[w.phase];
+  if (!type || !w.head) return null;
+  const round = [...(w.assignments || [])].reverse().find(a => BUILDING.includes(a.kind) && !a.noChange && !['cancelled', 'superseded'].includes(a.status));
+  return [...w.requests].reverse().find(r => r.type === type && sameSha(r.head, w.head)
+    && (r.assignment ? r.assignment === round?.id : !round?.at || (r.at && r.at > round.at))) || null;
+}
+
+const laneOf = a => (a.kind === 'review' ? 'review' : 'work');
+const liveAssignment = (w, lane) => [...(w.assignments || [])].reverse().find(x => LIVE_ASSIGNMENT.includes(x.status) && (!lane || laneOf(x) === lane)) || null;
+function enterApprovalWait(w, ctx, evidence) {
+  w.phase = 'awaiting_human_approval';
+  w.approvalWait = { head: w.head, prUrl: w.links.pr, at: ctx.now, by: ctx.by, evidence, requiredApprovals: { qa: 1, dev: 1 } };
+  note(w, ctx, `PR observed ready at ${w.head}; waiting for human review/approval (1 QA + 1 dev). No GitHub approval, merge, deployment or Teamwork completion is recorded.`);
+}
+function finishNoChangeProbe(w, a, ctx) {
+  if (!['implementation', 'fixes', 'discovery'].includes(a.kind)) fail('A review assignment cannot be relabelled as a no-change probe.');
+  const baseline = a.startedFrom || a.recordedFrom, remote = ctx.prState;
+  if (!baseline?.head || !baseline.prUrl || baseline.prUrl !== w.links?.pr) fail('A PR no-change report needs its recorded assignment baseline and unchanged PR link.');
+  if (!sameSha(baseline.head, a.noChange.verifiedOn) || !sameSha(baseline.head, w.head)) fail(`Assignment baseline ${baseline.head} changed; no-change needs an unchanged commit.`);
+  if (!remote || remote.url !== w.links?.pr || remote.state !== 'OPEN' || !sameSha(remote.head, w.head)) fail('GitHub must freshly confirm the same open PR and unchanged head for a no-change report.');
+  setHead(w, remote.head, ctx, 'github');
+  a.noChange.verifiedOn = remote.head;
+  // Finishing this check doesn't finish the PR or dispose of another assignment's work.
+  if (!liveAssignment(w)) {
+    if (baseline.phase === 'awaiting_human_approval') {
+      const candidate = normalize({ ...w, phase: 'awaiting_human_approval' }, ctx);
+      const canResume = remote.isDraft === false && !w.findings.some(f => f.status === 'open') && candidate.phase === 'awaiting_human_approval';
+      w.phase = canResume ? 'awaiting_human_approval' : w.findings.some(f => f.status === 'open') ? 'fixes' : 'rereview';
+      if (!canResume) w.approvalWait = null;
+    } else w.phase = ['review', 'rereview', 'ready_for_human', 'fixes'].includes(baseline.phase) ? baseline.phase : 'rereview';
+  }
+  note(w, ctx, `No-change assignment ${a.id} finished at unchanged ${remote.head}; PR work remains ${w.phase}. Existing review/approval requirements remain; no internal review requested.`);
+}
+function closeNoChange(w, a, ctx, evidence) {
+  if (prLinked(w) || (w.coverage?.prs || []).some(p => p.state === 'OPEN')) fail('A PR/code deliverable must follow its review lifecycle; no-change cannot close it.');
+  if (!['implementation', 'discovery'].includes(a.kind)) fail('Only a regular implementation/discovery check can close without a code review.');
+  if (!a.noChange?.verifiedOn || !a.noChange?.evidence) fail('No-change completion needs verified commit and evidence.');
+  if (liveAssignment(w)) fail('Another assignment is still active.');
+  if (w.requests.some(r => !r.ack)) fail('A pending request must be acknowledged before no-change closure.');
+  w.phase = 'done';
+  w.completion = { kind: 'no-change', assignment: a.id, verifiedOn: a.noChange.verifiedOn, evidence, at: ctx.now, by: ctx.by };
+  note(w, ctx, `Done with no code deliverable: ${a.noChange.verifiedOn}. Evidence: ${evidence}. No internal review requested; existing review history is preserved.`);
+}
+function currentAssignment(w, id, expectedVersion) {
+  const a = (w.assignments || []).find(x => x.id === id);
+  if (!a) fail(`${id} isn't the current assignment on ${w.id} (it isn't recorded here at all).`);
+  if (['done', 'cancelled', 'superseded'].includes(a.status)) fail(`${id} is ${a.status}; it isn't the current assignment.`);
+  const current = liveAssignment(w, laneOf(a));
+  if (current?.id !== id) fail(`${id} isn't the current assignment (${current?.id || 'none'} is).`);
+  if (expectedVersion === undefined || expectedVersion === null) fail(`Report ${id} with --expect-version (it's at version ${a.version}).`);
+  if (Number(expectedVersion) !== a.version) fail(`${id} is at version ${a.version}, not ${expectedVersion}; re-read it before reporting.`);
+  return a;
+}
+function startAssignment(w, a, ctx, bump = true) {
+  // ctx.depPhase reads current records, so dependencies this same event added count; an unknown one stays open.
+  const open = ctx.depPhase ? (w.deps || []).filter(d => !SATISFIES_DEPS.includes(ctx.depPhase(d))) : ctx.openDeps || [];
+  if (open.length) fail(`${a.id} can't start: ${w.id} is waiting on ${open.join(', ')}.`);
+  // --after is a worker slot: it clears once that record's worker reported done, before any review. Unknown = still busy.
+  const busy = (a.after || []).filter(d => !['review', 'rereview', 'ready_for_human', 'awaiting_human_approval', 'done'].includes(ctx.depPhase?.(d)) && !ctx.depWorkerDone?.(d));
+  if (busy.length) fail(`${a.id} can't start: it runs after ${busy.join(', ')}'s worker finishes.`);
+  const running = (a.afterAssignments || []).filter(id => LIVE_ASSIGNMENT.includes(w.assignments.find(x => x.id === id)?.status));
+  if (running.length) fail(`${a.id} can't start: it runs after ${running.join(', ')} ends.`);
+  a.history.push({ status: a.status, at: ctx.now, by: ctx.by });
+  a.startedFrom ??= { phase: w.phase, head: w.head, prUrl: w.links?.pr || null };
+  a.status = 'started'; if (bump) a.version++;
+  if (a.kind === 'fixes') w.phase = 'fixes';
+  if (a.kind === 'implementation') { w.phase = 'implementation'; w.implementer = a.owner || w.owner; }
+  if (a.owner) w.owner = a.owner;
+  note(w, ctx, `Assignment ${a.id} started${a.owner ? ` by ${a.owner}` : ''}.`);
+}
+
+/** Before work is queued, its phase follows triage: open questions mean clarification, a clean verdict means ready. */
+export function syncIntake(work, { bucket, openQuestions }) {
+  if (!PRE_QUEUE.includes(work.phase) || work.reconciled || COVERAGE_BLOCKS_QUEUE.includes(work.coverage?.state)) return work;
+  const phase = openQuestions > 0 || bucket === 'clarify' && openQuestions > 0 ? 'clarification'
+    : bucket === 'ready' || bucket === 'clarify' ? 'ready' : 'intake';
+  return phase === work.phase ? work : { ...work, phase };
+}
+
+const kindOf = key => /^tw-/.test(key) ? 'build' : 'pr-feedback';
+
+/** Additive, idempotent upgrade of a pre-work-record state file. Never rewrites an existing field. */
+export function migrate(state, now) {
+  state.work ??= {};
+  state.workBySource ??= {};
+  state.nextWork ??= 1;
+  for (const key of Object.keys(state.items || {})) {
+    if (state.workBySource[key]) continue;
+    const id = `W-${state.nextWork++}`;
+    state.work[id] = createWork({ id, title: key, kind: kindOf(key), source: { type: /^tw-/.test(key) ? 'teamwork' : 'pr', key } },
+      { now: state.items[key].firstSeen || now, by: 'migration' });
+    state.workBySource[key] = id;
+  }
+  for (const q of Object.values(state.questions || {})) if (q.item && !q.work && state.workBySource[q.item]) q.work = state.workBySource[q.item];
+  // Fields added after the first upgrade; records written before them get empty defaults.
+  for (const w of Object.values(state.work)) {
+    w.prReadyOps ??= []; w.prReadyAuth ??= null; w.headVerified ??= null; w.requiredChecks ??= []; w.synthetic ??= false;
+    w.externalDeps ??= []; w.aliases ??= []; w.reconciled ??= null; w.retro ??= null; w.coverage ??= null; w.related ??= []; w.assignments ??= []; w.waitingOn ??= null;
+  }
+  // Auto-triage questions are unverified until a person or the head says they're real; agent questions start verified.
+  for (const q of Object.values(state.questions || {})) {
+    if (q.verification) continue;
+    q.verification = q.source === 'inbox' ? 'verified' : 'unverified';
+    q.verificationSource = 'migration-default';
+  }
+  state.schema = 2;
+  return state;
+}
+
+/** Why the PR must not be marked ready on GitHub now. `remote` is a fresh read: {head, isDraft}. */
+export function prReadyPreflight(w, remote, ctx = {}) {
+  const r = [];
+  if (w.phase !== 'ready_for_human') r.push(`${w.id} is ${w.phase}, not ready for review.`);
+  const g = gate(w, ctx);
+  if (!g.ok) r.push(...g.reasons);
+  const a = w.prReadyAuth;
+  if (!a) r.push('No per-item authorization to mark the PR ready.');
+  else {
+    if (a.prUrl !== w.links?.pr) r.push('The authorization names a different PR.');
+    if (a.head !== w.head) r.push(`The authorization was for ${a.head}, but the head is ${w.head}.`);
+  }
+  if (!remote) r.push('Could not read the PR from GitHub just now.');
+  else if (remote.head !== w.head) r.push(`GitHub shows ${remote.head}, but the board's head is ${w.head}.`);
+  return r;
+}
