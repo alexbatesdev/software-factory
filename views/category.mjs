@@ -1,5 +1,5 @@
-import { TERMINAL, BUILDING, REVIEWING } from './work.mjs';
-import { reachesAlex } from './derive.mjs';
+import { TERMINAL, BUILDING, REVIEWING } from '../core/work.mjs';
+import { reachesAlex } from '../core/derive.mjs';
 // The board column for an item: the work record's own state first, then genuinely open questions, then the
 // classifier's (or a manual) bucket. The classifier verdict is never rewritten; it stays on the item as provenance.
 

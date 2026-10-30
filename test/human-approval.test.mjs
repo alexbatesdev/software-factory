@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWork, applyEvent, observeHead, unverifyHead, updateWork } from '../core/work.mjs';
-import { categoryOf } from '../core/category.mjs';
+import { categoryOf } from '../views/category.mjs';
 const url='https://github.com/builtforteams/built-rails/pull/8363', head='557021cfb53b6614b67da0a799e49398f892c92c';
 const ctx={now:'2026-10-27T21:40:00Z',by:'Dot',openQuestions:0};
 const make=()=>({...createWork({id:'W-1',title:'Ready PR',links:{pr:url},criteria:['Accepted behavior']},ctx),phase:'rereview',head});
