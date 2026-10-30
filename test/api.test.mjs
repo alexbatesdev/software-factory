@@ -43,7 +43,7 @@ test('the router sends an answer on and sets the owner; the owner finds it in it
     await f.act('triage board worker', 'message', { to: S1, work: 'W-1', text: 'TB-1 is yours' });
     const [m] = await f.inbox(S1);
     assert.equal(m.text, 'TB-1 is yours');
-    assert.match((await f.act('local-head', 'ack', { ref: m.id }))[1].error, /may not ack/);
+    assert.match((await f.act('local-head', 'ack', { ref: m.id }))[1].error, /only that seat acks it/);
     assert.equal((await f.act(S1, 'ack', { ref: m.id }))[0], 200);
     assert.deepEqual(await f.inbox(S1), []);
   } finally { f.close(); }
