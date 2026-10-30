@@ -8,6 +8,8 @@ import { openStore } from '../core/store.mjs';
 import { importCommands } from '../core/import.mjs';
 import { projectPrs, projectTasks, headCommands, recordPrKey } from '../core/observe.mjs';
 import { TERMINAL } from '../core/work.mjs';
+import { sourceCommands } from '../core/correlate.mjs';
+import { parseAcs } from '../core/derive.mjs';
 import { readPrLines } from '../sources/github.mjs';
 import { readTasks } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
@@ -30,5 +32,15 @@ if (got.github) {
   console.log(`  head commands V2 would append: ${cmds.length}`);
   for (const c of cmds) { const w = state.work[c.target]; console.log(`   ${c.target} ${c.kind} ${c.payload.sha || ''} (board head ${w.head || '-'}, verified ${w.headVerified?.via || '-'}@${w.headVerified?.sha || '-'})`); }
 }
-if (got.teamwork) console.log(`teamwork: ${got.teamwork.length} tasks read, ${projectTasks(got.teamwork, process.env.TEAMWORK_SITE).size} work items`);
+const summarize = (name, cmds) => {
+  const by = cmds.reduce((m, c) => ({ ...m, [c.kind]: (m[c.kind] || 0) + 1 }), {});
+  console.log(`  ${name} source commands V2 would append: ${JSON.stringify(by)}`);
+  for (const c of cmds.filter(c => c.kind === 'observe_source').slice(0, 15)) console.log(`   observe ${c.payload.id} ${String(c.payload.title).slice(0, 60)}`);
+};
+if (got.github) summarize('github', sourceCommands(state, projectPrs(got.github.lines, got.github.own).prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude }));
+if (got.teamwork) {
+  const tasks = projectTasks(got.teamwork, process.env.TEAMWORK_SITE);
+  console.log(`teamwork: ${got.teamwork.length} tasks read, ${tasks.size} work items`);
+  summarize('teamwork', sourceCommands(state, tasks, 'teamwork', parseAcs));
+}
 if (got.fleet) console.log(`fleet: ${got.fleet.units.length} stream units, ${got.fleet.others.length} other agents, ${got.fleet.layout.length} layout issues`);

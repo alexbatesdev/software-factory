@@ -2,6 +2,9 @@
 // Observations a reducer reads (now, GitHub reads) are stored on the row, so a replay never consults live data.
 import { DatabaseSync } from 'node:sqlite';
 import * as W from './work.mjs';
+import { parseAcs } from './derive.mjs';
+import { inferStream } from './notifier.mjs';
+import { sourceIndex, ownerOf, claimPr, refresh } from './correlate.mjs';
 
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
 const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver'];
@@ -48,16 +51,29 @@ function foldMessage(state, { kind, target, payload, ctx }) {
 }
 
 /** Apply one logged row to state in place. Throws when the reducer refuses it. */
-export function fold(state, row) {
+export function fold(state, row, { supervisors = [] } = {}) {
   const { kind, target: id, payload, ctx: observed } = row;
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
+  if (kind === 'observe_source') { const t = observeSource(state, payload, observed); finish(state, row, observed, t, supervisors); return t; }
   const ctx = id ? { ...observed, ...derivedCtx(state, id) } : observed;
   const cur = id && (state.work[id] || (() => { throw new Error(`There is no work item ${id}.`); })());
   let touched = id;
   switch (kind) {
     case 'create': touched = create(state, payload, ctx); break;
-    case 'update': state.work[id] = W.updateWork(cur, payload, ctx); break;
+    case 'update': {
+      const claim = payload.links?.pr && claimPr(state, id, payload.links.pr);
+      if (claim) state.work[claim.absorb] = W.applyEvent(state.work[claim.absorb], { type: 'absorb', into: id }, ctx).work;
+      state.work[id] = W.updateWork(cur, claim ? { ...payload, aliases: [...new Set([...(cur.aliases || []), claim.key])] } : payload, ctx);
+      break;
+    }
+    case 'source_gone': {
+      const w = structuredClone(cur);
+      w.upstream = 'gone';
+      w.updates.push({ at: ctx.now, by: ctx.by, text: w.source.type === 'pr' ? 'No unresolved feedback on the PR any more (or it closed). Record kept.' : 'No longer in your open Teamwork tasks. Record kept.' });
+      state.work[id] = w;
+      break;
+    }
     case 'event': {
       const { work, spawn } = W.applyEvent(cur, payload, ctx);
       state.work[id] = work;
@@ -69,22 +85,46 @@ export function fold(state, row) {
     case 'sync_intake': state.work[id] = W.syncIntake(cur, payload); break;
     default: throw new Error(`Unknown command kind "${kind}".`);
   }
+  finish(state, row, observed, touched, supervisors);
+  return touched;
+}
+
+function finish(state, row, observed, touched, supervisors) {
+  // A record takes its stream once, from a supervisor that owns or owned it, so owner and stream never drift apart.
+  const t = state.work[touched];
+  if (t && !t.stream) { const s = inferStream(t, supervisors); if (s) state.work[touched] = { ...t, stream: s }; }
   // Ready labels drop as soon as a dependency regresses, not only on the item's own events. Never pass on this row's observations.
   for (const [wid, w] of Object.entries(state.work)) {
     if (['ready_for_human', 'awaiting_human_approval'].includes(w.phase)) state.work[wid] = W.normalize(w, { now: observed.now, by: 'board', ...derivedCtx(state, wid) });
   }
   state.seq = row.seq;
-  return touched;
 }
 
-export function openStore(path = ':memory:') {
+// A task or PR seen by a poller: refresh its record, attach it to the record that carries it, or open a new one.
+function observeSource(state, item, ctx) {
+  const o = ownerOf(state, item, sourceIndex(state));
+  if (!o) {
+    const id = create(state, { title: item.title, kind: item.kind === 'task' ? 'build' : 'pr-feedback', source: { type: item.kind === 'task' ? 'teamwork' : 'pr', key: item.id } }, ctx);
+    state.work[id] = refresh(state.work[id], item, parseAcs);
+    return id;
+  }
+  const w = state.work[o.id];
+  if (w.source?.key === item.id) { state.work[o.id] = refresh(w, item, parseAcs); return o.id; }
+  if ((w.aliases || []).includes(item.id)) return o.id;
+  // Joining a record (e.g. a task's own PR, by branch): the key becomes an alias; the record keeps its title and an existing PR link.
+  state.work[o.id] = W.updateWork(w, { aliases: [...(w.aliases || []), item.id], ...(item.kind === 'pr' && !w.links?.pr ? { links: { pr: item.url, branch: item.branch } } : {}) }, ctx);
+  state.work[o.id].updates.at(-1).text += ` ${item.ref} joined: ${o.why}.`;
+  return o.id;
+}
+
+export function openStore(path = ':memory:', opts = {}) {
   const db = new DatabaseSync(path);
   db.exec(`CREATE TABLE IF NOT EXISTS events (
     seq INTEGER PRIMARY KEY AUTOINCREMENT, event_id TEXT UNIQUE, at TEXT NOT NULL, by TEXT NOT NULL,
     kind TEXT NOT NULL, target TEXT, payload TEXT NOT NULL, ctx TEXT NOT NULL)`);
   const rows = () => db.prepare('SELECT * FROM events ORDER BY seq').all()
     .map(r => ({ ...r, payload: JSON.parse(r.payload), ctx: JSON.parse(r.ctx) }));
-  const replay = () => { const s = emptyState(); for (const r of rows()) fold(s, r); return s; };
+  const replay = () => { const s = emptyState(); for (const r of rows()) fold(s, r, opts); return s; };
   let state = replay();
 
   return {
@@ -103,7 +143,7 @@ export function openStore(path = ':memory:') {
       // ponytail: clones the whole state per command (3.9 ms measured on the 1.1 MB V1 state); fold into a scratch copy of the touched records if appends get hot.
       const next = structuredClone(state);
       const row = { seq: state.seq + 1, kind: cmd.kind, target: cmd.target || null, payload: structuredClone(cmd.payload === undefined ? {} : cmd.payload), ctx: observed };
-      const id = fold(next, row);
+      const id = fold(next, row, opts);
       const { lastInsertRowid } = db.prepare('INSERT INTO events (event_id, at, by, kind, target, payload, ctx) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(cmd.eventId || null, ctx.now, ctx.by, row.kind, row.target, JSON.stringify(row.payload), JSON.stringify(observed));
       next.seq = Number(lastInsertRowid);

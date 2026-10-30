@@ -572,6 +572,15 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Review requested at ${w.head}. Evidence: ${e.evidence}.`);
       break;
     }
+    case 'absorb': {
+      // A poller's placeholder for work another record already carries (its PR or task). Only before anyone started it.
+      if (!e.into || e.into === w.id) fail('absorb needs the record that carries the work.');
+      if (![...PRE_QUEUE, 'proposed'].includes(w.phase) || (w.assignments || []).length) fail(`${w.id} has started; it can't be absorbed into ${e.into}.`);
+      w.phase = 'cancelled';
+      w.completion = { absorbedInto: e.into, at: ctx.now, by: ctx.by };
+      note(w, ctx, `Absorbed into ${e.into}, which carries this work.`);
+      break;
+    }
     case 'relate': {
       // Two records for the same work (e.g. a Teamwork task and its PR-feedback record): linked, never merged.
       if (!e.to || e.to === w.id) fail('relate needs another record.');
