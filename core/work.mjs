@@ -37,7 +37,7 @@ export function trackOf(w, cfg = {}) {
 }
 // A dependency counts as finished once its work is through internal review.
 export const SATISFIES_DEPS = ['ready_for_human', 'awaiting_human_approval', 'done'];
-const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases'];
+const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'streamPin', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases'];
 // Phases a reconcile may record. Ready-for-review and done always go through their gates.
 const RECONCILABLE = ['intake', 'clarification', 'ready', 'queued', 'implementation', 'review'];
 

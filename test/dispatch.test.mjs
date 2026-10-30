@@ -4,8 +4,9 @@ import { autoDispatchPlan } from '../core/dispatch.mjs';
 
 const S1 = 'sup: stream-1 (support+sec)', S2 = 'sup: stream-conf-stack';
 const cfg = { supervisors: { [S1]: { areas: 'PED', match: ['position end date', 'support'] }, [S2]: { areas: 'ATS', match: ['ats', 'ashby'] } }, exclude: ['W-67'], mutationBranch: 'mutation' };
-// The server records a supervisor owner as the stream (ensureStream); fixtures mirror that.
-const w = (id, over = {}) => { const x = { id, title: 'Something', phase: 'ready', priority: 3, owner: S1, openQuestions: 0, openDeps: [], externalDeps: [], requests: [], assignments: [], links: {}, ...over }; return { stream: [S1, S2].includes(x.owner) ? x.owner : null, ...x }; };
+// The server records a supervisor owner as the stream (ensureStream); fixtures mirror that, pinned unless a test says otherwise.
+const w = (id, over = {}) => { const x = { id, title: 'Something', phase: 'ready', priority: 3, owner: S1, openQuestions: 0, openDeps: [], externalDeps: [], requests: [], assignments: [], links: {}, ...over }; const stream = [S1, S2].includes(x.owner) ? x.owner : null; return { stream, streamPin: stream ? { by: 'test' } : null, ...x }; };
+const loose = (id, over = {}) => w(id, { streamPin: null, ...over });
 const plan = (works, terminals = []) => Object.fromEntries(autoDispatchPlan(works, cfg, { terminals }).map(p => [p.id, p]));
 
 test('a ready, unblocked record with an idle stream dispatches; a queued one without a request gets one', () => {
@@ -36,11 +37,31 @@ test('questions, dependencies, external deps, holds, Mutation, trusted reviews a
     assert.deepEqual([p[id].action, re.test(p[id].reason)], [null, true], `${id}: ${p[id].reason}`);
 });
 
-test('an unowned record takes a stream only when exactly one stream matches its topic', () => {
-  const p = plan([w('W-20', { owner: null, title: 'Ashby send values' }), w('W-21', { owner: null, title: 'Support: Ashby position end date' }), w('W-22', { owner: null, title: 'Speed up seeds' })]);
-  assert.deepEqual([p['W-20'].action, p['W-20'].owner], ['queue', S2]);
-  assert.equal(p['W-21'].action, null); assert.match(p['W-21'].reason, /unrouted.*2 streams/);
-  assert.equal(p['W-22'].action, null); assert.match(p['W-22'].reason, /unrouted/);
+test('work no stream is bound to goes to the least-loaded free stream, whatever its topic', () => {
+  const p = plan([w('W-1', { phase: 'review' }), w('W-2', { phase: 'queued', requests: [{ type: 'dispatch', ack: { outcome: 'received' } }] }),
+    loose('W-20', { owner: null, title: 'Ashby send values' }), loose('W-21', { title: 'Position end date' })]);
+  assert.deepEqual([p['W-20'].action, p['W-20'].to, p['W-20'].owner], ['queue', S2, S2]);
+  assert.match(p['W-20'].reason, /least loaded/);
+  assert.deepEqual([p['W-21'].action, p['W-21'].to], ['queue', S1], 'S2 took W-20 this tick, so S1 is the free one');
+});
+
+test('a never-started record leaves a busy stream for a free one', () => {
+  const p = plan([w('W-1', { phase: 'implementation' }), loose('W-2', { phase: 'queued' })]);
+  assert.deepEqual([p['W-2'].action, p['W-2'].to, p['W-2'].owner], ['request', S2, S2]);
+});
+
+test('pinned, already-worked and same-branch records go to their own stream, not the free one', () => {
+  const worked = { assignments: [{ kind: 'implementation', status: 'done' }] };
+  const p = plan([w('W-1', { phase: 'implementation' }), w('W-2'), loose('W-3', worked),
+    loose('W-9', { phase: 'ready_for_human', ...worked }), loose('W-4', { owner: null, deps: ['W-9'] }), loose('W-5', { owner: null, related: [{ to: 'W-9', kind: 'same-work' }] })]);
+  for (const [id, why] of [['W-2', /pinned/], ['W-3', /already worked/], ['W-4', /W-9 shares/], ['W-5', /W-9 shares/]])
+    assert.deepEqual([p[id].action, /busy with W-1/.test(p[id].reason), why.test(p[id].reason)], [null, true, true], `${id}: ${p[id].reason}`);
+});
+
+test('when every stream is busy, unbound work waits', () => {
+  const p = plan([w('W-1', { phase: 'implementation' }), w('W-2', { phase: 'fixes', owner: S2 }), loose('W-3')]);
+  assert.equal(p['W-3'].action, null);
+  assert.match(p['W-3'].reason, /every stream is busy/);
 });
 
 test('a queued record already requested or assigned is left to its supervisor', () => {
