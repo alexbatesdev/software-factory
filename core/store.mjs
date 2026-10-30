@@ -6,7 +6,7 @@ import * as W from './work.mjs';
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
 const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver'];
 
-export const emptyState = () => ({ work: {}, questions: {}, notifications: {}, legacy: {}, nextWork: 1, seq: 0 });
+export const emptyState = () => ({ work: {}, questions: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, seq: 0 });
 
 // What the reducer needs to know about other records, computed from the fold so far.
 function derivedCtx(state, id) {
@@ -33,10 +33,25 @@ function importRow(state, target, payload) {
   if (payload === null) delete state[c][key]; else state[c][key] = payload;
 }
 
+// A message is addressed to a seat label and stays open until that seat acks it; a wake only says it exists.
+function foldMessage(state, { kind, target, payload, ctx }) {
+  if (kind === 'message') {
+    if (!payload.to || !payload.text) throw new Error('A message needs to and text.');
+    const id = `M-${state.nextMessage++}`;
+    state.messages[id] = { id, to: payload.to, from: ctx.by, work: payload.work || null, about: payload.about || {}, text: payload.text, at: ctx.now, ackedAt: null, ackedBy: null };
+    return id;
+  }
+  const m = state.messages[target] || (() => { throw new Error(`There is no message ${target}.`); })();
+  if (ctx.by !== m.to) throw new Error(`${target} is addressed to ${m.to}; only that seat acks it.`);
+  if (!m.ackedAt) state.messages[target] = { ...m, ackedAt: ctx.now, ackedBy: ctx.by, outcome: payload.outcome || 'received' };
+  return target;
+}
+
 /** Apply one logged row to state in place. Throws when the reducer refuses it. */
 export function fold(state, row) {
   const { kind, target: id, payload, ctx: observed } = row;
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
+  if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
   const ctx = id ? { ...observed, ...derivedCtx(state, id) } : observed;
   const cur = id && (state.work[id] || (() => { throw new Error(`There is no work item ${id}.`); })());
   let touched = id;

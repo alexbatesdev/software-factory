@@ -65,3 +65,13 @@ test("one record's question count never demotes another ready record", () => {
   s.append(ev(b, { type: 'note', text: 'x' }), ctx());
   assert.equal(s.state.work[a].phase, 'ready_for_human');
 });
+
+test('a message stays open until the seat it is addressed to acks it', () => {
+  const s = openStore();
+  const { id } = s.append({ kind: 'message', payload: { to: 'sup: stream-1', work: 'W-1', about: { requests: ['W-1/R1'] }, text: 'R1 is queued' } }, ctx({ by: 'board' }));
+  assert.equal(id, 'M-1');
+  assert.throws(() => s.append({ kind: 'ack_message', target: id }, ctx({ by: 'local-head' })), /only that seat/);
+  s.append({ kind: 'ack_message', target: id, payload: { outcome: 'received' } }, ctx({ by: 'sup: stream-1' }));
+  assert.equal(s.state.messages[id].ackedBy, 'sup: stream-1');
+  assert.deepEqual(s.replay(), s.state);
+});
