@@ -4,14 +4,16 @@ import { DatabaseSync } from 'node:sqlite';
 import * as W from './work.mjs';
 
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
-const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver', 'openQuestions'];
+const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver'];
 
-export const emptyState = () => ({ work: {}, nextWork: 1, seq: 0 });
+export const emptyState = () => ({ work: {}, questions: {}, notifications: {}, legacy: {}, nextWork: 1, seq: 0 });
 
 // What the reducer needs to know about other records, computed from the fold so far.
 function derivedCtx(state, id) {
   const rec = d => state.work[d];
+  const w = rec(id), keys = new Set([w?.source?.key, ...(w?.aliases || [])].filter(Boolean));
   return {
+    openQuestions: Object.values(state.questions).filter(q => q.status === 'open' && (q.work === id || keys.has(q.item))).length,
     openDeps: (rec(id)?.deps || []).filter(d => !W.SATISFIES_DEPS.includes(rec(d)?.phase)),
     depPhase: d => rec(d)?.phase,
     depWorkerDone: d => [...(rec(d)?.assignments || [])].reverse().find(a => a.kind !== 'review')?.status === 'done',
@@ -24,10 +26,18 @@ function create(state, fields, ctx) {
   return id;
 }
 
+// An imported record is V1's word for it, stored as is: nothing here re-normalizes it.
+function importRow(state, target, payload) {
+  if (target === 'legacy') { state.legacy = payload; state.nextWork = payload.nextWork ?? state.nextWork; return; }
+  const [c, key] = target.split('/');
+  if (payload === null) delete state[c][key]; else state[c][key] = payload;
+}
+
 /** Apply one logged row to state in place. Throws when the reducer refuses it. */
 export function fold(state, row) {
   const { kind, target: id, payload, ctx: observed } = row;
-  const ctx = id ? { ...observed, ...derivedCtx(state, id), openQuestions: observed.openQuestions ?? 0 } : observed;
+  if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
+  const ctx = id ? { ...observed, ...derivedCtx(state, id) } : observed;
   const cur = id && (state.work[id] || (() => { throw new Error(`There is no work item ${id}.`); })());
   let touched = id;
   switch (kind) {
@@ -75,8 +85,9 @@ export function openStore(path = ':memory:') {
       if (!ctx?.now || !ctx?.by) throw new Error('A command needs ctx.now and ctx.by.');
       if (cmd.eventId && db.prepare('SELECT seq FROM events WHERE event_id = ?').get(cmd.eventId)) return { id: cmd.target, duplicate: true };
       const observed = Object.fromEntries(OBSERVED.filter(k => ctx[k] !== undefined).map(k => [k, ctx[k]]));
+      // ponytail: clones the whole state per command (~5 ms at 1 MB); fold into a scratch copy of the touched records if appends get hot.
       const next = structuredClone(state);
-      const row = { seq: state.seq + 1, kind: cmd.kind, target: cmd.target || null, payload: cmd.payload ?? {}, ctx: observed };
+      const row = { seq: state.seq + 1, kind: cmd.kind, target: cmd.target || null, payload: structuredClone(cmd.payload === undefined ? {} : cmd.payload), ctx: observed };
       const id = fold(next, row);
       const { lastInsertRowid } = db.prepare('INSERT INTO events (event_id, at, by, kind, target, payload, ctx) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run(cmd.eventId || null, ctx.now, ctx.by, row.kind, row.target, JSON.stringify(row.payload), JSON.stringify(observed));

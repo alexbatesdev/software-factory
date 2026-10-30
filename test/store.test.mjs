@@ -8,6 +8,7 @@ import { openStore } from '../core/store.mjs';
 const ctx = (over = {}) => ({ now: '2026-10-30T12:00:00.000Z', by: 'test', ...over });
 const build = { kind: 'create', payload: { title: 'Fix the thing', kind: 'build', criteria: ['Thing is fixed'] } };
 const ev = (target, payload, eventId) => ({ kind: 'event', target, payload, eventId });
+const ask = (s, work) => s.append({ kind: 'import', target: `questions/TB-${work}`, payload: { title: 'Which?', status: 'open', work } }, ctx());
 
 test('a reopened store replays to the state it decided, including spawned records', () => {
   const path = join(mkdtempSync(join(tmpdir(), 'sf-store-')), 'factory.db');
@@ -36,9 +37,10 @@ test('a repeated event id is applied once', () => {
 test('a refused command writes nothing', () => {
   const s = openStore();
   const { id } = s.append(build, ctx());
+  ask(s, id);
   const before = structuredClone(s.state);
-  assert.throws(() => s.append(ev(id, { type: 'transition', to: 'ready' }), ctx({ openQuestions: 1 })), /open question/);
-  assert.equal(s.rows().length, 1);
+  assert.throws(() => s.append(ev(id, { type: 'transition', to: 'ready' }), ctx()), /open question/);
+  assert.equal(s.rows().length, 2);
   assert.deepEqual(s.state, before);
 });
 
@@ -59,6 +61,7 @@ test("one record's question count never demotes another ready record", () => {
   if (s.state.work[a].phase !== 'ready_for_human') s.append(ev(a, { type: 'mark_ready' }), ctx());
   assert.equal(s.state.work[a].phase, 'ready_for_human');
   const b = s.append(build, ctx()).id;
-  s.append(ev(b, { type: 'note', text: 'x' }), ctx({ openQuestions: 1 }));
+  ask(s, b);
+  s.append(ev(b, { type: 'note', text: 'x' }), ctx());
   assert.equal(s.state.work[a].phase, 'ready_for_human');
 });
