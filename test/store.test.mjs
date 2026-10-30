@@ -49,3 +49,16 @@ test('replay uses the observations stored on the row, not live data', () => {
   assert.deepEqual(s.rows()[1].ctx, { now: '2026-10-30T12:00:00.000Z', by: 'test', standingWaiver: { by: 'Alex' } });
   assert.deepEqual(s.replay(), s.state);
 });
+
+test("one record's question count never demotes another ready record", () => {
+  const s = openStore();
+  const a = s.append(build, ctx()).id;
+  for (const p of [{ type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' }, { type: 'transition', to: 'implementation', owner: 'sbx: stream-1' },
+    { type: 'implementation_done', head: 'aaa1111' }, { type: 'review', head: 'aaa1111', by: 'reviewer', result: 'clean' },
+    { type: 'check', name: 'suite', head: 'aaa1111', result: 'pass' }, { type: 'criterion', criterionId: 'C1', accepted: true, head: 'aaa1111' }]) s.append(ev(a, p), ctx());
+  if (s.state.work[a].phase !== 'ready_for_human') s.append(ev(a, { type: 'mark_ready' }), ctx());
+  assert.equal(s.state.work[a].phase, 'ready_for_human');
+  const b = s.append(build, ctx()).id;
+  s.append(ev(b, { type: 'note', text: 'x' }), ctx({ openQuestions: 1 }));
+  assert.equal(s.state.work[a].phase, 'ready_for_human');
+});

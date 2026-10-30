@@ -44,9 +44,9 @@ export function fold(state, row) {
     case 'sync_intake': state.work[id] = W.syncIntake(cur, payload); break;
     default: throw new Error(`Unknown command kind "${kind}".`);
   }
-  // Ready labels drop as soon as a dependency regresses, not only on the item's own events.
+  // Ready labels drop as soon as a dependency regresses, not only on the item's own events. Never pass on this row's observations.
   for (const [wid, w] of Object.entries(state.work)) {
-    if (['ready_for_human', 'awaiting_human_approval'].includes(w.phase)) state.work[wid] = W.normalize(w, { ...ctx, ...derivedCtx(state, wid) });
+    if (['ready_for_human', 'awaiting_human_approval'].includes(w.phase)) state.work[wid] = W.normalize(w, { now: observed.now, by: 'board', ...derivedCtx(state, wid) });
   }
   state.seq = row.seq;
   return touched;
