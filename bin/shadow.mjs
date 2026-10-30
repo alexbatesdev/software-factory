@@ -22,7 +22,8 @@ import { list as readFleet } from '../fleet/herdr.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const V1_STATE = join(homedir(), 'Code/triage-board/state.json');
-const OUT = join(ROOT, 'data/shadow');
+// Each run gets its own folder, so a run never inherits an earlier one's log.
+const OUT = join(ROOT, 'data/shadow', new Date().toISOString().slice(0, 16).replace(/[-:]/g, ''));
 mkdirSync(OUT, { recursive: true });
 const config = JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8'));
 const supervisors = Object.keys(config.routing.supervisors);

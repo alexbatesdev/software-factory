@@ -32,8 +32,9 @@ function create(state, fields, ctx) {
 
 // An imported record is V1's word for it, stored as is: nothing here re-normalizes it.
 function importRow(state, target, payload) {
-  if (target === 'legacy') { state.legacy = payload; state.nextWork = payload.nextWork ?? state.nextWork; state.nextQuestion = payload.nextQuestion ?? state.nextQuestion; return; }
   const [c, key] = target.split('/');
+  if (c === 'legacy' && key === 'nextWork') state.nextWork = payload ?? state.nextWork;
+  if (c === 'legacy' && key === 'nextQuestion') state.nextQuestion = payload ?? state.nextQuestion;
   if (payload === null) delete state[c][key]; else state[c][key] = payload;
 }
 

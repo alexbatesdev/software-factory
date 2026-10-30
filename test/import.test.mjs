@@ -39,3 +39,12 @@ test('the live V1 state.json round-trips', { skip: !existsSync(live) && 'no V1 b
   importAll(s, real);
   assert.deepEqual(exportV1(s.replay()), real);
 });
+
+test("a change to one of V1's other keys re-imports that key alone", () => {
+  const s = openStore();
+  importAll(s, { ...v1(), notifier: { lastCheck: { at: '1' } } });
+  const next = { ...v1(), notifier: { lastCheck: { at: '2' } } };
+  assert.deepEqual(importCommands(next, s.state).map(c => c.target), ['legacy/notifier']);
+  importAll(s, next);
+  assert.deepEqual(exportV1(s.replay()), next);
+});

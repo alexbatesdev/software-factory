@@ -10,8 +10,9 @@ export function importCommands(v1, state) {
     for (const [key, rec] of Object.entries(v1[c] || {})) if (!same(state[c][key], rec)) cmds.push({ kind: 'import', target: `${c}/${key}`, payload: rec });
     for (const key of Object.keys(state[c])) if (!(key in (v1[c] || {}))) cmds.push({ kind: 'import', target: `${c}/${key}`, payload: null });
   }
-  const legacy = Object.fromEntries(Object.entries(v1).filter(([k]) => !COLLECTIONS.includes(k)));
-  if (!same(state.legacy, legacy)) cmds.push({ kind: 'import', target: 'legacy', payload: legacy });
+  // Every other top-level key is its own row: V1 rewrites its notifier clock every tick, and that mustn't re-import the rest.
+  for (const [key, val] of Object.entries(v1)) if (!COLLECTIONS.includes(key) && !same(state.legacy[key], val)) cmds.push({ kind: 'import', target: `legacy/${key}`, payload: val });
+  for (const key of Object.keys(state.legacy)) if (!(key in v1)) cmds.push({ kind: 'import', target: `legacy/${key}`, payload: null });
   return cmds;
 }
 
