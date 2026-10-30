@@ -75,3 +75,11 @@ test('a message stays open until the seat it is addressed to acks it', () => {
   assert.equal(s.state.messages[id].ackedBy, 'sup: stream-1');
   assert.deepEqual(s.replay(), s.state);
 });
+
+test('commands appended together land together or not at all', () => {
+  const s = openStore();
+  const { id } = s.append(build, ctx());
+  assert.throws(() => s.appendAll([ev(id, { type: 'note', text: 'first' }), ev(id, { type: 'transition', to: 'done' })], ctx()), /done/);
+  assert.equal(s.rows().length, 1);
+  assert.equal(s.state.work[id].updates.length, 1);
+});

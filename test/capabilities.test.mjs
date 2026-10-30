@@ -28,3 +28,8 @@ test('every role file lists exactly the actions this table grants it', () => {
     assert.deepEqual(named.sort(), [...actions].sort(), role);
   }
 });
+
+test('only local-head pins a stream', () => {
+  assert.match(refusal('board-lead', 'set_owner', { pin: 'Alex' }), /only local-head pins/);
+  assert.equal(refusal('board-lead', 'set_owner', {}), null);
+});

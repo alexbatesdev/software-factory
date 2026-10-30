@@ -10,7 +10,11 @@ export const ROLES = {
 };
 
 // Narrower grants inside an action, keyed role → action → check on the command's arguments.
-const LIMITS = { 'board-lead': { assign: a => a.status === 'queued' || 'the board lead only queues work' } };
+const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
+const LIMITS = {
+  'board-lead': { assign: a => a.status === 'queued' || 'the board lead only queues work', set_owner: noPin },
+  'questions-router': { set_owner: noPin },
+};
 
 /** Why `role` may not take `action` with these arguments; null when it may. */
 export function refusal(role, action, args = {}) {

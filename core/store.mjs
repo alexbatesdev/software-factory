@@ -5,11 +5,12 @@ import * as W from './work.mjs';
 import { parseAcs } from './derive.mjs';
 import { inferStream } from './notifier.mjs';
 import { sourceIndex, ownerOf, claimPr, refresh } from './correlate.mjs';
+import { foldQuestion } from './questions.mjs';
 
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
 const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver'];
 
-export const emptyState = () => ({ work: {}, questions: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, seq: 0 });
+export const emptyState = () => ({ work: {}, questions: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, nextQuestion: 1, seq: 0 });
 
 // What the reducer needs to know about other records, computed from the fold so far.
 function derivedCtx(state, id) {
@@ -31,7 +32,7 @@ function create(state, fields, ctx) {
 
 // An imported record is V1's word for it, stored as is: nothing here re-normalizes it.
 function importRow(state, target, payload) {
-  if (target === 'legacy') { state.legacy = payload; state.nextWork = payload.nextWork ?? state.nextWork; return; }
+  if (target === 'legacy') { state.legacy = payload; state.nextWork = payload.nextWork ?? state.nextWork; state.nextQuestion = payload.nextQuestion ?? state.nextQuestion; return; }
   const [c, key] = target.split('/');
   if (payload === null) delete state[c][key]; else state[c][key] = payload;
 }
@@ -55,6 +56,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   const { kind, target: id, payload, ctx: observed } = row;
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
+  if (['ask', 'answer', 'route', 'question_ack'].includes(kind)) { const q = foldQuestion(state, row); finish(state, row, observed, null, supervisors); return q; }
   if (kind === 'observe_source') { const t = observeSource(state, payload, observed); finish(state, row, observed, t, supervisors); return t; }
   const ctx = id ? { ...observed, ...derivedCtx(state, id) } : observed;
   const cur = id && (state.work[id] || (() => { throw new Error(`There is no work item ${id}.`); })());
@@ -132,24 +134,32 @@ export function openStore(path = ':memory:', opts = {}) {
     rows,
     replay,
     /**
-     * Decide and record one command. A refused command writes nothing; a repeated eventId is applied once.
-     * @param cmd {kind, target?, payload, eventId?} @param ctx {now, by, ...observations}
-     * @returns {{id, seq, duplicate?}}
+     * Decide and record commands, all or none: a refused command writes nothing. A repeated eventId is applied once.
+     * Payloads round-trip through JSON so the live state is exactly what a replay rebuilds.
+     * @param cmds [{kind, target?, payload, eventId?}] @param ctx {now, by, ...observations}
+     * @returns [{id, seq, duplicate?}]
      */
-    append(cmd, ctx) {
+    appendAll(cmds, ctx) {
       if (!ctx?.now || !ctx?.by) throw new Error('A command needs ctx.now and ctx.by.');
-      if (cmd.eventId && db.prepare('SELECT seq FROM events WHERE event_id = ?').get(cmd.eventId)) return { id: cmd.target, duplicate: true };
       const observed = Object.fromEntries(OBSERVED.filter(k => ctx[k] !== undefined).map(k => [k, ctx[k]]));
-      // ponytail: clones the whole state per command (3.9 ms measured on the 1.1 MB V1 state); fold into a scratch copy of the touched records if appends get hot.
-      const next = structuredClone(state);
-      const row = { seq: state.seq + 1, kind: cmd.kind, target: cmd.target || null, payload: structuredClone(cmd.payload === undefined ? {} : cmd.payload), ctx: observed };
-      const id = fold(next, row, opts);
-      const { lastInsertRowid } = db.prepare('INSERT INTO events (event_id, at, by, kind, target, payload, ctx) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .run(cmd.eventId || null, ctx.now, ctx.by, row.kind, row.target, JSON.stringify(row.payload), JSON.stringify(observed));
-      next.seq = Number(lastInsertRowid);
+      // ponytail: clones the whole state per call (3.9 ms measured on the 1.1 MB V1 state); fold into a scratch copy of the touched records if appends get hot.
+      const next = structuredClone(state), out = [], rowsToWrite = [];
+      for (const cmd of cmds) {
+        if (cmd.eventId && db.prepare('SELECT seq FROM events WHERE event_id = ?').get(cmd.eventId)) { out.push({ id: cmd.target, duplicate: true }); continue; }
+        const row = { seq: next.seq + 1, kind: cmd.kind, target: cmd.target || null, payload: JSON.parse(JSON.stringify(cmd.payload === undefined ? {} : cmd.payload)), ctx: observed };
+        out.push({ id: fold(next, row, opts), seq: row.seq });
+        rowsToWrite.push([cmd.eventId || null, row]);
+      }
+      db.exec('BEGIN');
+      try {
+        for (const [eventId, row] of rowsToWrite) db.prepare('INSERT INTO events (seq, event_id, at, by, kind, target, payload, ctx) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+          .run(row.seq, eventId, ctx.now, ctx.by, row.kind, row.target, JSON.stringify(row.payload), JSON.stringify(observed));
+        db.exec('COMMIT');
+      } catch (e) { db.exec('ROLLBACK'); throw e; }
       state = next;
-      return { id, seq: next.seq };
+      return out;
     },
+    append(cmd, ctx) { return this.appendAll([cmd], ctx)[0]; },
     close: () => db.close(),
   };
 }
