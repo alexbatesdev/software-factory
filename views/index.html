@@ -16,7 +16,7 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 14px; margin: 0 0 8px; } .mut
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; align-items: start; }
 .col { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; }
 .card { border-top: 1px solid var(--line); padding: 8px 0; } .card:first-of-type { border-top: 0; }
-.card .t { font-weight: 600; overflow-wrap: anywhere; } .card .w { font-size: 13px; } .card .w.me { color: var(--you); font-weight: 600; }
+.card .t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; } .card .w { font-size: 13px; } .card .w.me { color: var(--you); font-weight: 600; }
 a { color: inherit; } .seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
 details summary { cursor: pointer; }
 </style>
@@ -30,7 +30,8 @@ details summary { cursor: pointer; }
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 function cardEl(c) {
   const d = el('div', 'card');
-  d.append(el('div', 't', `${c.id} · ${c.title}`), el('div', 'mute', [c.label, c.stream].filter(Boolean).join(' · ')));
+  const t = el('div', 't', `${c.id} · ${c.title}`); t.title = c.title;
+  d.append(t, el('div', 'mute', [c.label, c.stream].filter(Boolean).join(' · ')));
   if (c.waiting) d.append(el('div', 'w' + (c.waiting.who === 'you' ? ' me' : ''), c.waiting.text));
   if (c.pr) { const a = el('a', 'mute', `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; d.append(a); }
   return d;
