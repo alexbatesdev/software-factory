@@ -22,6 +22,8 @@ test('each open request is messaged to its stream once, and never again after V1
   assert.deepEqual(plan(s).cmds, []);
   const v1 = store({ work: { 'W-1': work() }, notifications: { 'N-1': { status: 'submitted', requests: ['W-1/R1'] } } });
   assert.deepEqual(plan(v1).cmds, [], 'a V1 notice counts as told');
+  const shadow = store({ work: { 'W-1': work() }, notifications: { 'N-1': { status: 'submitted', at: '2026-10-31', requests: ['W-1/R1'] } } });
+  assert.equal(inboxCommands(shadow.state, { ...cfg, v1Before: '2026-10-30' }).cmds.length, 1, 'shadow decides for itself after it started');
 });
 
 test("an answer goes to the router's pick, else a seat that asked, else the record's stream, else the router", () => {

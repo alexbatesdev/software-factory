@@ -2,12 +2,15 @@
 // Pure. A message is created once per subject; waking the seat is the Wake port's job, not this one's.
 import { eligibleRequests, planWorkerStops, planIdleQueues, routeOf, PREFIX } from './notifier.mjs';
 
-/** Subjects already told: V2 messages, and V1 notifications imported before cutover (so nobody is told twice). */
-export function toldKeys(state) {
+/**
+ * Subjects already told: V2 messages, and imported V1 notifications (so cutover tells nobody twice).
+ * @param v1Before only V1 notices sent before this time count; shadow mode passes its start so it decides independently.
+ */
+export function toldKeys(state, v1Before = null) {
   const told = new Set();
   for (const m of Object.values(state.messages)) for (const [k, v] of Object.entries(m.about || {})) for (const x of [v].flat()) told.add(`${k}:${x}`);
   for (const n of Object.values(state.notifications)) {
-    if (n.status !== 'submitted') continue;
+    if (n.status !== 'submitted' || v1Before && n.at >= v1Before) continue;
     for (const r of n.requests || []) told.add(`requests:${r}`);
     for (const a of n.answers || []) told.add(`answers:${a}`);
     if (n.workerStop) told.add(`workerStop:${n.workerStop}`);
@@ -20,12 +23,12 @@ const msg = (to, work, about, text) => ({ kind: 'message', payload: { to, work, 
 const quote = t => `"${String(t).replace(/["\n]/g, "'").slice(0, 60)}"`;
 
 /**
- * @param cfg {supervisors, seats: labels that exist, router, cutoff, answersSince}
+ * @param cfg {supervisors, seats: labels that exist, router, cutoff, answersSince, v1Before}
  * @param fleet {units, now, watches: {workerStops, idleQueues}} or null when the fleet couldn't be read
  * @returns {{cmds, watches}}
  */
 export function inboxCommands(state, cfg, fleet = null) {
-  const told = toldKeys(state), cmds = [];
+  const told = toldKeys(state, cfg.v1Before), cmds = [];
   for (const e of eligibleRequests(state.work, cfg.cutoff, cfg.supervisors)) {
     if (!e.to || told.has(`requests:${e.key}`)) continue;
     cmds.push(msg(e.to, e.work, { requests: e.key }, `${e.key} ${e.type}${e.synthetic ? ' [SYNTHETIC]' : ''} ${quote(e.title)}: read the record and handle it per your role; ack the request when you have.`));
