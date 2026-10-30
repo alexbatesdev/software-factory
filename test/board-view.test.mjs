@@ -63,3 +63,13 @@ test('a worker-stop notice clears once the assignment moves on, and the newest s
   s.append({ kind: 'event', target: 'W-1', payload: { type: 'progress', assignmentId: a.id, expectedVersion: a.version, stage: 'working', text: 'still going' } }, { now: '2026-10-30T22:10:00.000Z', by: S1 });
   assert.doesNotMatch(card(s, 'W-1').waiting?.text || '', /Worker finished/);
 });
+
+test("a record with no stream never takes another pane's prompt as its own", () => {
+  const s = openStore(':memory:', { supervisors: [S1] });
+  s.append({ kind: 'create', payload: { title: 'Mutation run' } }, ctx());
+  s.appendAll([...['ready', 'queued'].map(to => ({ kind: 'event', target: 'W-1', payload: { type: 'transition', to } })),
+    { kind: 'event', target: 'W-1', payload: { type: 'assign', assignmentId: 'R2', kind: 'implementation', status: 'started', owner: 'mutation tester', evidence: 'x' } }], ctx());
+  const orphan = { id: 'u9', supervisor: null, worker: { label: 'sbx: orphan', status: 'blocked' } };
+  const c = boardView(s.state, { supervisors: [S1], units: [orphan] }).find(x => x.id === 'W-1');
+  assert.doesNotMatch(c.waiting?.text || '', /waiting at a prompt/);
+});

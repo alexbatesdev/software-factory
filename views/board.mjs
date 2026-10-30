@@ -33,7 +33,7 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     const w = q.work || idx[q.item];
     if (w) byWork.set(w, [...(byWork.get(w) || []), { id, ...q }]);
   }
-  const unitOf = w => units.find(x => x.supervisor?.label === w.stream);
+  const unitOf = w => w.stream ? units.find(x => x.supervisor?.label === w.stream) : undefined;
   const hhmm = ms => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
   const queueHold = w => {
     const u = w.stream && (w.assignments || []).some(a => a.status === 'queued') && unitOf(w);
