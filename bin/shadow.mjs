@@ -88,7 +88,7 @@ async function teamworkTick() {
 async function fleetTick() { try { fleet = await readFleet(store.state.legacy.pairs); } catch (e) { log(`fleet: ${e.message}`); } }
 
 // The page and read API, read-only: http://127.0.0.1:4848
-http.createServer(createApi({ store, config, readOnly: true, observed: () => ({ units: fleet?.units || [], prs: openPrs }) })).listen(4848, '127.0.0.1');
+http.createServer(createApi({ store, config, readOnly: true, observed: () => ({ units: fleet?.units || [], prs: openPrs, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000 }) })).listen(4848, '127.0.0.1');
 
 const every = (ms, fn) => { const run = () => fn().catch(e => log(e.message)); run(); setInterval(run, ms); };
 log(`shadow mode: V1 ${V1_STATE} → ${OUT}`);

@@ -33,7 +33,7 @@ function cardEl(c) {
   const t = el('div', 't', `${c.id} · ${c.title}`); t.title = c.title;
   d.append(t, el('div', 'mute', [c.label, c.stream].filter(Boolean).join(' · ')));
   if (c.waiting) d.append(el('div', 'w' + (c.waiting.who === 'you' ? ' me' : ''), c.waiting.text));
-  if (c.pr) { const a = el('a', 'mute', `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; d.append(a); }
+  if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', 'mute', `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; d.append(a); }
   return d;
 }
 async function render() {

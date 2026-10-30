@@ -27,3 +27,39 @@ test("a worker-stop message shows on the record until the supervisor acts", () =
   s.append({ kind: 'message', payload: { to: S1, work: 'W-1', about: { workerStop: `W-1/${a.id}` }, text: 'worker stopped' } }, ctx('board'));
   assert.match(card(s, 'W-1').waiting.text, new RegExp(`Worker finished; ${S1} notified`));
 });
+
+const started = () => {
+  const s = openStore(':memory:', { supervisors: [S1] });
+  s.append({ kind: 'create', payload: { title: 'T' } }, ctx());
+  s.appendAll([{ kind: 'update', target: 'W-1', payload: { owner: S1 } }, ...['ready', 'queued'].map(to => ({ kind: 'event', target: 'W-1', payload: { type: 'transition', to } })),
+    { kind: 'event', target: 'W-1', payload: { type: 'assign', assignmentId: 'R2', kind: 'implementation', status: 'started', owner: S1, evidence: 'brief' } }], ctx());
+  return s;
+};
+const unit = (sup = 'idle', worker = 'working') => ({ id: 'u1', supervisor: { label: S1, status: sup }, worker: { label: 'sbx: stream-1', status: worker } });
+
+test("a stream pane stuck at a prompt puts the record in front of Alex", () => {
+  const s = started();
+  const c = boardView(s.state, { supervisors: [S1], units: [unit('idle', 'blocked')] }).find(x => x.id === 'W-1');
+  assert.match(c.waiting.text, /sbx: stream-1 is waiting at a prompt/);
+  assert.equal(c.needs.me, true);
+});
+
+test('queued work on a free stream says when the board will wake its supervisor', () => {
+  const s = openStore(':memory:', { supervisors: [S1] });
+  s.append({ kind: 'create', payload: { title: 'T' } }, ctx());
+  s.appendAll([{ kind: 'update', target: 'W-1', payload: { owner: S1 } }, ...['ready', 'queued'].map(to => ({ kind: 'event', target: 'W-1', payload: { type: 'transition', to } })),
+    { kind: 'event', target: 'W-1', payload: { type: 'assign', assignmentId: 'R2', kind: 'implementation', status: 'queued', owner: S1, evidence: 'brief' } }], ctx());
+  const since = new Date('2026-10-30T22:00:00').getTime();
+  const c = boardView(s.state, { supervisors: [S1], units: [unit('idle', 'idle')], idleSince: { u1: since }, graceMs: 300000 }).find(x => x.id === 'W-1');
+  assert.match(c.waiting.text, /stream free; the board wakes sup: stream-1 at 22:05/);
+});
+
+test('a worker-stop notice clears once the assignment moves on, and the newest stop wins', () => {
+  const s = started();
+  const a = s.state.work['W-1'].assignments.find(x => x.status === 'started');
+  s.append({ kind: 'message', payload: { to: S1, work: 'W-1', about: { workerStop: 'W-1/R1' }, text: 'old stop' } }, ctx('board'));
+  s.append({ kind: 'message', payload: { to: S1, work: 'W-1', about: { workerStop: `W-1/${a.id}` }, text: 'stop' } }, ctx('board'));
+  assert.match(card(s, 'W-1').waiting.text, /Worker finished/, 'an older, stale stop message does not hide the current one');
+  s.append({ kind: 'event', target: 'W-1', payload: { type: 'progress', assignmentId: a.id, expectedVersion: a.version, stage: 'working', text: 'still going' } }, { now: '2026-10-30T22:10:00.000Z', by: S1 });
+  assert.doesNotMatch(card(s, 'W-1').waiting?.text || '', /Worker finished/);
+});

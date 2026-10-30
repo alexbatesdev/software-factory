@@ -12,26 +12,36 @@ function withDelivery(state, w, questions) {
     const m = open.find(x => [x.about?.answers].flat().includes(q.id));
     return m && q.status === 'answered' && !q.answer?.ack ? { ...q, answer: { ...q.answer, sentTo: m.to, ackAsked: true } } : q;
   });
-  const stop = open.find(m => m.work === w.id && m.about?.workerStop);
-  const a = stop && (w.assignments || []).find(x => `${w.id}/${x.id}` === stop.about.workerStop);
-  return { questions: qs, workerStop: a ? { to: stop.to, assignment: a.id, version: a.version, notifiedAt: stop.at } : w.workerStop };
+  // The newest stop notice for a still-started assignment that hasn't changed since; any later report clears it (as in V1).
+  const stops = open.filter(m => m.work === w.id && m.about?.workerStop).reverse();
+  for (const m of stops) {
+    const a = (w.assignments || []).find(x => `${w.id}/${x.id}` === m.about.workerStop);
+    if (a?.status === 'started' && !((a.history || []).at(-1)?.at > m.at)) return { questions: qs, workerStop: { to: m.to, assignment: a.id, version: a.version, notifiedAt: m.at } };
+  }
+  return { questions: qs, workerStop: w.workerStop };
 }
 
 /**
- * @param opts {supervisors, units: fleet units (for "queued behind" holds), prs: Map(url → {state, isDraft}) from the last GitHub read}
+ * @param opts {supervisors, units: fleet units, prs: Map(url → {state, isDraft}) from the last GitHub read,
+ *   idleSince: {unitId: ms} when each free stream's idle-queue wait began, graceMs before the board wakes it}
  * @returns [{id, title, phase, phaseLabel, stream, pr, label, waiting, category, needs, updatedAt}] for every record
  */
-export function boardView(state, { supervisors = [], units = [], prs = new Map() } = {}) {
+export function boardView(state, { supervisors = [], units = [], prs = new Map(), idleSince = {}, graceMs = 300000 } = {}) {
   const idx = Object.fromEntries(sourceIndex(state)), g = groupIndex(state.work, idx);
   const byWork = new Map();
   for (const [id, q] of Object.entries(state.questions)) {
     const w = q.work || idx[q.item];
     if (w) byWork.set(w, [...(byWork.get(w) || []), { id, ...q }]);
   }
+  const unitOf = w => units.find(x => x.supervisor?.label === w.stream);
+  const hhmm = ms => { const t = new Date(ms); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
   const queueHold = w => {
-    const u = w.stream && (w.assignments || []).some(a => a.status === 'queued') && units.find(x => x.supervisor?.label === w.stream);
-    return u ? streamHold(u, state.work) : null;
+    const u = w.stream && (w.assignments || []).some(a => a.status === 'queued') && unitOf(w);
+    if (!u) return null;
+    return streamHold(u, state.work) || (idleSince[u.id] ? `stream free; the board wakes ${w.stream} at ${hhmm(idleSince[u.id] + graceMs)}` : null);
   };
+  // A stream pane parked at a prompt while its record runs: only a person can answer it.
+  const paneBlocked = w => (w.assignments || []).some(a => a.status === 'started') && [unitOf(w)?.supervisor, unitOf(w)?.worker].find(a => a?.status === 'blocked')?.label || null;
   const inputs = w => {
     const { questions, workerStop } = withDelivery(state, w, byWork.get(w.id) || []);
     const rec = state.legacy.items?.[w.source?.key] || {};
@@ -41,7 +51,7 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
       route: routeOf(w, supervisors), awaitingReview: awaitingReview(w), phaseRequest: W.phaseRequest(w),
       currentAssignment: [...(w.assignments || [])].reverse().find(a => W.LIVE_ASSIGNMENT.includes(a.status)) || null,
       liveAssignments: (w.assignments || []).filter(a => W.LIVE_ASSIGNMENT.includes(a.status)),
-      intakeHold: rec.intakeHold || null, intakeHoldHistory: rec.intakeHoldHistory || [], paneBlocked: null, queueHold: queueHold(w),
+      intakeHold: rec.intakeHold || null, intakeHoldHistory: rec.intakeHoldHistory || [], paneBlocked: paneBlocked(w), queueHold: queueHold(w),
     };
     return [base, { questions, rec, held: !!rec.intakeHold }];
   };
