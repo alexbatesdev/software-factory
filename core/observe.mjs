@@ -1,0 +1,64 @@
+// Turning source reads into observations and, where they change a record, into commands. Pure: callers do the I/O and
+// decide whether to append (live) or only log (shadow).
+import * as W from './work.mjs';
+
+const stripHtml = s => String(s || '').replace(/<br\s*\/?>|<\/p>|<\/li>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
+
+export const prUrlKey = (u, owner) => { const m = String(u || '').match(new RegExp(`^https://github\\.com/${owner}/([\\w.-]+)/pull/(\\d+)(?:[/?#]|$)`)); return m ? `${m[1]}:${m[2]}` : null; };
+export const recordPrKey = (w, owner) => w.source?.type === 'pr' ? w.source.key.replace(/-(\d+)$/, ':$1') : prUrlKey(w.links?.pr, owner);
+
+/**
+ * threads.sh output lines → {prs: Map(id → PR item), heads: Map(repo:num → {sha, isDraft})}.
+ * Every PR yields a head; only Alex's own open PRs (`own`), or any PR with threads when `own` is null, become items.
+ */
+export function projectPrs(lines, own = null) {
+  const prs = new Map(), heads = new Map();
+  for (const line of lines) {
+    const pr = typeof line === 'string' ? JSON.parse(line) : line;
+    heads.set(`${pr.repo}:${pr.number}`, { sha: pr.headRefOid, isDraft: pr.isDraft });
+    if ((own && !own.has(`${pr.repo}:${pr.number}`)) || (!own && !pr.threads.length)) continue;
+    const id = `${pr.repo}-${pr.number}`;
+    prs.set(id, {
+      id, kind: 'pr', repo: pr.repo, number: pr.number, ref: `${pr.repo}#${pr.number}`, title: pr.title, url: pr.url,
+      base: pr.baseRefName, branch: pr.headRefName, head: pr.headRefOid, isDraft: !!pr.isDraft, noFeedback: !pr.threads.length,
+      threads: { human: pr.threads.filter(t => !t.bot).length, bot: pr.threads.filter(t => t.bot).length },
+      threadKey: pr.threads.map(t => t.id).sort().join(','), threadList: pr.threads,
+    });
+  }
+  return { prs, heads };
+}
+
+/** Projected Teamwork tasks → Map(tw-id → task item). An epic (undated, top-level, with subtasks listed) is not work. */
+export function projectTasks(tasks, site) {
+  const parents = new Set(tasks.map(t => t.parentTaskId).filter(Boolean));
+  const out = new Map();
+  for (const t of tasks) {
+    if (!t.dueDate && !t.parentTaskId && parents.has(t.id)) continue;
+    out.set(`tw-${t.id}`, {
+      id: `tw-${t.id}`, kind: 'task', ref: String(t.id), title: t.name, status: t.status, due: t.dueDate,
+      url: `https://${String(site || 'teamwork.invalid').replace(/^https?:\/\//, '')}/app/tasks/${t.id}`,
+      description: stripHtml(t.description), parentTaskId: t.parentTaskId, updatedAt: t.updatedAt,
+    });
+  }
+  return out;
+}
+
+const sansCheckTime = w => JSON.stringify({ ...w, headVerified: w.headVerified && { ...w.headVerified, at: null } });
+
+/**
+ * observe_head / unverify_head commands for live records whose PR head GitHub just reported (or no longer shows).
+ * A poll that only re-confirms the same head yields nothing, so the log records changes, not polls.
+ */
+export function headCommands(state, heads, { owner, now, standingWaiver }) {
+  const cmds = [];
+  for (const w of Object.values(state.work)) {
+    const key = recordPrKey(w, owner);
+    if (!key || W.TERMINAL.includes(w.phase)) continue;
+    const h = heads.get(key);
+    const cmd = h ? { kind: 'observe_head', target: w.id, payload: { sha: h.sha, via: 'github', isDraft: h.isDraft } } : { kind: 'unverify_head', target: w.id, payload: {} };
+    const ctx = { now, by: 'github', ...(h ? { standingWaiver } : {}) };
+    const after = h ? W.observeHead(w, cmd.payload, ctx) : W.unverifyHead(w, ctx);
+    if (sansCheckTime(after) !== sansCheckTime(w)) cmds.push({ ...cmd, ctx });
+  }
+  return cmds;
+}
