@@ -1,4 +1,4 @@
-import { TERMINAL as TERMINAL_PHASES, REVIEWING } from './work.mjs';
+import { TERMINAL as TERMINAL_PHASES, REVIEWING, queueOrder } from './work.mjs';
 // Automatic request pickup: decide which board requests each stream supervisor should hear about, and when.
 // Pure functions; the server persists notification records and owns the transport.
 
@@ -134,7 +134,7 @@ export function planIdleQueues({ units, works, watch = {}, sent = {}, now, grace
     const to = u.supervisor?.label;
     if (!supervisors.includes(to) || streamHold(u, works)) continue;
     const mine = Object.values(works).flatMap(r => r.stream === to ? (r.assignments || []).map(a => [r, a]) : []);
-    const q = mine.filter(([, a]) => a.status === 'queued').sort(([r1], [r2]) => Number(r1.id.slice(2)) - Number(r2.id.slice(2)))
+    const q = mine.filter(([, a]) => a.status === 'queued').sort(([r1], [r2]) => queueOrder(r1, r2))
       .map(([r, a]) => ({ to, work: r.id, assignment: a.id, kind: a.kind, key: `${r.id}/${a.id}/v${a.version ?? 1}` })).find(d => !sent[d.key]);
     if (!q) continue;
     next[u.id] = watch[u.id] ?? now;

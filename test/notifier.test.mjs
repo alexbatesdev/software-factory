@@ -134,3 +134,11 @@ test('a queued assignment says what holds its stream: started work, a busy pane,
   assert.match(streamHold({ ...u, worker: { label: 'sbx: s1', status: 'working' } }, { 'W-71': works['W-71'] }), /sbx: s1 is working/);
   assert.equal(streamHold(u, { 'W-71': works['W-71'] }), null);
 });
+
+test('a priority record queued on a free stream starts before older queued work', async () => {
+  const { planIdleQueues } = await import('../core/notifier.mjs');
+  const S = 'sup: s1', q = (id, priority) => ({ id, stream: S, priority, assignments: [{ id: 'R1', kind: 'implementation', status: 'queued', version: 1 }] });
+  const units = [{ id: 'u1', supervisor: { label: S, status: 'idle' }, worker: { label: 'sbx: s1', status: 'idle' } }];
+  const { due } = planIdleQueues({ units, works: { 'W-5': q('W-5', 3), 'W-9': q('W-9', 1) }, watch: { u1: 0 }, now: 600000, supervisors: [S] });
+  assert.equal(due[0].work, 'W-9');
+});

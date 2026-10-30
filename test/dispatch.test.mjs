@@ -69,3 +69,19 @@ test('a queued record already requested or assigned is left to its supervisor', 
   assert.equal(p['W-30'], undefined);
   assert.equal(p['W-31'], undefined);
 });
+
+test('priority work waits only for what the stream is running, not for work queued ahead of it', () => {
+  const queuedAhead = w('W-1', { phase: 'queued', assignments: [{ kind: 'implementation', status: 'queued' }], requests: [{ type: 'dispatch', ack: { outcome: 'received' } }] });
+  assert.equal(plan([queuedAhead, w('W-2', { priority: 1 })])['W-2'].action, 'queue');
+  assert.equal(plan([queuedAhead, w('W-3')])['W-3'].action, null, 'ordinary work still waits its turn');
+  const running = w('W-1', { phase: 'implementation', assignments: [{ kind: 'implementation', status: 'started' }] });
+  assert.match(plan([running, w('W-2', { priority: 1 })])['W-2'].reason, /busy with W-1/, 'it never interrupts running work');
+});
+
+// One source for queue order: a second sort on priority in the core would let the two queues disagree.
+test('queue order is decided only by queueOrder in core/work.mjs', async () => {
+  const { readdirSync, readFileSync } = await import('node:fs');
+  const dir = new URL('../core/', import.meta.url);
+  const copies = readdirSync(dir).filter(f => f !== 'work.mjs' && /priority \?\? 3/.test(readFileSync(new URL(f, dir), 'utf8')));
+  assert.deepEqual(copies, []);
+});

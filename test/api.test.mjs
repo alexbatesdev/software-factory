@@ -157,3 +157,15 @@ test('the page and board view are served; a read-only factory refuses writes', a
     assert.deepEqual([b.mode, b.cards.map(c => c.title)], ['shadow (read-only)', ['Seen']]);
   } finally { f.close(); }
 });
+
+test("prioritize marks a record as Alex's priority and clears it back to the default", async () => {
+  const f = await serveWith({ config: { ...config, roles: { ...config.roles, 'triage board worker': 'board-developer' } } });
+  try {
+    await f.act('triage board worker', 'create', { title: 'Urgent fix' });
+    await f.act('triage board worker', 'prioritize', { work: 'W-1' });
+    assert.equal(f.store.state.work['W-1'].priority, 1);
+    await f.act('triage board worker', 'prioritize', { work: 'W-1', on: false });
+    assert.equal(f.store.state.work['W-1'].priority, 3);
+    assert.match((await f.act('board lead', 'prioritize', { work: 'W-1' }))[1].error, /may not prioritize/);
+  } finally { f.close(); }
+});

@@ -35,6 +35,8 @@ export function trackOf(w, cfg = {}) {
   if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '')) return 'trusted-review';
   return 'stream';
 }
+/** Queue order everywhere work waits for a stream: priority 1 (Alex's "priority") first, then oldest record. */
+export const queueOrder = (a, b) => (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2));
 // A dependency counts as finished once its work is through internal review.
 export const SATISFIES_DEPS = ['ready_for_human', 'awaiting_human_approval', 'done'];
 const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'streamPin', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases'];

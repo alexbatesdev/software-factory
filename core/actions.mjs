@@ -37,6 +37,8 @@ const BUILD = {
     return [{ kind: 'create', payload: { ...keep, links, source: { type: 'agent', by: a.by }, ...(a.phase === 'proposed' ? { phase: 'proposed' } : {}) } }];
   },
   set_owner: a => { need(a, 'work', 'owner'); return [setOwner(a)]; },
+  // Alex's "priority": priority 1 cuts in line behind running work; clearing it returns the default, 3.
+  prioritize: a => { need(a, 'work'); return [{ kind: 'update', target: a.work, payload: { priority: a.on === false ? 3 : 1 } }]; },
   message: a => { need(a, 'to', 'text'); return [{ kind: 'message', payload: { to: a.to, work: a.work, about: a.about, text: a.text } }]; },
 };
 // Owner and stream move together, so routing never sees one without the other.

@@ -1,7 +1,7 @@
 // Auto-dispatch (Alex, 2026-10-28): which ready or queued records start themselves this tick, and why the rest wait.
 // Pure: the server applies the plan through ordinary events and logs each one on its record.
 import { routeOf } from './notifier.mjs';
-import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, trackOf } from './work.mjs';
+import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, trackOf, queueOrder } from './work.mjs';
 
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
 const pendingDispatch = w => (w.requests || []).some(r => r.type === 'dispatch' && !r.ack);
@@ -43,11 +43,15 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   // Running work names the busy stream first; queued assignments and unacked dispatches still hold the slot.
   const running = w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked'].includes(a.status));
   for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && pass(w) && !busy.has(to)) busy.set(to, w.id); }
+  // Priority work (priority 1) cuts in behind whatever a stream is running, ahead of anything queued there.
+  const runningOn = new Map();
+  for (const w of works) { const to = routeOf(w, labels); if (to && running(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
   const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && (pendingDispatch(w) || takenUp(w) || live(w))))
-    .sort((a, b) => (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2)));
+    .sort(queueOrder);
   for (const w of order) {
     const wait = reason => out.push({ id: w.id, action: null, reason });
+    const holds = w.priority === 1 ? runningOn : busy;
     const track = trackOf(w, cfg);
     if (track === 'mutation') { wait('Mutation work is never auto-dispatched'); continue; }
     if (track === 'trusted-review') { wait('a trusted review, not stream work'); continue; }
@@ -57,20 +61,20 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); continue; }
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); continue; }
     const bound = boundStream(w, byId, labels);
-    if (bound && busy.has(bound.to)) { wait(`${bound.to} is busy with ${busy.get(bound.to)}; waits its turn (${bound.why})`); continue; }
+    if (bound && holds.has(bound.to)) { wait(`${bound.to} is busy with ${holds.get(bound.to)}; waits its turn (${bound.why})`); continue; }
     // ponytail: ties go to config order, not the stream idle longest; add last-dispatch times if one stream keeps winning ties.
     const here = routeOf(w, labels), mine = STREAM_LOAD.includes(w.phase) ? here : null;
     const cost = l => load[l] // this record's own slot doesn't count against its stream
       - (l === mine ? 1 : 0);
-    const to = bound?.to || labels.filter(l => !busy.has(l)).sort((a, b) => cost(a) - cost(b))[0];
-    if (!to) { wait(`every stream is busy (${[...busy].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); continue; }
-    busy.set(to, w.id);
+    const to = bound?.to || labels.filter(l => !holds.has(l)).sort((a, b) => cost(a) - cost(b))[0];
+    if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); continue; }
+    busy.set(to, w.id); runningOn.set(to, w.id);
     const spread = labels.map(l => `${l}: ${cost(l)}`).join(', ');
     if (mine) load[mine]--;
     load[to]++;
     const owner = to !== w.stream ? to : undefined;
     out.push({ id: w.id, action: w.phase === 'ready' ? 'queue' : 'request', owner, to,
-      reason: `${w.phase}, no open questions or dependencies, ${to} is free${bound ? ` (${bound.why})` : `, least loaded (${spread})`}` });
+      reason: `${w.priority === 1 ? 'priority: ' : ''}${w.phase}, no open questions or dependencies, ${to} is free${bound ? ` (${bound.why})` : `, least loaded (${spread})`}` });
   }
   return out;
 }

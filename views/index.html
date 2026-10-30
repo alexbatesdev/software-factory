@@ -16,7 +16,7 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 14px; margin: 0 0 8px; } .mut
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; align-items: start; }
 .col { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; }
 .card { border-top: 1px solid var(--line); padding: 8px 0; } .card:first-of-type { border-top: 0; }
-.card .t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; } .card .w { font-size: 13px; } .card .w.me { color: var(--you); font-weight: 600; }
+.card .t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; } .card .w { font-size: 13px; } .card .w.me { color: var(--you); font-weight: 600; } .badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--you); border: 1px solid var(--you); border-radius: 4px; padding: 0 4px; margin-right: 4px; }
 a { color: inherit; } .seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
 details summary { cursor: pointer; }
 </style>
@@ -31,6 +31,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 function cardEl(c) {
   const d = el('div', 'card');
   const t = el('div', 't', `${c.id} · ${c.title}`); t.title = c.title;
+  if (c.priority) t.prepend(el('span', 'badge', 'Priority'));
   d.append(t, el('div', 'mute', [c.label, c.stream].filter(Boolean).join(' · ')));
   if (c.waiting) d.append(el('div', 'w' + (c.waiting.who === 'you' ? ' me' : ''), c.waiting.text));
   if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', 'mute', `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; d.append(a); }
@@ -45,7 +46,7 @@ async function render() {
   document.getElementById('you').hidden = !you.children.length;
   const board = document.getElementById('board'); board.replaceChildren();
   for (const key of b.buckets.order) {
-    const cards = b.cards.filter(c => c.category === key).sort((x, y) => (y.updatedAt || '').localeCompare(x.updatedAt || ''));
+    const cards = b.cards.filter(c => c.category === key).sort((x, y) => y.priority - x.priority || (y.updatedAt || '').localeCompare(x.updatedAt || ''));
     if (!cards.length) continue;
     const col = el('section', 'col'); col.append(el('h2', null, `${b.buckets.labels[key] || key} (${cards.length})`));
     if (key === 'history') { const det = el('details'); det.append(el('summary', 'mute', 'show'), ...cards.map(cardEl)); col.append(det); }
