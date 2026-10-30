@@ -10,6 +10,7 @@ import { projectPrs, projectTasks, headCommands, recordPrKey } from '../core/obs
 import { TERMINAL } from '../core/work.mjs';
 import { sourceCommands } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
+import { inboxCommands } from '../core/inbox.mjs';
 import { readPrLines } from '../sources/github.mjs';
 import { readTasks } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
@@ -44,3 +45,10 @@ if (got.teamwork) {
   summarize('teamwork', sourceCommands(state, tasks, 'teamwork', parseAcs));
 }
 if (got.fleet) console.log(`fleet: ${got.fleet.units.length} stream units, ${got.fleet.others.length} other agents, ${got.fleet.layout.length} layout issues`);
+
+const supervisors = Object.keys(config.routing.supervisors);
+const seats = [...supervisors, config.routing.questionsRouter, ...(config.factory?.seats || []).map(x => x.label)];
+const since = state.legacy.notifier?.activatedAt;
+const inbox = inboxCommands(state, { supervisors, seats, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since }, got.fleet && { units: got.fleet.units, now: Date.now(), watches: {} });
+console.log(`inbox: messages V2 would create now: ${inbox.cmds.length}`);
+for (const c of inbox.cmds) console.log(`   -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`);
