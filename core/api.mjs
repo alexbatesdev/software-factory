@@ -3,11 +3,20 @@
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
 import { refusal } from './capabilities.mjs';
 import { commandsFor } from './actions.mjs';
+import { readFileSync } from 'node:fs';
+import { boardView } from '../views/board.mjs';
+import { reachesAlex } from './derive.mjs';
+
+const PAGE = new URL('../views/index.html', import.meta.url);
 
 /** The role a seat label holds; every stream supervisor label is a stream-supervisor. */
 export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config.routing?.supervisors || {}) ? 'stream-supervisor' : null);
 
-export function createApi({ store, config, readPr = async () => null, now = () => new Date().toISOString() }) {
+/**
+ * @param readOnly the shadow runner serves the page and reads only; every write is refused
+ * @param observed () => {units, prs} from the latest fleet and GitHub reads, for the views
+ */
+export function createApi({ store, config, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -37,10 +46,19 @@ export function createApi({ store, config, readPr = async () => null, now = () =
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'Local requests only.' });
       const seat = req.headers['x-seat'];
       if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq } = store.state; return send(res, 200, { work, questions, messages, seq }); }
+      if (req.method === 'GET' && url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(readFileSync(PAGE)); }
+      if (req.method === 'GET' && url.pathname === '/api/board') {
+        const s = store.state, inbox = {};
+        for (const m of Object.values(s.messages)) if (!m.ackedAt) inbox[m.to] = (inbox[m.to] || 0) + 1;
+        const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend }) => ({ id, title, work, recommend }));
+        return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
+          cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...observed() }) });
+      }
       if (req.method === 'GET' && url.pathname === '/api/inbox') return send(res, 200, { seat, messages: Object.values(store.state.messages).filter(m => m.to === seat && !m.ackedAt) });
       if (req.method === 'POST' && url.pathname === '/api/actions') {
         // A custom header a web page can't send cross-origin without a preflight this server never answers.
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
+        if (readOnly) return send(res, 405, { error: 'This factory is read-only (shadow mode).' });
         const { action, args = {} } = await readBody(req);
         return send(res, ...await act(seat, action, args));
       }

@@ -69,7 +69,7 @@ async function serveWith(opts) {
   await new Promise(ok => server.listen(0, '127.0.0.1', ok));
   const base = `http://127.0.0.1:${server.address().port}`;
   const act = async (seat, action, args) => { const r = await fetch(`${base}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-seat': seat, 'x-factory': '1' }, body: JSON.stringify({ action, args }) }); return [r.status, await r.json()]; };
-  return { store, act, close: () => server.close() };
+  return { store, act, base, close: () => server.close() };
 }
 const started = f => f.store.appendAll([
   { kind: 'create', payload: { title: 'Build it', links: { pr: PRURL } } }, { kind: 'update', target: 'W-1', payload: { owner: S1, stream: S1 } },
@@ -144,4 +144,16 @@ test('only the seat an answer was routed to acknowledges it', async () => {
     assert.match((await f.act(S2, 'ack', { ref: 'TB-1', outcome: 'done' }))[1].error, /routed to sup: stream-1/);
     assert.equal((await f.act(S1, 'ack', { ref: 'TB-1', outcome: 'done' }))[0], 200);
   } finally { delete config.routing.supervisors[S2]; f.close(); }
+});
+
+test('the page and board view are served; a read-only factory refuses writes', async () => {
+  const f = await serveWith({ readOnly: true, config: { ...config, buckets: { order: ['untriaged'], labels: {} } } });
+  try {
+    f.store.append({ kind: 'create', payload: { title: 'Seen' } }, { now: 'n', by: 'test' });
+    assert.equal((await f.act('local-head', 'create', { title: 'x' }))[0], 405);
+    const base = f.base;
+    assert.match(await (await fetch(`${base}/`)).text(), /<title>Software Factory<\/title>/);
+    const b = await (await fetch(`${base}/api/board`)).json();
+    assert.deepEqual([b.mode, b.cards.map(c => c.title)], ['shadow (read-only)', ['Seen']]);
+  } finally { f.close(); }
 });

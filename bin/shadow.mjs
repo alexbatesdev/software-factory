@@ -4,6 +4,8 @@
 // Run: FACTORY_MODE=shadow node --env-file="$HOME/Code/teamwork mini mcp/.env" bin/shadow.mjs
 if (process.env.FACTORY_MODE !== 'shadow') { console.error('Refusing to run: set FACTORY_MODE=shadow.'); process.exit(2); }
 import { appendFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import http from 'node:http';
+import { createApi } from '../core/api.mjs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -45,7 +47,7 @@ function reimport() {
   if (cmds.length) { store.appendAll(cmds, { now: now(), by: 'import' }); log(`imported ${cmds.length} change(s) from V1`); }
 }
 
-let watches = {}, woken = {}, fleet = null;
+let watches = {}, woken = {}, fleet = null, openPrs = new Map();
 async function inboxTick() {
   reimport();
   const seats = [...supervisors, config.routing.questionsRouter, ...Object.keys(config.roles || {}), ...(config.factory?.seats || []).map(s => s.label)];
@@ -74,6 +76,7 @@ async function githubTick() {
     const tracked = [...new Set(Object.values(s.work).filter(w => !TERMINAL.includes(w.phase)).map(w => recordPrKey(w, owner)).filter(Boolean))];
     const { lines, own } = await readPrLines({ owner, tracked });
     const { prs, heads } = projectPrs(lines, own);
+    openPrs = new Map([...prs.values()].map(p => [p.url, { state: 'OPEN', isDraft: p.isDraft }]));
     for (const c of [...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...sourceCommands(s, prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude })])
       would('record', { command: c.kind, target: c.target, payload: c.kind === 'observe_source' ? { id: c.payload.id } : c.payload });
   } catch (e) { log(`github: ${e.message}`); }
@@ -83,6 +86,9 @@ async function teamworkTick() {
   catch (e) { log(`teamwork: ${e.message}`); }
 }
 async function fleetTick() { try { fleet = await readFleet(store.state.legacy.pairs); } catch (e) { log(`fleet: ${e.message}`); } }
+
+// The page and read API, read-only: http://127.0.0.1:4848
+http.createServer(createApi({ store, config, readOnly: true, observed: () => ({ units: fleet?.units || [], prs: openPrs }) })).listen(4848, '127.0.0.1');
 
 const every = (ms, fn) => { const run = () => fn().catch(e => log(e.message)); run(); setInterval(run, ms); };
 log(`shadow mode: V1 ${V1_STATE} → ${OUT}`);

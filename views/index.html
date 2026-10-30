@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Software Factory</title>
+<style>
+:root { --bg: #f6f6f4; --card: #fff; --ink: #1d1d1b; --mute: #6b6b66; --line: #e2e1dc; --you: #b3261e; --green: #2e7d32; --yellow: #a26b00; }
+@media (prefers-color-scheme: dark) { :root { --bg: #161615; --card: #22221f; --ink: #ecebe6; --mute: #9b9a94; --line: #34332f; --you: #f2766b; --green: #7cc57f; --yellow: #e0b04f; } }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+header { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 14px; }
+h1 { font-size: 18px; margin: 0; } h2 { font-size: 14px; margin: 0 0 8px; } .mute { color: var(--mute); font-size: 12px; }
+.you { border: 2px solid var(--you); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; background: var(--card); }
+.you h2 { color: var(--you); } .you li { margin: 4px 0; }
+.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; align-items: start; }
+.col { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; }
+.card { border-top: 1px solid var(--line); padding: 8px 0; } .card:first-of-type { border-top: 0; }
+.card .t { font-weight: 600; overflow-wrap: anywhere; } .card .w { font-size: 13px; } .card .w.me { color: var(--you); font-weight: 600; }
+a { color: inherit; } .seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+details summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span></header>
+<section class="you" id="you" hidden><h2>Waiting on you</h2><ul id="youList"></ul><p class="mute">Answer in local-head's chat (e.g. "TB-12 a").</p></section>
+<main class="board" id="board"></main>
+<div class="seats" id="seats"></div>
+<script>
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+function cardEl(c) {
+  const d = el('div', 'card');
+  d.append(el('div', 't', `${c.id} · ${c.title}`), el('div', 'mute', [c.label, c.stream].filter(Boolean).join(' · ')));
+  if (c.waiting) d.append(el('div', 'w' + (c.waiting.who === 'you' ? ' me' : ''), c.waiting.text));
+  if (c.pr) { const a = el('a', 'mute', `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; d.append(a); }
+  return d;
+}
+async function render() {
+  let b; try { b = await (await fetch('/api/board')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
+  document.getElementById('meta').textContent = `${b.mode} · log seq ${b.seq} · ${new Date().toLocaleTimeString()}`;
+  const you = document.getElementById('youList'); you.replaceChildren();
+  for (const q of b.questions) you.append(el('li', null, `${q.id}${q.work ? ` (${q.work})` : ''}: ${q.title}${q.recommend ? ` · recommend ${q.recommend}` : ''}`));
+  for (const c of b.cards.filter(c => c.waiting?.who === 'you' && !b.questions.some(q => q.work === c.id))) you.append(el('li', null, `${c.id}: ${c.waiting.text}`));
+  document.getElementById('you').hidden = !you.children.length;
+  const board = document.getElementById('board'); board.replaceChildren();
+  for (const key of b.buckets.order) {
+    const cards = b.cards.filter(c => c.category === key).sort((x, y) => (y.updatedAt || '').localeCompare(x.updatedAt || ''));
+    if (!cards.length) continue;
+    const col = el('section', 'col'); col.append(el('h2', null, `${b.buckets.labels[key] || key} (${cards.length})`));
+    if (key === 'history') { const det = el('details'); det.append(el('summary', 'mute', 'show'), ...cards.map(cardEl)); col.append(det); }
+    else col.append(...cards.map(cardEl));
+    board.append(col);
+  }
+  const seats = document.getElementById('seats'); seats.replaceChildren();
+  for (const [seat, n] of Object.entries(b.inbox)) seats.append(el('span', 'seat', `${seat}: ${n} unread`));
+}
+render(); setInterval(render, 15000);
+</script>
+</body>
+</html>
