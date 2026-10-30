@@ -12,7 +12,7 @@ export const ROLES = {
 // Narrower grants inside an action, keyed role → action → check on the command's arguments.
 const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
 const LIMITS = {
-  'board-lead': { assign: a => a.status === 'queued' || 'the board lead only queues work', set_owner: noPin },
+  'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin },
   'questions-router': { set_owner: noPin },
 };
 

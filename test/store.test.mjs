@@ -94,3 +94,12 @@ test('a question asked on ready work sends it back to re-review', () => {
   s.append({ kind: 'ask', payload: { title: 'Wait, which way?', work: a } }, ctx({ by: 'sup: stream-1' }));
   assert.equal(s.state.work[a].phase, 'rereview');
 });
+
+test('a replay gives records the streams they were decided with, whatever the config says now', () => {
+  const path = join(mkdtempSync(join(tmpdir(), 'sf-store-')), 'factory.db');
+  const s = openStore(path, { supervisors: ['sup: old'] });
+  const { id } = s.append(build, ctx());
+  s.append({ kind: 'update', target: id, payload: { owner: 'sup: old' } }, ctx());
+  s.close();
+  assert.equal(openStore(path, { supervisors: [] }).state.work[id].stream, 'sup: old');
+});

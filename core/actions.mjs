@@ -30,7 +30,12 @@ const BUILD = {
     return [{ kind: 'route', target: a.id, payload: { to: a.to, note: a.note } }, ...(a.setOwnerOf ? [setOwner({ work: a.setOwnerOf, owner: a.to })] : [])];
   },
   // A created record's source is the seat that created it; pollers' sources come only from observe_source.
-  create: ({ source, phase, eventId, ...a }) => [{ kind: 'create', payload: { ...a, source: { type: 'agent', by: a.by }, ...(phase === 'proposed' ? { phase } : {}), by: undefined } }],
+  // Correlation and ownership (aliases, PR links, owner, parent) come only from their own commands, which check them.
+  create: a => {
+    const { pr, branch, ...links } = a.links || {};
+    const keep = Object.fromEntries(['title', 'objective', 'kind', 'repo', 'priority', 'criteria', 'deps'].filter(k => a[k] !== undefined).map(k => [k, a[k]]));
+    return [{ kind: 'create', payload: { ...keep, links, source: { type: 'agent', by: a.by }, ...(a.phase === 'proposed' ? { phase: 'proposed' } : {}) } }];
+  },
   set_owner: a => { need(a, 'work', 'owner'); return [setOwner(a)]; },
   message: a => { need(a, 'to', 'text'); return [{ kind: 'message', payload: { to: a.to, work: a.work, about: a.about, text: a.text } }]; },
 };

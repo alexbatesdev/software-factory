@@ -33,3 +33,7 @@ test('only local-head pins a stream', () => {
   assert.match(refusal('board-lead', 'set_owner', { pin: 'Alex' }), /only local-head pins/);
   assert.equal(refusal('board-lead', 'set_owner', {}), null);
 });
+
+test('the board lead cannot supersede a running assignment by queueing over it', () => {
+  assert.match(refusal('board-lead', 'assign', { status: 'queued', supersedes: 'R1' }), /only queues/);
+});

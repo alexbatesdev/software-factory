@@ -95,7 +95,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
 function finish(state, row, observed, touched, supervisors) {
   // A record takes its stream once, from a supervisor that owns or owned it, so owner and stream never drift apart.
   const t = state.work[touched];
-  if (t && !t.stream) { const s = inferStream(t, supervisors); if (s) state.work[touched] = { ...t, stream: s }; }
+  if (t && !t.stream) { const s = inferStream(t, observed.supervisors || []); if (s) state.work[touched] = { ...t, stream: s }; }
   // Ready labels drop as soon as a dependency regresses, not only on the item's own events. Never pass on this row's observations.
   for (const [wid, w] of Object.entries(state.work)) {
     if (['ready_for_human', 'awaiting_human_approval'].includes(w.phase)) state.work[wid] = W.normalize(w, { now: observed.now, by: 'board', ...derivedCtx(state, wid) });
@@ -142,7 +142,8 @@ export function openStore(path = ':memory:', opts = {}) {
      */
     appendAll(cmds, ctx) {
       if (!ctx?.now || !ctx?.by) throw new Error('A command needs ctx.now and ctx.by.');
-      const observed = Object.fromEntries(OBSERVED.filter(k => ctx[k] !== undefined).map(k => [k, ctx[k]]));
+      // The supervisor list is recorded per row, so a replay never re-derives streams from today's config.
+      const observed = { ...Object.fromEntries(OBSERVED.filter(k => ctx[k] !== undefined).map(k => [k, ctx[k]])), ...(opts.supervisors?.length ? { supervisors: opts.supervisors } : {}) };
       // ponytail: clones the whole state per call (3.9 ms measured on the 1.1 MB V1 state); fold into a scratch copy of the touched records if appends get hot.
       const next = structuredClone(state), out = [], rowsToWrite = [];
       for (const cmd of cmds) {

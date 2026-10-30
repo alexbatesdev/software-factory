@@ -23,6 +23,7 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
     next.answer = { ...q.answer, routeTo: p.to, routedBy: ctx.by, routedAt: ctx.now, routes: [...(q.answer.routes || []), { to: p.to, by: ctx.by, note: String(p.note || '').slice(0, 500), at: ctx.now }] };
   } else if (kind === 'question_ack') {
     if (q.status !== 'answered') fail(`${target} has no answer to acknowledge.`);
+    if (q.answer.routeTo && q.answer.routeTo !== ctx.by) fail(`${target} was routed to ${q.answer.routeTo}; only that seat acknowledges it.`);
     next.answer = { ...q.answer, ack: { by: ctx.by, outcome: p.outcome || 'received', note: p.note || null, at: ctx.now } };
   } else fail(`Unknown question command "${kind}".`);
   state.questions[target] = next;

@@ -125,3 +125,23 @@ test('an approval wait is checked against a fresh GitHub read: draft or moved PR
     assert.match((await f.act('local-head', 'await_approval', { work: 'W-1' }))[1].error, /may not await_approval/);
   } finally { f.close(); }
 });
+
+test('create cannot set correlation or ownership fields', async () => {
+  const f = await serveWith({});
+  try {
+    await f.act('board lead', 'create', { title: 'x', aliases: ['built-rails-9000'], owner: S1, parent: 'W-9', links: { pr: PRURL, source: 'https://x' } });
+    const w = f.store.state.work['W-1'];
+    assert.deepEqual([w.aliases, w.owner, w.parent, w.links], [[], null, null, { source: 'https://x' }]);
+  } finally { f.close(); }
+});
+
+test('only the seat an answer was routed to acknowledges it', async () => {
+  const S2 = 'sup: stream-2';
+  const f = await serveWith({});
+  try {
+    f.store.appendAll([{ kind: 'ask', payload: { title: 'Q', options: [{ key: 'a', text: 'a' }] } }, { kind: 'answer', target: 'TB-1', payload: { choice: 'a' } }, { kind: 'route', target: 'TB-1', payload: { to: S1 } }], { now: 'n', by: 'test' });
+    config.routing.supervisors[S2] = {};
+    assert.match((await f.act(S2, 'ack', { ref: 'TB-1', outcome: 'done' }))[1].error, /routed to sup: stream-1/);
+    assert.equal((await f.act(S1, 'ack', { ref: 'TB-1', outcome: 'done' }))[0], 200);
+  } finally { delete config.routing.supervisors[S2]; f.close(); }
+});

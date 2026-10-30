@@ -7,7 +7,8 @@ export function sourceIndex(state) {
   const idx = new Map();
   const works = Object.values(state.work);
   // A record's own source outranks another's alias, which outranks a link: a task linking a PR never shadows the PR's record.
-  for (const keysOf of [w => [w.source?.key], w => w.aliases || [], w => [prKey(w.links?.pr)]])
+  // An absorbed placeholder's source now belongs to the record that absorbed it (via that record's alias).
+  for (const keysOf of [w => w.completion?.absorbedInto ? [] : [w.source?.key], w => w.aliases || [], w => [prKey(w.links?.pr)]])
     for (const w of works) for (const k of keysOf(w)) if (k && !idx.has(k)) idx.set(k, w.id);
   return idx;
 }

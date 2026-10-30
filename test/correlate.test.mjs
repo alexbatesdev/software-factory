@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openStore } from '../core/store.mjs';
-import { sourceCommands } from '../core/correlate.mjs';
+import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
 
 const ctx = (by = 'test') => ({ now: '2026-10-30T18:00:00.000Z', by });
@@ -71,4 +71,16 @@ test('a Mutation PR nobody tracks never becomes a record', () => {
   const s = open();
   const cmds = sourceCommands(s.state, new Map([['built-rails-8283', pr(8283, 'alex/mutation-tester')]]), 'pr', parseAcs, { mutationBranch: 'mutation' });
   assert.deepEqual(cmds, []);
+});
+
+test("after an absorb, the PR belongs to the record that claimed it, not the placeholder", () => {
+  const s = open();
+  poll(s, [task(41384318, 'Position end date')], 'teamwork');
+  const [w60] = Object.keys(s.state.work);
+  poll(s, [pr(8456, 'alex/position-end-date/5a-apply-engine')], 'pr');
+  s.append({ kind: 'update', target: w60, payload: { links: { pr: PR(8456) } } }, ctx('sup: stream-2'));
+  const placeholder = Object.keys(s.state.work).find(id => id !== w60), before = structuredClone(s.state.work[placeholder]);
+  assert.equal(sourceIndex(s.state).get('built-rails-8456'), w60);
+  poll(s, [{ ...pr(8456, 'alex/position-end-date/5a-apply-engine'), title: 'Renamed PR' }], 'pr');
+  assert.deepEqual(s.state.work[placeholder], before, 'the cancelled placeholder is never refreshed again');
 });
