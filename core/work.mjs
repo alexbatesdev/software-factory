@@ -1,3 +1,4 @@
+import { prKey } from './units.mjs';
 // Work records: the durable lifecycle behind every board item. Pure functions, no I/O.
 // The ready gate lives here so no route can set `ready_for_human` or `done` around it.
 
@@ -83,6 +84,7 @@ export function updateWork(work, fields, ctx) {
   for (const k of UPDATABLE) if (k in fields && k !== 'links') w[k] = fields[k];
   // Links merge, so a report naming the PR can't erase the task or artifact links; null removes one.
   if (fields.links) {
+    if (fields.links.pr && !prKey(fields.links.pr)) fail(`"${fields.links.pr}" is not a pull request URL; link the full GitHub URL.`);
     w.links = { ...(w.links || {}), ...fields.links };
     for (const [k, v] of Object.entries(fields.links)) if (v === null) delete w.links[k];
   }

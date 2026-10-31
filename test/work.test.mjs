@@ -556,3 +556,7 @@ test('a new commit on a PR already marked ready stays in approval wait under the
   assert.equal(draft.phase, 'rereview', 'back to draft: it needs the internal review again before ready');
   assert.equal(draft.requests.filter(r => r.type === 'review').length, 0, 'no review request on a bare new commit; review comes when the worker reports done');
 });
+
+test('a PR link must be a pull request URL, so gates and correlation can match it', () => {
+  assert.throws(() => updateWork(build(), { links: { pr: '8469' } }, ctx()), /pull request URL/);
+});
