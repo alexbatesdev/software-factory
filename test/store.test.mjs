@@ -113,3 +113,11 @@ test('acking a request closes the message that told the seat about it, so no wak
   assert.equal(s.state.messages[m].ackedBy, 'sup: stream-1');
   assert.deepEqual(s.replay(), s.state);
 });
+
+test('a new record cannot link a PR another record already carries', () => {
+  const s = openStore();
+  const pr = 'https://github.com/builtforteams/built-rails/pull/8301';
+  s.append({ kind: 'create', payload: { title: 'Poller record', links: { pr } } }, ctx());
+  assert.throws(() => s.append({ kind: 'create', payload: { title: 'Manual record', links: { pr } } }, ctx()), /already belongs to W-1/);
+  assert.deepEqual(Object.keys(s.state.work), ['W-1']);
+});

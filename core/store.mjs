@@ -27,6 +27,8 @@ function derivedCtx(state, id) {
 function create(state, fields, ctx) {
   const id = `W-${state.nextWork++}`;
   state.work[id] = W.createWork({ ...fields, id }, ctx);
+  const claim = fields.links?.pr && claimPr(state, id, fields.links.pr);
+  if (claim) state.work[claim.absorb] = W.applyEvent(state.work[claim.absorb], { type: 'absorb', into: id }, ctx).work;
   return id;
 }
 
