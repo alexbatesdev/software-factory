@@ -84,3 +84,13 @@ test("after an absorb, the PR belongs to the record that claimed it, not the pla
   poll(s, [{ ...pr(8456, 'alex/position-end-date/5a-apply-engine'), title: 'Renamed PR' }], 'pr');
   assert.deepEqual(s.state.work[placeholder], before, 'the cancelled placeholder is never refreshed again');
 });
+
+test('a second PR naming a task that already has a PR gets its own record, never joins the task', () => {
+  const s = open();
+  poll(s, [task(41454542, 'Edit modal custom fields')], 'teamwork');
+  const [w] = Object.keys(s.state.work);
+  s.append({ kind: 'update', target: w, payload: { links: { pr: PR(8469) } } }, ctx());
+  poll(s, [pr(8480, 'alex/confidential/edit-modal-part-2/41454542')], 'pr');
+  assert.equal(s.state.work[w].links.pr, PR(8469));
+  assert.equal(Object.keys(s.state.work).length, 2, 'the second PR is its own record');
+});

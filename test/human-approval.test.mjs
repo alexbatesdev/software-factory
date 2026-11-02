@@ -28,7 +28,8 @@ test('new commits and changed/unreadable PR links invalidate waiting status; his
  const next=observeHead(w,{sha:'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',via:'github'},ctx);
  assert.equal(next.phase,'rereview');assert.equal(next.approvalWait,null);assert.equal(next.internalReviewWaivers[0].head,head);
  assert.equal(unverifyHead({...w,headVerified:{via:'github',sha:head}},ctx).phase,'rereview');
- assert.equal(updateWork(w,{links:{pr:url+'0'}},ctx).phase,'rereview');
+ assert.throws(()=>updateWork(w,{links:{pr:url+'0'}},ctx),/never split across PRs/);
+ assert.equal(updateWork(updateWork(w,{links:{pr:null}},ctx),{links:{pr:url+'0'}},ctx).phase,'rereview');
 });
 test('no-change completion preserves declined review history without requesting or fabricating a review',()=>{
  const w=createWork({id:'W-2',title:'Already satisfied'},ctx);

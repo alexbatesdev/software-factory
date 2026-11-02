@@ -23,7 +23,12 @@ const taskOfBranch = branch => { const m = String(branch || '').match(/\/(\d{6,}
 export function ownerOf(state, item, idx = sourceIndex(state)) {
   if (idx.has(item.id)) return { id: idx.get(item.id), why: 'known' };
   const task = item.kind === 'pr' && idx.get(taskOfBranch(item.branch));
-  if (task && !TERMINAL.includes(state.work[task].phase)) return { id: task, why: `branch names ${taskOfBranch(item.branch)}` };
+  if (task && !TERMINAL.includes(state.work[task].phase)) {
+    // A task already carried by another PR never takes a second one; the new PR gets its own record to be sorted out.
+    const other = prKey(state.work[task].links?.pr);
+    if (other && other !== item.id) return null;
+    return { id: task, why: `branch names ${taskOfBranch(item.branch)}` };
+  }
   return null;
 }
 

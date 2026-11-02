@@ -85,6 +85,8 @@ export function updateWork(work, fields, ctx) {
   // Links merge, so a report naming the PR can't erase the task or artifact links; null removes one.
   if (fields.links) {
     if (fields.links.pr && !prKey(fields.links.pr)) fail(`"${fields.links.pr}" is not a pull request URL; link the full GitHub URL.`);
+    // One task, one PR (Alex, 2026-11-02): a replaced PR is unlinked first (pr: null), so a record never carries two.
+    if (fields.links.pr && w.links?.pr && prKey(fields.links.pr) !== prKey(w.links.pr)) fail(`${w.id} already carries ${w.links.pr}; a task is never split across PRs. If that PR was replaced, unlink it first (links.pr null).`);
     w.links = { ...(w.links || {}), ...fields.links };
     for (const [k, v] of Object.entries(fields.links)) if (v === null) delete w.links[k];
   }
