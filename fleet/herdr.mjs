@@ -130,6 +130,8 @@ export async function send(unit, text, opts) {
 
 // ---------- Run triage: a dedicated pane for a user-launched triage agent ----------
 const pauseMs = ms => new Promise(r => setTimeout(r, ms));
+// oh-my-zsh asks "update? [Y/n]" in a new shell, which swallowed the first key of "claude". Pass on every pane herdr opens.
+export const QUIET_SHELL = ['--env', 'DISABLE_AUTO_UPDATE=true'];
 export async function herdrRaw(...args) {
   // herdr exits non-zero on an error and prints its JSON error on stderr; read it so callers see the code.
   const stdout = await run('herdr', args, { maxBuffer: 1 << 22, timeout: 20000 }).then(r => r.stdout, e => { if (String(e.stdout || e.stderr || "").trim().startsWith("{")) return e.stdout || e.stderr; throw e; });
@@ -148,13 +150,13 @@ export async function launchTriage({ runId, briefPath, model = 'sonnet' }, step)
   // Every agent the board spawns goes in Board Actions, one tab per run, so no tab passes 3 panes.
   const { workspaces: all } = await herdrRaw('workspace', 'list');
   let ws = all.find(w => w.label === BOARD_ACTIONS);
-  if (!ws) ws = (await herdrRaw('workspace', 'create', '--label', BOARD_ACTIONS, '--cwd', path.join(process.env.HOME, 'Code'), '--no-focus')).workspace;
+  if (!ws) ws = (await herdrRaw('workspace', 'create', '--label', BOARD_ACTIONS, '--cwd', path.join(process.env.HOME, 'Code'), ...QUIET_SHELL, '--no-focus')).workspace;
   if (!ws?.workspace_id) throw new Error(`Couldn't find or create the ${BOARD_ACTIONS} workspace.`);
   const label = `triage-run ${runId}`;
   // Recorded before the call: from here on, any unknown outcome means a tab may exist, so it's uncertain, never retried.
   await step('create-attempt', { label, workspace: ws.label });
   let created;
-  try { created = await herdrRaw('tab', 'create', '--workspace', ws.workspace_id, '--label', label, '--cwd', path.join(process.env.HOME, 'Code'), '--no-focus'); }
+  try { created = await herdrRaw('tab', 'create', '--workspace', ws.workspace_id, '--label', label, '--cwd', path.join(process.env.HOME, 'Code'), ...QUIET_SHELL, '--no-focus'); }
   catch (e) { throw Object.assign(new Error(`tab create: ${e.message}`), { uncertain: !e.herdrError }); }
   const tabId = created.tab?.tab_id;
   await step('tab', { tab: tabId });
