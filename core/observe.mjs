@@ -1,6 +1,7 @@
 // Turning source reads into observations and, where they change a record, into commands. Pure: callers do the I/O and
 // decide whether to append (live) or only log (shadow).
 import * as W from './work.mjs';
+import { sourceIndex } from './correlate.mjs';
 
 const stripHtml = s => String(s || '').replace(/<br\s*\/?>|<\/p>|<\/li>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
 
@@ -59,6 +60,25 @@ export function headCommands(state, heads, { owner, now, standingWaiver }) {
     const ctx = { now, by: 'github', ...(h ? { standingWaiver } : {}) };
     const after = h ? W.observeHead(w, cmd.payload, ctx) : W.unverifyHead(w, ctx);
     if (sansCheckTime(after) !== sansCheckTime(w)) cmds.push({ ...cmd, ctx });
+  }
+  return cmds;
+}
+
+/**
+ * observe_health commands for Alex's PRs into main whose merge or CI state at the record's head needs work.
+ * @param health Map(repo:num → {head, base, conflict, failing}); a PR GitHub hasn't finished computing says neither.
+ */
+export function healthCommands(state, health, { owner, now, mutationBranch, exclude }) {
+  const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
+  // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
+  const byPr = new Map();
+  for (const w of Object.values(state.work)) { const k = recordPrKey(w, owner); if (k && acting(w)) byPr.set(k, [...(byPr.get(k) || []), w]); }
+  for (const [key, ws] of byPr) {
+    const own = state.work[idx.get(key.replace(':', '-'))], w = acting(own) ? own : ws[0];
+    const h = health.get(key);
+    if (!h || h.base !== 'main' || W.trackOf(w, { mutationBranch, exclude }) === 'mutation') continue;
+    const payload = { head: h.head, conflict: h.conflict, failing: h.failing };
+    if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   return cmds;
 }

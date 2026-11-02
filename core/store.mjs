@@ -87,6 +87,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
       break;
     }
     case 'observe_head': state.work[id] = W.observeHead(cur, payload, ctx); break;
+    case 'observe_health': state.work[id] = W.observeHealth(cur, payload, ctx); break;
     case 'unverify_head': state.work[id] = W.unverifyHead(cur, ctx); break;
     case 'sync_intake': state.work[id] = W.syncIntake(cur, payload); break;
     default: throw new Error(`Unknown command kind "${kind}".`);

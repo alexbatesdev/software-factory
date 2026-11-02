@@ -636,6 +636,30 @@ export function observeHead(work, { sha, via, isDraft }, ctx) {
   return normalize(w, ctx);
 }
 
+// Steps a worker follows before touching code, so a red build from main or a flake is noted, never "fixed" (Alex, 2026-11-02).
+const HEALTH_TEXT = {
+  conflict: head => `Conflicts with main at ${head.slice(0, 7)}. Merge origin/main into the branch (merge, never rebase or force push), resolve, run the specs for the files the conflict touched, push.`,
+  ci: (head, failing) => `CI is red at ${head.slice(0, 7)}: ${failing.join(', ')}. Assess once for this commit before changing code. 1) Find the failing tests: GitHub Actions via gh run view --log-failed; CircleCI isn't readable yet, so run the specs covering this PR's changed files. 2) Re-run each failure once locally. 3) Passes locally: accept this finding as "flake: <test>". 4) Fails on origin/main too: accept it as "red on main: <test>" and change nothing. 5) Fails only on this branch: fix it red-first. Anything outside this PR's scope is a discovery, never a fix.`,
+};
+// Work waiting on review or on Alex goes back to fixes; work being built only gets the finding.
+export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
+
+/** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
+export function observeHealth(work, { head, conflict, failing = [] }, ctx) {
+  if (TERMINAL.includes(work.phase) || !head || !sameSha(head, work.head)) return work;
+  const seen = type => (work.findings || []).some(f => f.source?.type === type && sameSha(f.source.head, head));
+  const fresh = [conflict && 'conflict', failing.length && 'ci'].filter(t => t && !seen(t));
+  if (!fresh.length) return work;
+  const w = structuredClone(work);
+  for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
+  note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main').join('; ')}.`);
+  if (HEALTH_REOPENS.includes(w.phase)) {
+    w.phase = 'fixes'; w.approvalWait = null;
+    w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by || 'github', delivery: 'pending', ack: null, head: w.head });
+  }
+  return normalize(w, ctx);
+}
+
 /** The poller can no longer see the linked PR: a head it verified is no longer verified. Reported heads stand. */
 export function unverifyHead(work, ctx) {
   if (work.headVerified?.via !== 'github') return work;

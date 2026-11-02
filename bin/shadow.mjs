@@ -11,14 +11,14 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '../core/store.mjs';
 import { importCommands } from '../core/import.mjs';
-import { projectPrs, projectTasks, headCommands, recordPrKey } from '../core/observe.mjs';
+import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey } from '../core/observe.mjs';
 import { sourceCommands } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
 import { inboxCommands, toldKeys } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { TERMINAL } from '../core/work.mjs';
 import { createLogWake } from '../wake/log.mjs';
-import { readPrLines } from '../sources/github.mjs';
+import { readPrLines, readPrHealth } from '../sources/github.mjs';
 import { readTasks } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
 
@@ -77,7 +77,8 @@ async function githubTick() {
     const { lines, own } = await readPrLines({ owner, tracked });
     const { prs, heads } = projectPrs(lines, own);
     openPrs = new Map([...prs.values()].map(p => [p.url, { state: 'OPEN', isDraft: p.isDraft }]));
-    for (const c of [...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...sourceCommands(s, prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude })])
+    const health = await readPrHealth([...own], owner);
+    for (const c of [...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...healthCommands(s, health, { owner, now: now(), mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude }), ...sourceCommands(s, prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude })])
       would('record', { command: c.kind, target: c.target, payload: c.kind === 'observe_source' ? { id: c.payload.id } : c.payload });
   } catch (e) { log(`github: ${e.message}`); }
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWork, applyEvent, updateWork, gate, migrate, syncIntake, observeHead, unverifyHead, prReadyPreflight } from '../core/work.mjs';
+import { createWork, applyEvent, updateWork, gate, migrate, syncIntake, observeHead, unverifyHead, prReadyPreflight, observeHealth } from '../core/work.mjs';
 
 const T = '2026-10-26T15:00:00.000Z';
 const ctx = (over = {}) => ({ now: T, by: 'test', openQuestions: 0, ...over });
@@ -559,4 +559,25 @@ test('a new commit on a PR already marked ready stays in approval wait under the
 
 test('a PR link must be a pull request URL, so gates and correlation can match it', () => {
   assert.throws(() => updateWork(build(), { links: { pr: '8469' } }, ctx()), /pull request URL/);
+});
+
+test('a red build or a conflict at the head reopens reviewed work as fixes, once per commit', () => {
+  const H = 'aaaaaaa1';
+  let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
+  w = run(evidenced(run(w, { type: 'review', head: H, by: 'reviewer', result: 'clean' })), { type: 'mark_ready' });
+  assert.equal(w.phase, 'ready_for_human');
+  const red = observeHealth(w, { head: H, conflict: true, failing: ['ci/circleci: test'] }, ctx());
+  assert.equal(red.phase, 'fixes');
+  assert.deepEqual(red.findings.map(f => f.source.type), ['conflict', 'ci']);
+  assert.equal(red.requests.at(-1).type, 'fixes');
+  assert.equal(observeHealth(red, { head: H, conflict: true, failing: ['ci/circleci: test'] }, ctx()), red, 'the same commit is never assessed twice');
+  assert.equal(observeHealth(w, { head: 'bbbbbbb2', failing: ['x'] }, ctx()), w, 'a read of another commit says nothing about this head');
+});
+
+test('work being built gets the health finding but keeps its phase', () => {
+  const w = run(toImplementation(), { type: 'head', sha: 'ccccccc3' });
+  const red = observeHealth(w, { head: 'ccccccc3', failing: ['Run JS/TS tests'] }, ctx());
+  assert.equal(red.phase, 'implementation');
+  assert.equal(red.findings.length, 1);
 });

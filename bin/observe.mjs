@@ -6,12 +6,12 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../core/store.mjs';
 import { importCommands } from '../core/import.mjs';
-import { projectPrs, projectTasks, headCommands, recordPrKey } from '../core/observe.mjs';
+import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey } from '../core/observe.mjs';
 import { TERMINAL } from '../core/work.mjs';
 import { sourceCommands } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
 import { inboxCommands } from '../core/inbox.mjs';
-import { readPrLines } from '../sources/github.mjs';
+import { readPrLines, readPrHealth } from '../sources/github.mjs';
 import { readTasks } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
 
@@ -32,6 +32,12 @@ if (got.github) {
   const cmds = headCommands(state, heads, { owner, now: new Date().toISOString(), standingWaiver: config.standingWaiver });
   console.log(`  head commands V2 would append: ${cmds.length}`);
   for (const c of cmds) { const w = state.work[c.target]; console.log(`   ${c.target} ${c.kind} ${c.payload.sha || ''} (board head ${w.head || '-'}, verified ${w.headVerified?.via || '-'}@${w.headVerified?.sha || '-'})`); }
+}
+if (got.github) {
+  const health = await readPrHealth([...got.github.own], owner);
+  const cmds = healthCommands(state, health, { owner, now: new Date().toISOString(), mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude });
+  console.log(`  health: ${[...health.values()].filter(h => h.base === 'main' && (h.conflict || h.failing.length)).length} PRs into main red or conflicting; commands V2 would append: ${cmds.length}`);
+  for (const c of cmds) console.log(`   ${c.target} ${state.work[c.target].phase} ${c.payload.conflict ? 'conflict ' : ''}${c.payload.failing.join(', ')}`);
 }
 const summarize = (name, cmds) => {
   const by = cmds.reduce((m, c) => ({ ...m, [c.kind]: (m[c.kind] || 0) + 1 }), {});
