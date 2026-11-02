@@ -81,6 +81,9 @@ export function fold(state, row, { supervisors = [] } = {}) {
       const { work, spawn } = W.applyEvent(cur, payload, ctx);
       state.work[id] = work;
       if (spawn) work.updates.at(-1).text += ` (${create(state, spawn, ctx)})`;
+      // The request ack is the seat's answer to the message about it; a still-open message would wake the seat for nothing.
+      if (payload.type === 'ack') for (const m of Object.values(state.messages))
+        if (!m.ackedAt && m.about?.requests === `${id}/${payload.requestId}`) state.messages[m.id] = { ...m, ackedAt: ctx.now, ackedBy: payload.by, outcome: 'request acked' };
       break;
     }
     case 'observe_head': state.work[id] = W.observeHead(cur, payload, ctx); break;

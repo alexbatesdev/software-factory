@@ -103,3 +103,13 @@ test('a replay gives records the streams they were decided with, whatever the co
   s.close();
   assert.equal(openStore(path, { supervisors: [] }).state.work[id].stream, 'sup: old');
 });
+
+test('acking a request closes the message that told the seat about it, so no wake follows', () => {
+  const s = openStore();
+  const { id } = s.append(build, ctx());
+  for (const to of ['ready', 'queued']) s.append(ev(id, { type: 'transition', to }), ctx());
+  const m = s.append({ kind: 'message', payload: { to: 'sup: stream-1', work: id, about: { requests: `${id}/R1` }, text: 'R1 is queued' } }, ctx({ by: 'board' })).id;
+  s.append(ev(id, { type: 'ack', requestId: 'R1', outcome: 'received', by: 'sup: stream-1' }), ctx({ by: 'sup: stream-1' }));
+  assert.equal(s.state.messages[m].ackedBy, 'sup: stream-1');
+  assert.deepEqual(s.replay(), s.state);
+});

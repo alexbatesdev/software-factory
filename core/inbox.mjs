@@ -43,7 +43,8 @@ export function inboxCommands(state, cfg, fleet = null) {
   let watches = fleet?.watches || {};
   if (fleet) {
     const stops = planWorkerStops({ units: fleet.units, works: state.work, watch: watches.workerStops, now: fleet.now, supervisors: cfg.supervisors });
-    for (const d of stops.due) if (!told.has(`workerStop:${d.work}/${d.assignment}`))
+    // The watch fires once per stop; a told-key check here would swallow a second stop on the same assignment.
+    for (const d of stops.due)
       cmds.push(msg(d.to, d.work, { workerStop: `${d.work}/${d.assignment}` }, `${d.worker} stopped while ${d.work} ${d.assignment} is started: read its pane and record what it reported.`));
     const sent = Object.fromEntries([...told].filter(k => k.startsWith('idleQueue:')).map(k => [k.slice(10), true]));
     const idle = planIdleQueues({ units: fleet.units, works: state.work, watch: watches.idleQueues, sent, now: fleet.now, supervisors: cfg.supervisors });

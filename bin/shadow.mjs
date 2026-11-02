@@ -33,7 +33,7 @@ const store = openStore(join(OUT, 'shadow.db'), { supervisors });
 const would = (kind, data) => appendFileSync(join(OUT, 'would.jsonl'), JSON.stringify({ at: new Date().toISOString(), kind, ...data }) + '\n');
 const wake = createLogWake(join(OUT, 'would.jsonl'));
 const now = () => new Date().toISOString();
-const log = (...a) => console.log(now().slice(11, 19), ...a);
+const log = (...a) => { console.log(now().slice(11, 19), ...a); appendFileSync(join(OUT, 'shadow.log'), `${now()} ${a.join(' ')}\n`); };
 const STARTED = now();
 
 let v1Mtime = 0;

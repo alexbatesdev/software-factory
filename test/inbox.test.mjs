@@ -42,3 +42,15 @@ test('a worker that stops with a started assignment messages its supervisor once
   const due = plan(s, { units: [unit('idle')], now: 120000, watches });
   assert.deepEqual(due.cmds.map(c => c.payload.about), [{ workerStop: 'W-1/R1' }]);
 });
+
+test('a worker that stops again on the same assignment messages its supervisor again', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'implementation', requests: [], assignments: [{ id: 'R1', kind: 'implementation', status: 'started', version: 1 }] }) } });
+  const unit = status => ({ id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status } });
+  let watches, t = 0, sent = 0;
+  for (const status of ['working', 'idle', 'idle', 'working', 'idle', 'idle']) {
+    const p = plan(s, { units: [unit(status)], now: t += 70000, watches });
+    watches = p.watches;
+    for (const c of p.cmds) { s.append(c, { now: 'z', by: 'board' }); sent++; }
+  }
+  assert.equal(sent, 2);
+});
