@@ -210,3 +210,16 @@ test('a finished record is history even if it was once held out of triage', asyn
   const { categoryOf } = await import('../views/category.mjs');
   assert.equal(categoryOf({ rec: { intakeHold: { by: 'x', reason: 'y' } }, work: { id: 'W-1', phase: 'done' } }).category, 'history');
 });
+
+test("verify lets an unverified question reach Alex, or drops it with a note", async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const { reachesAlex } = await import('../core/derive.mjs');
+  const s = openStore();
+  const { id } = s.append(build, ctx());
+  for (const [q, v] of [['TB-1', 'unverified'], ['TB-2', 'unverified']]) s.append({ kind: 'import', target: `questions/${q}`, payload: { title: 'Which?', status: 'open', work: id, verification: v } }, ctx('import'));
+  s.appendAll(commandsFor('verify', { id: 'TB-1', keep: true, note: 'real product question' }), ctx({ by: 'board lead' }));
+  s.appendAll(commandsFor('verify', { id: 'TB-2', keep: false, note: 'duplicate of TB-9' }), ctx({ by: 'board lead' }));
+  assert.equal(reachesAlex(s.state.questions['TB-1']), true);
+  assert.deepEqual([s.state.questions['TB-2'].status, s.state.questions['TB-2'].verificationNote], ['superseded', 'duplicate of TB-9']);
+  assert.throws(() => s.appendAll(commandsFor('verify', { id: 'TB-1', keep: true, note: 'again' }), ctx()), /already verified/);
+});

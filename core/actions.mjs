@@ -48,6 +48,7 @@ const BUILD = {
   // Repair (board developer): a poller's duplicate record folds into the record that carries the work.
   absorb: a => { need(a, 'work', 'into'); return [ev(a.work, { type: 'absorb', into: a.into })]; },
   resolve: a => { need(a, 'work', 'note'); return [ev(a.work, { type: 'resolve', note: a.note })]; },
+  verify: a => { need(a, 'id', 'note'); return [{ kind: 'question_verify', target: a.id, payload: { keep: a.keep !== false, note: a.note } }]; },
   message: a => { need(a, 'to', 'text'); return [{ kind: 'message', payload: { to: a.to, work: a.work, about: a.about, text: a.text } }]; },
 };
 // Owner and stream move together, so routing never sees one without the other.

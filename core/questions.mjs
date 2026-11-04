@@ -27,6 +27,11 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
     if (q.status !== 'answered') fail(`${target} has no answer to acknowledge.`);
     if (q.answer.routeTo && q.answer.routeTo !== ctx.by) fail(`${target} was routed to ${q.answer.routeTo}; only that seat acknowledges it.`);
     next.answer = { ...q.answer, ack: { by: ctx.by, outcome: p.outcome || 'received', note: p.note || null, at: ctx.now } };
+  } else if (kind === 'question_verify') {
+    // V1's triage runs filed questions unverified; the board lead now decides whether each one should reach Alex.
+    if (q.status !== 'open' || q.verification !== 'unverified') fail(`${target} is already verified or settled.`);
+    if (!p.note) fail('Verifying a question needs a note saying why.');
+    Object.assign(next, p.keep ? { verification: 'verified' } : { status: 'superseded' }, { verificationNote: String(p.note).slice(0, 500), verificationSource: `verified by ${ctx.by}` });
   } else fail(`Unknown question command "${kind}".`);
   state.questions[target] = next;
   return target;

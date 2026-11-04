@@ -59,7 +59,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   const { kind, target: id, payload, ctx: observed } = row;
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
-  if (['ask', 'answer', 'route', 'question_ack'].includes(kind)) { const q = foldQuestion(state, row); finish(state, row, observed, null, supervisors); return q; }
+  if (['ask', 'answer', 'route', 'question_ack', 'question_verify'].includes(kind)) { const q = foldQuestion(state, row); finish(state, row, observed, null, supervisors); return q; }
   if (kind === 'observe_source') { const t = observeSource(state, payload, observed); finish(state, row, observed, t, supervisors); return t; }
   const ctx = id ? { ...observed, ...derivedCtx(state, id) } : observed;
   const cur = id && (state.work[id] || (() => { throw new Error(`There is no work item ${id}.`); })());
