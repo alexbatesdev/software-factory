@@ -1,6 +1,6 @@
 // What each seat should find in its inbox: board requests, worker stops, idle queues and answers, as message commands.
 // Pure. A message is created once per subject; waking the seat is the Wake port's job, not this one's.
-import { eligibleRequests, planWorkerStops, planIdleQueues, routeOf, PREFIX } from './notifier.mjs';
+import { eligibleRequests, planWorkerStops, planIdleQueues, routeOf, workerJob, PREFIX } from './notifier.mjs';
 
 /**
  * Subjects already told: V2 messages, and imported V1 notifications (so cutover tells nobody twice).
@@ -50,6 +50,16 @@ export function inboxCommands(state, cfg, fleet = null) {
     const idle = planIdleQueues({ units: fleet.units, works: state.work, watch: watches.idleQueues, sent, now: fleet.now, supervisors: cfg.supervisors });
     for (const d of idle.due) cmds.push(msg(d.to, d.work, { idleQueue: d.key }, `Your stream is free and ${d.work} ${d.assignment} (${d.kind}) is queued on it: start it.`));
     watches = { workerStops: stops.watch, idleQueues: idle.watch };
+    // herdr can report a finished worker as working (a spinner left on screen); an unchanged pane is the tell.
+    for (const u of fleet.units) {
+      const since = fleet.quiet?.[u.id], job = u.worker?.status === 'working' && workerJob(u, state.work);
+      if (since == null || !job || fleet.now - since < (cfg.quietMs ?? 30 * 60000)) continue;
+      const key = `${job[0].id}/${job[1].id}/${since}`;
+      if (!told.has(`quietWorker:${key}`)) cmds.push(msg(u.supervisor.label, job[0].id, { quietWorker: key }, `${u.worker.label} shows as working, but its pane hasn't changed for ${Math.round((fleet.now - since) / 60000)} min while ${job[0].id} ${job[1].id} is started: read its pane; if it finished, record what it reported.`));
+    }
   }
+  // The board lead's hourly check-in (Alex, 2026-11-04): one message per hour, delivered like any other.
+  const hour = cfg.checkIn?.now?.slice(0, 13);
+  if (hour && !told.has(`checkIn:${hour}`)) cmds.push(msg(cfg.checkIn.seat, null, { checkIn: hour }, `Hourly check-in ${hour}:00Z: run your role file's check-in, file what you find as factory records, then ack this message.`));
   return { cmds, watches };
 }

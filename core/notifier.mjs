@@ -95,6 +95,17 @@ export function notificationText(plan, base, to) {
  * @param watch per-unit {armed, stoppedAt}; `working` arms it, a notice disarms it, blocked/unknown leave it alone
  * @returns {{watch, due: [{unit, to, work, assignment, worker, workerRef, stoppedAt}]}}
  */
+const startedAt = a => [...(a.history || [])].reverse().find(h => h.status === 'started')?.at || a.at || '';
+/**
+ * The assignment a stream's worker is on: its most recently started work assignment, or an internal review it runs itself
+ * (reviews in a reviewer pane aren't the worker's). [record, assignment] or undefined.
+ */
+export function workerJob(u, works) {
+  const to = u.supervisor?.label;
+  return Object.values(works).flatMap(r => r.stream === to ? (r.assignments || []).filter(a => (a.kind !== 'review' || a.owner === u.worker?.label) && a.status === 'started').map(a => [r, a]) : [])
+    .sort(([, a], [, b]) => startedAt(a).localeCompare(startedAt(b))).at(-1);
+}
+
 export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000, supervisors }) {
   const next = { ...watch }, due = [];
   for (const u of units) {
@@ -106,8 +117,7 @@ export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000
     const stoppedAt = w.stoppedAt ?? now;
     next[u.id] = { ...w, stoppedAt };
     if (!w.armed || now - stoppedAt < graceMs) continue;
-    // Work assignments, and internal reviews the worker runs itself (reviews in a reviewer pane aren't the worker's).
-    const started = Object.values(works).flatMap(r => r.stream === to ? (r.assignments || []).filter(a => (a.kind !== 'review' || a.owner === u.worker.label) && a.status === 'started').map(a => [r, a]) : []).at(-1);
+    const started = workerJob(u, works);
     if (!started) continue;
     next[u.id] = { armed: false, stoppedAt };
     due.push({ unit: u.id, to, work: started[0].id, assignment: started[1].id, version: started[1].version, worker: u.worker.label, workerRef: u.worker.ref, stoppedAt });

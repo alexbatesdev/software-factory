@@ -142,3 +142,17 @@ test('a priority record queued on a free stream starts before older queued work'
   const { due } = planIdleQueues({ units, works: { 'W-5': q('W-5', 3), 'W-9': q('W-9', 1) }, watch: { u1: 0 }, now: 600000, supervisors: [S] });
   assert.equal(due[0].work, 'W-9');
 });
+
+test('a worker stop names the most recently started assignment, not the newest record', async () => {
+  const { planWorkerStops } = await import('../core/notifier.mjs');
+  const S = 'sup: s', started = at => ({ status: 'started', at });
+  const works = {
+    'W-1': { id: 'W-1', stream: S, assignments: [{ id: 'R2', kind: 'review', owner: 'sbx: s', status: 'started', history: [started('2026-11-03T00:02:38Z')] }] },
+    'W-2': { id: 'W-2', stream: S, assignments: [{ id: 'R1', kind: 'implementation', status: 'started', history: [started('2026-11-02T23:43:35Z')] }] },
+  };
+  const u = status => ({ id: 'u', supervisor: { label: S, status: 'idle' }, worker: { label: 'sbx: s', status } });
+  const { watch } = planWorkerStops({ units: [u('working')], works, now: 0, supervisors: [S] });
+  const a = planWorkerStops({ units: [u('idle')], works, watch, now: 0, supervisors: [S] });
+  const { due } = planWorkerStops({ units: [u('idle')], works, watch: a.watch, now: 120000, supervisors: [S] });
+  assert.deepEqual(due.map(d => `${d.work}/${d.assignment}`), ['W-1/R2']);
+});

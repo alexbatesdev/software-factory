@@ -13,7 +13,7 @@ const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiv
 export const emptyState = () => ({ work: {}, questions: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, nextQuestion: 1, seq: 0 });
 
 // What the reducer needs to know about other records, computed from the fold so far.
-function derivedCtx(state, id) {
+export function derivedCtx(state, id) {
   const rec = d => state.work[d];
   const w = rec(id), keys = new Set([w?.source?.key, ...(w?.aliases || [])].filter(Boolean));
   return {

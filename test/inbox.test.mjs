@@ -54,3 +54,24 @@ test('a worker that stops again on the same assignment messages its supervisor a
   }
   assert.equal(sent, 2);
 });
+
+test('a worker reported working whose pane has not changed for quietMs messages its supervisor once per stretch', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'review', requests: [], assignments: [{ id: 'R3', kind: 'review', owner: 'sbx: stream-1', status: 'started', version: 1 }] }) } });
+  const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'working' } };
+  const q = quietSince => plan(s, { units: [unit], now: 40 * 60000, quiet: { u1: quietSince } }).cmds.filter(c => c.payload.about.quietWorker);
+  assert.deepEqual(q(20 * 60000), [], 'quiet for 20 minutes is not yet stuck');
+  const [c] = q(0);
+  assert.deepEqual([c.payload.to, c.payload.about], [S1, { quietWorker: 'W-1/R3/0' }]);
+  s.append(c, ctx('board'));
+  assert.deepEqual(q(0), [], 'told once for this quiet stretch');
+});
+
+test('the board lead gets one check-in message per hour', () => {
+  const s = store({});
+  const at = iso => inboxCommands(s.state, { ...cfg, checkIn: { seat: 'board lead', now: iso } }).cmds;
+  const [c] = at('2026-11-05T09:10:00.000Z');
+  assert.deepEqual([c.payload.to, c.payload.about], ['board lead', { checkIn: '2026-11-05T09' }]);
+  s.append(c, ctx('board'));
+  assert.deepEqual(at('2026-11-05T09:50:00.000Z'), []);
+  assert.equal(at('2026-11-05T10:00:00.000Z').length, 1);
+});
