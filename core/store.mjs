@@ -161,25 +161,25 @@ export function openStore(path = ':memory:', opts = {}) {
     /**
      * Decide and record commands, all or none: a refused command writes nothing. A repeated eventId is applied once.
      * Payloads round-trip through JSON so the live state is exactly what a replay rebuilds.
-     * @param cmds [{kind, target?, payload, eventId?}] @param ctx {now, by, ...observations}
+     * @param cmds [{kind, target?, payload, eventId?, ctx?}] (a command's own ctx adds observations) @param ctx {now, by, ...observations}
      * @returns [{id, seq, duplicate?}]
      */
     appendAll(cmds, ctx) {
       if (!ctx?.now || !ctx?.by) throw new Error('A command needs ctx.now and ctx.by.');
       // The supervisor list is recorded per row, so a replay never re-derives streams from today's config.
-      const observed = { ...Object.fromEntries(OBSERVED.filter(k => ctx[k] !== undefined).map(k => [k, ctx[k]])), ...(opts.supervisors?.length ? { supervisors: opts.supervisors } : {}) };
+      const observe = c => ({ ...Object.fromEntries(OBSERVED.filter(k => c[k] !== undefined).map(k => [k, c[k]])), ...(opts.supervisors?.length ? { supervisors: opts.supervisors } : {}) });
       // ponytail: clones the whole state per call (3.9 ms measured on the 1.1 MB V1 state); fold into a scratch copy of the touched records if appends get hot.
       const next = structuredClone(state), out = [], rowsToWrite = [];
       for (const cmd of cmds) {
         if (cmd.eventId && db.prepare('SELECT seq FROM events WHERE event_id = ?').get(cmd.eventId)) { out.push({ id: cmd.target, duplicate: true }); continue; }
-        const row = { seq: next.seq + 1, kind: cmd.kind, target: cmd.target || null, payload: JSON.parse(JSON.stringify(cmd.payload === undefined ? {} : cmd.payload)), ctx: observed };
+        const row = { seq: next.seq + 1, kind: cmd.kind, target: cmd.target || null, payload: JSON.parse(JSON.stringify(cmd.payload === undefined ? {} : cmd.payload)), ctx: observe({ ...ctx, ...cmd.ctx, now: ctx.now, by: ctx.by }) };
         out.push({ id: fold(next, row, opts), seq: row.seq });
         rowsToWrite.push([cmd.eventId || null, row]);
       }
       db.exec('BEGIN');
       try {
         for (const [eventId, row] of rowsToWrite) db.prepare('INSERT INTO events (seq, event_id, at, by, kind, target, payload, ctx) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-          .run(row.seq, eventId, ctx.now, ctx.by, row.kind, row.target, JSON.stringify(row.payload), JSON.stringify(observed));
+          .run(row.seq, eventId, ctx.now, ctx.by, row.kind, row.target, JSON.stringify(row.payload), JSON.stringify(row.ctx));
         db.exec('COMMIT');
       } catch (e) { db.exec('ROLLBACK'); throw e; }
       state = next;

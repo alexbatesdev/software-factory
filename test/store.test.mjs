@@ -4,6 +4,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openStore } from '../core/store.mjs';
+import { headCommands } from '../core/observe.mjs';
 
 const ctx = (over = {}) => ({ now: '2026-10-30T12:00:00.000Z', by: 'test', ...over });
 const build = { kind: 'create', payload: { title: 'Fix the thing', kind: 'build', criteria: ['Thing is fixed'] } };
@@ -50,6 +51,19 @@ test('replay uses the observations stored on the row, not live data', () => {
   s.append({ kind: 'observe_head', target: id, payload: { sha: 'abc1234', via: 'github', isDraft: true } }, ctx({ standingWaiver: { by: 'Alex' }, liveOnly: 'dropped' }));
   assert.deepEqual(s.rows()[1].ctx, { now: '2026-10-30T12:00:00.000Z', by: 'test', standingWaiver: { by: 'Alex' } });
   assert.deepEqual(s.replay(), s.state);
+});
+
+test("a poll command's own observations reach the reducer: a new commit on a ready PR keeps the standing waiver", () => {
+  const s = openStore(), pr = 'https://github.com/builtapp/built-rails/pull/8236';
+  const { id } = s.append({ kind: 'create', payload: { title: 'PED', kind: 'build', criteria: ['x'], links: { pr } } }, ctx());
+  const w = { ...s.state.work[id], phase: 'awaiting_human_approval', head: 'aaa1111', headVerified: { via: 'github', sha: 'aaa1111' },
+    approvalWait: { head: 'aaa1111', prUrl: pr }, internalReviewWaivers: [{ head: 'aaa1111', prUrl: pr }] };
+  s.append({ kind: 'import', target: `work/${id}`, payload: w }, ctx());
+  const cmds = headCommands(s.state, new Map([['built-rails:8236', { sha: 'bbb2222', isDraft: false }]]),
+    { owner: 'builtapp', now: '2026-11-04T18:21:33.000Z', standingWaiver: { by: 'Alex', reason: 'ready', authorization: 'standing' } });
+  s.appendAll(cmds, ctx({ by: 'github' }));
+  assert.deepEqual([s.state.work[id].phase, s.state.work[id].approvalWait?.head], ['awaiting_human_approval', 'bbb2222']);
+  assert.deepEqual(s.replay().work[id].phase, 'awaiting_human_approval');
 });
 
 test("one record's question count never demotes another ready record", () => {
