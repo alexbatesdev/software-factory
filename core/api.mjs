@@ -51,8 +51,9 @@ export function createApi({ store, config, readPr = async () => null, now = () =
         const s = store.state, inbox = {};
         for (const m of Object.values(s.messages)) if (!m.ackedAt) inbox[m.to] = (inbox[m.to] || 0) + 1;
         const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend }) => ({ id, title, work, recommend }));
+        const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
-          cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...observed() }) });
+          drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }) });
       }
       if (req.method === 'GET' && url.pathname === '/api/inbox') return send(res, 200, { seat, messages: Object.values(store.state.messages).filter(m => m.to === seat && !m.ackedAt) });
       if (req.method === 'POST' && url.pathname === '/api/actions') {

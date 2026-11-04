@@ -90,7 +90,7 @@ function cardEl(c, labels) {
 }
 
 // Inside the factory: each stream's running job and what's next on it, then the shared queue, then the rest.
-function factoryLanes(cards, labels) {
+function factoryLanes(cards, labels, b) {
   const box = el('div'), left = new Set(cards);
   const lane = (title, sub, rows) => {
     rows = rows.filter(([, cs]) => cs.length);
@@ -103,7 +103,8 @@ function factoryLanes(cards, labels) {
   for (const s of streams) {
     const mine = cards.filter(c => c.stream === s && c.kind !== 'factory' && !c.queue?.position);
     const now = mine.filter(c => c.running), next = mine.filter(c => !c.running && !c.queue);
-    lane(s.replace(/^sup: /, ''), now.length ? `working on ${now.map(c => c.id).join(', ')}` : 'nothing running', [['Now', now], ['Next here', next]]);
+    const disk = b.disk?.[s] != null ? ` · disk ${Math.round(b.disk[s] * 100)}%` : '';
+    lane(s.replace(/^sup: /, ''), (b.drain?.[s] ? `⚠ ${b.drain[s]} · ` : '') + (now.length ? `working on ${now.map(c => c.id).join(', ')}` : 'nothing running') + disk, [['Now', now], ['Next here', next]]);
   }
   const queue = cards.filter(c => c.queue?.position).sort((a, b) => a.queue.position - b.queue.position);
   lane('Queue', 'the next free stream takes #1', [['Waiting', queue]]);
@@ -143,7 +144,7 @@ async function render() {
     const sec = el('section', `tier ${tier}-t`), h = el('div', 'h');
     h.append(el('h2', null, name), el('span', 'mute', String(cards.length)));
     sec.append(h);
-    if (tier === 'factory') { sec.append(factoryLanes(cards, b.buckets.labels)); board.append(sec); continue; }
+    if (tier === 'factory') { sec.append(factoryLanes(cards, b.buckets.labels, b)); board.append(sec); continue; }
     const tiles = el('div', 'tiles'); tiles.append(...cards.map(c => cardEl(c, b.buckets.labels)));
     if (tier === 'done') { const det = el('details'); det.open = tier === 'factory'; det.append(el('summary', 'mute', tier === 'done' ? 'show' : 'hide / show'), tiles); sec.append(det); }
     else sec.append(tiles);

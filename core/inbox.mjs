@@ -47,7 +47,13 @@ export function inboxCommands(state, cfg, fleet = null) {
     for (const d of stops.due)
       cmds.push(msg(d.to, d.work, { workerStop: `${d.work}/${d.assignment}` }, `${d.worker} stopped while ${d.work} ${d.assignment} is started: read its pane and record what it reported.`));
     const sent = Object.fromEntries([...told].filter(k => k.startsWith('idleQueue:')).map(k => [k.slice(10), true]));
-    const idle = planIdleQueues({ units: fleet.units, works: state.work, watch: watches.idleQueues, sent, now: fleet.now, supervisors: cfg.supervisors });
+    const drain = fleet.drain || new Map();
+    // A draining stream takes no new work: its supervisor hears once per sandbox, and gets no "your stream is free" wake.
+    for (const u of fleet.units) {
+      const why = drain.get(u.supervisor?.label), key = `${u.worker?.label}/${u.worker?.sandbox || u.worker?.ref}`;
+      if (why && u.worker && !told.has(`recycle:${key}`)) cmds.push(msg(u.supervisor.label, null, { recycle: key }, `${why}. Finish the running job, then start nothing new: the factory recycles the worker between tasks and tells you when the fresh one is up.`));
+    }
+    const idle = planIdleQueues({ units: fleet.units.filter(u => !drain.has(u.supervisor?.label)), works: state.work, watch: watches.idleQueues, sent, now: fleet.now, supervisors: cfg.supervisors });
     for (const d of idle.due) cmds.push(msg(d.to, d.work, { idleQueue: d.key }, `Your stream is free and ${d.work} ${d.assignment} (${d.kind}) is queued on it: start it.`));
     watches = { workerStops: stops.watch, idleQueues: idle.watch };
     // herdr can report a finished worker as working (a spinner left on screen); an unchanged pane is the tell.

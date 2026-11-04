@@ -33,7 +33,7 @@ export function streamLoad(works, labels) {
 
 /**
  * @param works server work views (openQuestions, openDeps, intakeHold included)
- * @param cfg {supervisors: {label: {...}}, exclude: [W-n], mutationBranch}; config order breaks load ties
+ * @param cfg {supervisors: {label: {...}}, exclude: [W-n], mutationBranch, drain: Map(stream → reason) for streams taking no new work}; config order breaks load ties
  * @param fleet {terminals: [pane labels running in Terminals]}
  * @returns [{id, action: 'queue'|'request'|null, owner?, reason}] for every ready/queued record not already with its supervisor
  */
@@ -47,9 +47,12 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   // Work blocked on a person holds no stream (Alex: keep workers on unblocked work while a part waits), unless an agent is on it.
   const onAlex = w => w.openQuestions > 0 && !(w.assignments || []).some(a => ['started', 'blocked'].includes(a.status));
   for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && !onAlex(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
+  // A draining stream (its worker is due a recycle) takes nothing new, priority work included.
+  for (const [to, why] of cfg.drain || []) busy.set(to, why);
   // Priority work (priority 1) cuts in behind whatever a stream is running, ahead of anything queued there.
   const runningOn = new Map();
   for (const w of works) { const to = routeOf(w, labels); if (to && !onAlex(w) && running(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
+  for (const [to, why] of cfg.drain || []) runningOn.set(to, why);
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
   const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && (pendingDispatch(w) || takenUp(w) || live(w))))
     .sort(queueOrder);

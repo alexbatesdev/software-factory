@@ -90,3 +90,13 @@ test('a proposed record created after intakeSince also messages the triage seat'
   const cmds = inboxCommands(s.state, { ...cfg, triage: { seat: 'board lead', since: '2026-11-05T00:00:00.000Z' } }).cmds.filter(x => x.payload.about.intake);
   assert.deepEqual(cmds.map(x => x.payload.about.intake), ['W-1']);
 });
+
+test('a draining stream tells its supervisor once per sandbox, and gets no idle-queue wake', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'fixes', requests: [], assignments: [{ id: 'R2', kind: 'fixes', status: 'queued', version: 1 }] }) } });
+  const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'idle', sandbox: 'box-1' } };
+  const fleet = now => ({ units: [unit], now, watches: {}, drain: new Map([[S1, 'sbx: stream-1 disk at 95%: recycled after its running job']]) });
+  const first = inboxCommands(s.state, cfg, fleet(0)).cmds;
+  assert.deepEqual(first.map(c => c.payload.about), [{ recycle: 'sbx: stream-1/box-1' }]);
+  s.append(first[0], ctx('board'));
+  assert.deepEqual(inboxCommands(s.state, cfg, fleet(10 * 60000)).cmds, [], 'no repeat, and no idle-queue wake while draining');
+});

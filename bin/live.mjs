@@ -27,6 +27,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
+import { planRecycles } from '../core/recycle.mjs';
 import { gh as liveGh } from '../effects/github.mjs';
 
 // Dry run (FACTORY_DRY=1): a scratch DB from a copy of V1's state; reads are real, nothing is typed, marked or moved.
@@ -62,6 +63,10 @@ log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
 let fleet = null, watches = {}, woken = {}, openPrs = new Map(), lastPlan = [];
+// Worker hosts (Alex, 11-04): disk readings, cycles under way or failed, and the streams draining for one.
+const RC = { enabled: false, threshold: 0.75, host: 'sbx', healthMs: 300000, ...config.recycle };
+const host = RC.enabled ? await import(`../hosts/${RC.host}.mjs`) : null;
+let health = {}, recycling = {}, drain = new Map();
 // A refusal that repeats every tick is logged once.
 const seen = new Set(), once = line => { if (!seen.has(line)) { seen.add(line); log(line); } };
 const quiet = {}, screens = {};
@@ -103,7 +108,7 @@ function autoDispatchTick() {
   const s = store.state;
   const views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
-  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], mutationBranch: config.mutationBranch }, { terminals });
+  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], mutationBranch: config.mutationBranch, drain }, { terminals });
   lastPlan = plan;
   for (const p of plan.filter(p => p.action)) {
     const w = s.work[p.id], who = 'board (auto-dispatch)';
@@ -125,7 +130,7 @@ async function inboxTick() {
   const checkIn = config.boardLead?.checkIn !== false ? { seat: config.boardLead?.seat || 'board lead', now: now() } : null;
   const triage = { seat: config.boardLead?.seat || 'board lead', since: LIVE_SINCE };
   const plan = inboxCommands(store.state, { supervisors, seats, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
-    fleet && { units: fleet.units, now: Date.now(), watches, quiet });
+    fleet && { units: fleet.units, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
   for (const w of wakePlan(store.state, woken, Date.now(), config.notify?.reminderMs)) {
@@ -201,8 +206,37 @@ async function fleetTick() {
 }
 
 http.createServer(createApi({ store, config, readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ units: fleet?.units || [], prs: openPrs, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan }) }))
+  observed: () => ({ units: fleet?.units || [], prs: openPrs, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
+
+// Read each worker's disk, drain full ones, and cycle a drained worker once it is between tasks.
+async function recycleTick() {
+  if (!host || !fleet) return;
+  for (const u of fleet.units.filter(u => supervisors.includes(u.supervisor?.label) && (u.worker?.sandbox || RC.host !== 'sbx'))) {
+    try { health[u.id] = await host.health(u.worker); } catch (e) { once(`health ${u.worker?.label}: ${e.message}`); }
+  }
+  const plan = planRecycles({ units: fleet.units, health, works: store.state.work, threshold: RC.threshold, recycling, supervisors });
+  drain = plan.drain;
+  for (const d of plan.due) {
+    const tell = (to, about, text) => apply([{ kind: 'message', payload: { to, about, text: `[software factory] ${text}` } }], 'board');
+    const found = await host.preflight(d.worker).catch(e => [{ path: '(preflight)', problem: e.message, blocking: true }]);
+    const problems = found.filter(p => p.blocking), dropped = found.filter(p => !p.blocking).map(p => `${p.path}: ${p.problem}`).join('; ');
+    if (problems.length) {
+      const key = `${d.worker.sandbox}/${problems.length}`, list = problems.map(p => `${p.path}: ${p.problem}`).join('; ');
+      if (!Object.values(store.state.messages).some(m => m.about?.recycleBlocked === key))
+        for (const to of [d.to, config.boardLead?.seat || 'board lead']) tell(to, { recycleBlocked: key }, `${d.worker.label} is due a recycle (disk ${Math.round(d.diskPct * 100)}%), but this work would be lost with it: ${list}. Push or discard it; the factory retries on its next disk check.`);
+      continue;
+    }
+    if (DRY) { once(`dry run: would recycle ${d.worker.label} (${d.worker.sandbox})`); continue; }
+    recycling[d.unit] = { step: 'replacing the sandbox' };
+    drain.set(d.to, `recycling ${d.worker.label}`);
+    log(`recycle ${d.worker.label}: starting (disk ${Math.round(d.diskPct * 100)}%)`);
+    const r = await host.recycle(d.worker, log).catch(e => ({ ok: false, detail: e.message }));
+    log(`recycle ${d.worker.label}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
+    if (r.ok) { delete recycling[d.unit]; delete health[d.unit]; tell(d.to, { recycled: `${d.worker.sandbox}/${now()}` }, `${d.worker.label} was recycled (fresh sandbox, clean disk). It has none of its earlier context; brief it cold.${dropped ? ` Discarded with the old sandbox (replaced or stale): ${dropped}.` : ''}`); }
+    else { recycling[d.unit] = { step: 'failed', failed: r.detail }; tell(config.boardLead?.seat || 'board lead', { recycleFailed: `${d.worker.sandbox}/${now()}` }, `Recycling ${d.worker.label} failed: ${r.detail}. Its stream takes no new work until this is fixed; file it as a factory record.`); }
+  }
+}
 
 const every = (ms, fn) => { let running = false; const run = async () => { if (running) return; running = true; try { await fn(); } catch (e) { log(e.message); } finally { running = false; } }; run(); setInterval(run, ms); };
 await fleetTick();
@@ -210,3 +244,4 @@ every(config.poll.fleetMs, fleetTick);
 every(config.notify?.intervalMs ?? 15000, inboxTick);
 every(config.poll.githubMs, githubTick);
 every(config.poll.teamworkMs, teamworkTick);
+every(RC.healthMs, recycleTick);
