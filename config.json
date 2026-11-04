@@ -106,13 +106,13 @@
     "_doc": "Fixed seats of the software factory; streams come from routing.supervisors. bin/factory.mjs brings them up.",
     "seats": [
       {
-        "label": "triage-board",
+        "label": "software factory",
         "kind": "shell",
         "workspace": "Services",
         "tab": "Board",
-        "cwd": "~/Code/triage-board",
-        "run": "./start.sh",
-        "expect": "server.mjs"
+        "cwd": "~/Code/software-factory",
+        "run": "FACTORY_MODE=live node --env-file=\"$HOME/Code/teamwork mini mcp/.env\" bin/live.mjs",
+        "expect": "live.mjs"
       },
       {
         "label": "local-head",
