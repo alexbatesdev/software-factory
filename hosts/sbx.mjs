@@ -63,7 +63,8 @@ export async function bridgeLine(worker) {
   const src = f => import(join(PLUGIN, 'src', f));
   const [{ bridgeCommand }, { loadConfig }, { getPaneEntry }, { agentForEntry }] = await Promise.all(['action-main.mjs', 'config.mjs', 'state.mjs', 'lifecycle.mjs'].map(src));
   const config = loadConfig(CONFIG), entry = getPaneEntry(STATE, worker.ref);
-  const agent = agentForEntry(config, entry || {});
+  if (!entry) throw new Error(`the sbx plugin has no mapping for pane ${worker.ref}`);
+  const agent = agentForEntry(config, entry);
   return bridgeCommand({ pluginEnv: { pluginRoot: PLUGIN, stateDir: STATE, configDir: CONFIG, herdrBin: '/opt/homebrew/bin/herdr' }, mode: 'start', paneId: worker.ref, detectionKind: agent.herdrDetectionKind, sbxBin: 'sbx' });
 }
 
