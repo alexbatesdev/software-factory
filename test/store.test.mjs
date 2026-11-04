@@ -223,3 +223,17 @@ test("verify lets an unverified question reach Alex, or drops it with a note", a
   assert.deepEqual([s.state.questions['TB-2'].status, s.state.questions['TB-2'].verificationNote], ['superseded', 'duplicate of TB-9']);
   assert.throws(() => s.appendAll(commandsFor('verify', { id: 'TB-1', keep: true, note: 'again' }), ctx()), /already verified/);
 });
+
+test('answering the last open question moves a record out of clarification to ready, unless it waits on someone', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = openStore();
+  const a = s.append(build, ctx()).id, b = s.append(build, ctx()).id;
+  for (const [q, w] of [['TB-1', a], ['TB-2', a], ['TB-3', b]]) s.append({ kind: 'import', target: `questions/${q}`, payload: { title: 'Which?', status: 'open', work: w, verification: 'verified', options: [{ key: 'a', text: 'A' }] } }, ctx('import'));
+  for (const id of [a, b]) s.appendAll(commandsFor('triage', { work: id, bucket: 'clarify', note: 'asked' }), ctx({ by: 'board lead' }));
+  s.append(ev(b, { type: 'wait', who: 'product', what: 'their call', evidence: 'TB-9' }), ctx());
+  s.appendAll(commandsFor('answer', { id: 'TB-1', choice: 'a' }), ctx({ by: 'local-head' }));
+  assert.equal(s.state.work[a].phase, 'clarification', 'one question still open');
+  s.appendAll(commandsFor('answer', { id: 'TB-2', choice: 'a' }), ctx({ by: 'local-head' }));
+  s.appendAll(commandsFor('answer', { id: 'TB-3', choice: 'a' }), ctx({ by: 'local-head' }));
+  assert.deepEqual([s.state.work[a].phase, s.state.work[b].phase], ['ready', 'clarification']);
+});
