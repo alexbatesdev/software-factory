@@ -5,53 +5,116 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Software Factory</title>
 <style>
-:root { --bg: #f6f6f4; --card: #fff; --ink: #1d1d1b; --mute: #6b6b66; --line: #e2e1dc; --you: #b3261e; --green: #2e7d32; --yellow: #a26b00; }
-@media (prefers-color-scheme: dark) { :root { --bg: #161615; --card: #22221f; --ink: #ecebe6; --mute: #9b9a94; --line: #34332f; --you: #f2766b; --green: #7cc57f; --yellow: #e0b04f; } }
+:root {
+  --bg: #f4f4f1; --card: #fff; --ink: #1d1d1b; --mute: #6b6b66; --line: #e2e1dc; --link: #1a5fd0;
+  --you: #c2261b; --you-bg: #fdecea; --others: #9a6200; --others-bg: #fdf3e1; --factory: #3d6b8f; --factory-bg: #eef3f7; --done: #8a8a84;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #161615; --card: #22221f; --ink: #ecebe6; --mute: #9b9a94; --line: #34332f; --link: #7fb0ff;
+  --you: #ff8a7e; --you-bg: #3a1d1a; --others: #e9b65c; --others-bg: #33291a; --factory: #8fb6d6; --factory-bg: #1c262e; --done: #77766f;
+} }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+a { color: var(--link); }
 header { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 14px; }
-h1 { font-size: 18px; margin: 0; } h2 { font-size: 14px; margin: 0 0 8px; } .mute { color: var(--mute); font-size: 12px; }
-.you { border: 2px solid var(--you); border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; background: var(--card); }
-.you h2 { color: var(--you); } .you li { margin: 4px 0; }
-.board { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; align-items: start; }
-.col { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0; }
-.card { border-top: 1px solid var(--line); padding: 8px 0; } .card:first-of-type { border-top: 0; }
-.card .t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; } .card .w { font-size: 13px; } .card .w.me { color: var(--you); font-weight: 600; } .badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--you); border: 1px solid var(--you); border-radius: 4px; padding: 0 4px; margin-right: 4px; }
-a { color: inherit; } .seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { color: var(--mute); font-size: 12px; }
+
+/* Waiting on you: one number, then where the questions come from. */
+.you { background: var(--you-bg); border: 2px solid var(--you); border-radius: 10px; padding: 12px 14px; margin-bottom: 18px; }
+.you .big { font-size: 34px; font-weight: 800; color: var(--you); line-height: 1; margin-right: 10px; }
+.you .head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 0; }
+.groups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.group { background: var(--card); border: 1px solid var(--you); border-radius: 8px; padding: 6px 10px; }
+.group b { color: var(--you); margin-right: 6px; } .group .ids { font-size: 12px; color: var(--mute); }
+
+/* Each tier is a band; cards wrap across it. Loud for you, quiet for the factory. */
+.tier { border-radius: 10px; padding: 10px 12px 12px; margin-bottom: 14px; }
+.tier > .h { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
+.tier.you-t { background: var(--you-bg); } .tier.you-t h2 { color: var(--you); }
+.tier.others-t { background: var(--others-bg); } .tier.others-t h2 { color: var(--others); }
+.tier.factory-t { background: var(--factory-bg); } .tier.factory-t h2 { color: var(--factory); }
+.tier.done-t h2 { color: var(--done); }
+.tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.card { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 270px; max-width: 100%; }
+.you-t .card { border-left-color: var(--you); } .others-t .card { border-left-color: var(--others); }
+.factory-t .card { border-left-color: var(--factory); opacity: .85; font-size: 13px; width: 230px; }
+.done-t .card { opacity: .6; font-size: 12px; width: 210px; }
+.card .t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .w { font-size: 12px; margin-top: 2px; } .you-t .card .w { color: var(--you); font-weight: 600; }
+.tag { display: inline-block; font-size: 11px; border-radius: 4px; padding: 0 5px; margin-right: 4px; background: var(--bg); color: var(--mute); }
+.badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--you); border: 1px solid var(--you); border-radius: 4px; padding: 0 4px; margin-right: 4px; }
+.seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 details summary { cursor: pointer; }
 </style>
 </head>
 <body>
 <header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span></header>
-<section class="you" id="you" hidden><h2>Waiting on you</h2><ul id="youList"></ul><p class="mute">Answer in local-head's chat (e.g. "TB-12 a").</p></section>
-<main class="board" id="board"></main>
+<section class="you" id="you" hidden>
+  <div class="head"><span class="big" id="youCount"></span><h2>waiting on you</h2><span class="mute" style="margin-left:10px">Ask local-head "what's waiting on me" to answer them.</span></div>
+  <div class="groups" id="youGroups"></div>
+</section>
+<main id="board"></main>
 <div class="seats" id="seats"></div>
 <script>
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-function cardEl(c) {
+// Who a card is waiting on decides how loud it is. Agents (seats, triage, reviewer panes) are the factory.
+const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
+const tierOf = c => c.category === 'history' ? 'done'
+  : c.needs?.me || c.waiting?.who === 'you' ? 'you'
+  : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others' : 'factory';
+// Cards folded into a PR's card show only when they need Alex; otherwise the PR's card speaks for them.
+const shown = (c, order) => order.includes(c.category) || tierOf(c) === 'you';
+const TIERS = [['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['done', 'Done / closed']];
+
+function cardEl(c, labels) {
   const d = el('div', 'card');
   const t = el('div', 't', `${c.id} · ${c.title}`); t.title = c.title;
   if (c.priority) t.prepend(el('span', 'badge', 'Priority'));
-  d.append(t, el('div', 'mute', [c.label, c.stream].filter(Boolean).join(' · ')));
-  if (c.waiting) d.append(el('div', 'w' + (c.waiting.who === 'you' ? ' me' : ''), c.waiting.text));
-  if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', 'mute', `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; d.append(a); }
+  d.append(t);
+  const meta = el('div', 'mute');
+  meta.append(el('span', 'tag', labels[c.category] || (c.category === 'in-unit' ? 'Part of a PR' : c.category)));
+  if (c.stream) meta.append(el('span', null, c.stream.replace(/^sup: /, '') + ' '));
+  if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', null, `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; meta.append(a); }
+  d.append(meta);
+  if (c.waiting) d.append(el('div', 'w', c.waiting.text));
   return d;
 }
+
 async function render() {
   let b; try { b = await (await fetch('/api/board')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
   document.getElementById('meta').textContent = `${b.mode} · log seq ${b.seq} · ${new Date().toLocaleTimeString()}`;
-  const you = document.getElementById('youList'); you.replaceChildren();
-  for (const q of b.questions) you.append(el('li', null, `${q.id}${q.work ? ` (${q.work})` : ''}: ${q.title}${q.recommend ? ` · recommend ${q.recommend}` : ''}`));
-  for (const c of b.cards.filter(c => c.waiting?.who === 'you' && !b.questions.some(q => q.work === c.id))) you.append(el('li', null, `${c.id}: ${c.waiting.text}`));
-  document.getElementById('you').hidden = !you.children.length;
+  const byId = new Map(b.cards.map(c => [c.id, c]));
+
+  // Questions grouped by the record's project; records don't carry one yet, so they land in one group.
+  const groups = new Map();
+  for (const q of b.questions) {
+    const c = byId.get(q.work), key = q.project || c?.project || 'Not on a project yet';
+    groups.set(key, [...(groups.get(key) || []), q.id]);
+  }
+  const extra = b.cards.filter(c => tierOf(c) === 'you' && !b.questions.some(q => q.work === c.id));
+  if (extra.length) groups.set('Cards without a question', extra.map(c => c.id));
+  const total = b.questions.length + extra.length;
+  document.getElementById('youCount').textContent = total;
+  const g = document.getElementById('youGroups'); g.replaceChildren();
+  for (const [name, ids] of [...groups].sort((x, y) => y[1].length - x[1].length)) {
+    const box = el('div', 'group'); box.append(el('b', null, ids.length), el('span', null, name + ' '), el('span', 'ids', ids.join(', ')));
+    g.append(box);
+  }
+  document.getElementById('you').hidden = !total;
+
   const board = document.getElementById('board'); board.replaceChildren();
-  for (const key of b.buckets.order) {
-    const cards = b.cards.filter(c => c.category === key).sort((x, y) => y.priority - x.priority || (y.updatedAt || '').localeCompare(x.updatedAt || ''));
+  const order = b.buckets.order;
+  for (const [tier, name] of TIERS) {
+    const cards = b.cards.filter(c => shown(c, order) && tierOf(c) === tier)
+      .sort((x, y) => y.priority - x.priority || order.indexOf(x.category) - order.indexOf(y.category) || (y.updatedAt || '').localeCompare(x.updatedAt || ''));
     if (!cards.length) continue;
-    const col = el('section', 'col'); col.append(el('h2', null, `${b.buckets.labels[key] || key} (${cards.length})`));
-    if (key === 'history') { const det = el('details'); det.append(el('summary', 'mute', 'show'), ...cards.map(cardEl)); col.append(det); }
-    else col.append(...cards.map(cardEl));
-    board.append(col);
+    const sec = el('section', `tier ${tier}-t`), h = el('div', 'h');
+    h.append(el('h2', null, name), el('span', 'mute', String(cards.length)));
+    sec.append(h);
+    const tiles = el('div', 'tiles'); tiles.append(...cards.map(c => cardEl(c, b.buckets.labels)));
+    if (tier === 'done' || tier === 'factory') { const det = el('details'); det.open = tier === 'factory'; det.append(el('summary', 'mute', tier === 'done' ? 'show' : 'hide / show'), tiles); sec.append(det); }
+    else sec.append(tiles);
+    board.append(sec);
   }
   const seats = document.getElementById('seats'); seats.replaceChildren();
   for (const [seat, n] of Object.entries(b.inbox)) seats.append(el('span', 'seat', `${seat}: ${n} unread`));
