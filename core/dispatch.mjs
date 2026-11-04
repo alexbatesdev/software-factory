@@ -1,7 +1,7 @@
 // Auto-dispatch (Alex, 2026-10-28): which ready or queued records start themselves this tick, and why the rest wait.
 // Pure: the server applies the plan through ordinary events and logs each one on its record.
 import { routeOf } from './notifier.mjs';
-import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, trackOf, queueOrder } from './work.mjs';
+import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder } from './work.mjs';
 
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
 const pendingDispatch = w => (w.requests || []).some(r => r.type === 'dispatch' && !r.ack);
@@ -46,14 +46,24 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   const running = w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => (a.kind !== 'review' || workers.has(a.owner)) && ['started', 'blocked'].includes(a.status));
   // Work blocked on a person holds no stream (Alex: keep workers on unblocked work while a part waits), unless an agent is on it.
   const onAlex = w => w.openQuestions > 0 && !(w.assignments || []).some(a => ['started', 'blocked'].includes(a.status));
-  for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && !onAlex(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
+  // Work parked on a named blocker holds no stream either; once the blocker clears it resumes ahead of new work.
+  const parkedOnly = w => (w.assignments || []).some(parked) && !(w.assignments || []).some(a => ['queued', 'started'].includes(a.status));
+  const holdsNone = w => onAlex(w) || parkedOnly(w);
+  for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
   // A draining stream (its worker is due a recycle) takes nothing new, priority work included.
   for (const [to, why] of cfg.drain || []) busy.set(to, why);
   // Priority work (priority 1) cuts in behind whatever a stream is running, ahead of anything queued there.
   const runningOn = new Map();
-  for (const w of works) { const to = routeOf(w, labels); if (to && !onAlex(w) && running(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
+  for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && running(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
   for (const [to, why] of cfg.drain || []) runningOn.set(to, why);
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
+  for (const w of works.filter(parkedOnly)) {
+    const p = (w.parked || []).find(x => x.cleared), to = routeOf(w, labels);
+    if (!p || !to) continue;
+    if (busy.has(to)) { out.push({ id: w.id, action: null, reason: `${p.waitingOn} cleared; ${to} is busy with ${busy.get(to)}, resumes next` }); continue; }
+    busy.set(to, w.id); runningOn.set(to, w.id);
+    out.push({ id: w.id, action: 'resume', to, assignmentId: p.assignmentId, version: p.version, reason: `${p.waitingOn} cleared, ${to} is free` });
+  }
   const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && (pendingDispatch(w) || takenUp(w) || live(w))))
     .sort(queueOrder);
   for (const w of order) {

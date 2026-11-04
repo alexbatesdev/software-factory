@@ -581,3 +581,11 @@ test('work being built gets the health finding but keeps its phase', () => {
   assert.equal(red.phase, 'implementation');
   assert.equal(red.findings.length, 1);
 });
+
+test('a blocked report records what it waits on; starting again clears it', () => {
+  const w = run(build(), { type: 'assign', assignmentId: 'R1', kind: 'implementation', owner: 'sup: s', status: 'started', evidence: 'x' },
+    { type: 'progress', assignmentId: 'R1', expectedVersion: 1, stage: 'blocked', waitingOn: 'TB-9', text: 'needs the field name' });
+  assert.deepEqual([w.assignments[0].status, w.assignments[0].waitingOn], ['blocked', 'TB-9']);
+  const again = run(w, { type: 'progress', assignmentId: 'R1', expectedVersion: 2, stage: 'started' });
+  assert.deepEqual([again.assignments[0].status, again.assignments[0].waitingOn], ['started', null]);
+});

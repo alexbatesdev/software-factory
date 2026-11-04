@@ -26,6 +26,8 @@ export const ACTIVE = ['queued', ...BUILDING, ...REVIEWING, ...AWAITING_HUMAN];
 export const TERMINAL = ['done', 'cancelled'];
 // An assignment still holding its lane.
 export const LIVE_ASSIGNMENT = ['queued', 'started', 'blocked'];
+// Blocked on something named: the assignment is parked and holds no stream (Alex 11-04: flag it stuck, move on).
+export const parked = a => a.status === 'blocked' && !!a.waitingOn;
 // Coverage that stops work being queued: an open PR already carries it, or nobody has assessed it. Partial and none are known work left to build.
 export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
 /**
@@ -527,10 +529,12 @@ export function applyEvent(work, e, ctx) {
     case 'progress': {
       const a = currentAssignment(w, e.assignmentId, e.expectedVersion);
       if (!['started', 'working', 'blocked'].includes(e.stage)) fail('A progress stage is started, working or blocked.');
-      if (e.stage === 'started') { if (a.status !== 'queued' && a.status !== 'blocked') fail(`${a.id} is already ${a.status}.`); startAssignment(w, a, ctx); }
+      if (e.waitingOn !== undefined && (e.stage !== 'blocked' || typeof e.waitingOn !== 'string')) fail('waitingOn names what a blocked assignment waits on: TB-n, W-n or a short text.');
+      if (e.stage === 'started') { if (a.status !== 'queued' && a.status !== 'blocked') fail(`${a.id} is already ${a.status}.`); startAssignment(w, a, ctx); if (a.waitingOn) a.waitingOn = null; }
       else {
         if (e.stage === 'working' && a.status !== 'started') fail(`${a.id} is ${a.status}; report --stage started before working.`);
         a.history.push({ status: a.status, at: ctx.now, by: ctx.by }); a.status = e.stage === 'blocked' ? 'blocked' : a.status; a.version++;
+        if (e.stage === 'blocked') a.waitingOn = e.waitingOn?.trim() || null;
       }
       if (e.text) note(w, ctx, `${a.id} ${e.stage}: ${e.text}`);
       break;

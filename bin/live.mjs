@@ -110,7 +110,14 @@ function autoDispatchTick() {
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
   const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], mutationBranch: config.mutationBranch, drain }, { terminals });
   lastPlan = plan;
-  for (const p of plan.filter(p => p.action)) {
+  for (const p of plan.filter(p => p.action === 'resume')) {
+    const key = `${p.id}/${p.assignmentId}/v${p.version}`;
+    if (Object.values(store.state.messages).some(m => m.about?.resume === key)) continue;
+    apply([{ kind: 'message', payload: { to: p.to, work: p.id, about: { resume: key }, text: `[software factory] Resume ${p.id} ${p.assignmentId}: ${p.reason}. Brief a fresh worker from its handoff, then progress ${p.assignmentId} --stage started.` } },
+      { kind: 'event', target: p.id, payload: { type: 'note', text: `Resume sent to ${p.to}: ${p.reason}.` } }], 'board (auto-dispatch)');
+    log(`resume ${p.id} ${p.assignmentId} -> ${p.to}`);
+  }
+  for (const p of plan.filter(p => p.action && p.action !== 'resume')) {
     const w = s.work[p.id], who = 'board (auto-dispatch)';
     const cmds = [
       ...(p.owner ? [{ kind: 'update', target: p.id, payload: { stream: p.owner, ...(w.owner ? {} : { owner: p.owner }) } }] : []),

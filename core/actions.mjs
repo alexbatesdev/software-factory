@@ -13,7 +13,7 @@ const BUILD = {
     return [ev(w, { type: 'ack', requestId: r, outcome: a.outcome || 'received', note: a.note, by: a.by })];
   },
   assign: ({ work, ...a }) => { need({ work, ...a }, 'work', 'assignmentId', 'kind', 'status'); return [ev(work, { ...a, type: 'assign' })]; },
-  progress: a => { need(a, 'work'); return [ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, text: a.text } : { type: 'note', text: a.text })]; },
+  progress: a => { need(a, 'work'); return [ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text } : { type: 'note', text: a.text })]; },
   done: a => {
     need(a, 'work');
     const link = a.pr ? [{ kind: 'update', target: a.work, payload: { links: { pr: a.pr } } }] : [];

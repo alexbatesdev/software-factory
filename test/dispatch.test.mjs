@@ -104,3 +104,16 @@ test('a record waiting on Alex holds no stream, so queued work can start there',
   const p = plan([w('W-1', { phase: 'fixes', openQuestions: 2 }), w('W-2')]);
   assert.equal(p['W-2'].action, 'queue');
 });
+
+test('a worker stuck on a named blocker frees its stream for unblocked work; an unnamed block still holds it', () => {
+  const stuck = waitingOn => w('W-1', { phase: 'implementation', assignments: [{ id: 'R1', kind: 'implementation', owner: S1, status: 'blocked', waitingOn }] });
+  assert.equal(plan([stuck('TB-9'), w('W-2')])['W-2'].to, S1, 'parked on TB-9: the stream takes the next record');
+  assert.equal(plan([stuck(null), w('W-2')])['W-2'].action, null, 'blocked with nothing named: still holds the stream');
+});
+
+test('a parked assignment resumes on its own stream once its blocker clears and the stream is free', () => {
+  const parked = cleared => w('W-1', { phase: 'implementation', parked: [{ assignmentId: 'R1', waitingOn: 'W-5', cleared }], assignments: [{ id: 'R1', kind: 'implementation', owner: S1, status: 'blocked', waitingOn: 'W-5' }] });
+  assert.deepEqual(['action', 'to', 'assignmentId'].map(k => plan([parked(true)])['W-1']?.[k]), ['resume', S1, 'R1']);
+  assert.equal(plan([parked(false)])['W-1'], undefined, 'still waiting: nothing planned');
+  assert.equal(plan([parked(true), w('W-3', { phase: 'implementation', assignments: [{ id: 'R1', kind: 'implementation', owner: S1, status: 'started' }] })])['W-1'].action, null, 'stream busy: waits its turn');
+});

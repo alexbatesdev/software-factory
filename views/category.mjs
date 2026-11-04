@@ -16,7 +16,7 @@ export function categoryOf({ rec = {}, work = null, item = null, questions = [],
     if (started) return state('progress', `${work.id}: ${started.id} ${started.kind || ''} running.`.replace('  ', ' '));
     if (group.activeMember) return state('progress', `${work.id}: ${group.activeMember} running in this PR unit.`);
     const blocked = (work.assignments || []).find(a => a.status === 'blocked');
-    if (blocked) return state('waiting', `${work.id}: ${blocked.id} is blocked.`);
+    if (blocked) return state('waiting', blocked.waitingOn ? `${work.id}: ${blocked.id} is stuck on ${blocked.waitingOn}; its stream moved on to other work.` : `${work.id}: ${blocked.id} is blocked.`);
     const unit = (group.units || []).find(u => !TERMINAL.includes(u.phase));
     if (unit) return state('in-unit', `Implemented in PR unit ${unit.id}; shown on its card.`);
     if (['ready_for_human', 'awaiting_alex_review'].includes(work.phase)) return state('human', `${work.id} is waiting on Alex.`);

@@ -21,6 +21,8 @@ export function derivedCtx(state, id) {
     openDeps: (rec(id)?.deps || []).filter(d => !W.SATISFIES_DEPS.includes(rec(d)?.phase)),
     depPhase: d => rec(d)?.phase,
     depWorkerDone: d => [...(rec(d)?.assignments || [])].reverse().find(a => a.kind !== 'review')?.status === 'done',
+    parked: (w?.assignments || []).filter(W.parked).map(a => ({ assignmentId: a.id, version: a.version, waitingOn: a.waitingOn,
+      cleared: /^TB-\d+$/.test(a.waitingOn) ? state.questions[a.waitingOn]?.status !== 'open' : /^W-\d+$/.test(a.waitingOn) ? W.SATISFIES_DEPS.includes(rec(a.waitingOn)?.phase) : false })),
   };
 }
 
