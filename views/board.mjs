@@ -72,6 +72,6 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     const [base, ctx] = inputs(w);
     const st = statusOf(base, { ...ctx, group: groupOf(w) });
     return { id: w.id, title: w.title, priority: w.priority === 1, phase: w.phase, phaseLabel: PHASE_LABEL[w.phase], stream: w.stream || null, pr: w.links?.pr || null,
-      label: st.label, waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, category: st.category, needs: st.needs, updatedAt: w.updatedAt, project: w.project?.name || null };
+      label: st.label, waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, category: st.category, needs: st.needs, updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null) };
   });
 }
