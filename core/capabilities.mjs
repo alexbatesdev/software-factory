@@ -1,5 +1,5 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
-export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage'];
+export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb'];
 
 export const ROLES = {
   'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner'],

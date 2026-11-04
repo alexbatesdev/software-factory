@@ -22,6 +22,7 @@ const TOOLS = {
   set_owner: ["Set a record's owner (its stream).", obj({ work: str('W-n'), owner: str('seat label'), pin: str("who pinned it (local-head, on Alex's word)") }, ['work', 'owner']), 'set_owner'],
   prioritize: ["Mark a record as Alex's priority (on: false clears it): it cuts in line behind whatever its stream is running.", obj({ work: str('W-n'), on: { type: 'boolean' } }, ['work']), 'prioritize'],
   triage: ['Triage an intake record: ready (queue it), clarify (a question is open) or intake (not yet).', obj({ work: str('W-n'), bucket: str('ready | clarify | intake'), note: str('why, one line') }, ['work', 'bucket']), 'triage'],
+  absorb: ["Repair: fold a poller's duplicate record (not started) into the record that carries its work.", obj({ work: str('W-n, the duplicate'), into: str('W-n that carries the work') }, ['work', 'into']), 'absorb'],
   message: ['Send a seat a message on a record; the factory delivers it.', obj({ to: str('seat label'), text: str('message'), work: str('W-n') }, ['to', 'text']), 'message'],
 };
 for (const a of ACTIONS) if (!Object.values(TOOLS).some(t => t[2] === a)) throw new Error(`No MCP tool for board action ${a}.`);

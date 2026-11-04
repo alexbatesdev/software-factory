@@ -45,6 +45,8 @@ const BUILD = {
     if (!['ready', 'clarify', 'intake'].includes(a.bucket)) fail('Triage a record ready, clarify or intake.');
     return [{ kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }];
   },
+  // Repair (board developer): a poller's duplicate record folds into the record that carries the work.
+  absorb: a => { need(a, 'work', 'into'); return [ev(a.work, { type: 'absorb', into: a.into })]; },
   message: a => { need(a, 'to', 'text'); return [{ kind: 'message', payload: { to: a.to, work: a.work, about: a.about, text: a.text } }]; },
 };
 // Owner and stream move together, so routing never sees one without the other.

@@ -267,13 +267,14 @@ export function applyEvent(work, e, ctx) {
       setHead(w, e.sha, ctx);
       break;
     case 'review': {
-      if (![...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) fail(`${w.id} isn't waiting for review (it is ${w.phase}).`);
+      // A review can finish after a fixes round opened under it (e.g. GitHub saw a conflict mid-review): it still counts.
+      if (![...REVIEWING, 'fixes', 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) fail(`${w.id} isn't waiting for review (it is ${w.phase}).`);
       if (e.head !== w.head) fail(`That review is of ${e.head}, but the current head is ${w.head}.`);
       if (!e.by || e.by === w.implementer) fail('A review must be independent of the implementer.');
       if (!['clean', 'findings'].includes(e.result)) fail('A review result is "clean" or "findings".');
       w.reviews.push({ head: e.head, by: e.by, result: e.result, at: ctx.now, link: e.link || null });
       for (const f of e.findings || []) w.findings.push({ id: nextId(w.findings, 'F'), text: f.text, severity: f.severity || null, status: 'open', reviewHead: e.head, note: null });
-      if (e.result === 'findings') {
+      if (e.result === 'findings' && w.phase !== 'fixes') {
         w.phase = 'fixes';
         w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
       }

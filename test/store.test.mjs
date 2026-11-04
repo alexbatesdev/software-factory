@@ -133,3 +133,28 @@ test('triage moves an intake record to ready, or to clarification while a questi
   assert.match(s.state.work[a].updates.at(-1).text, /Triaged ready by board lead: clear ACs/);
   assert.throws(() => commandsFor('triage', { work: a, bucket: 'queued' }), /ready, clarify or intake/);
 });
+
+test('a review that finishes after a fixes round opened still lands, and the record stays in fixes', () => {
+  const s = openStore();
+  const { id } = s.append(build, ctx());
+  for (const to of ['ready', 'queued', 'implementation']) s.append(ev(id, { type: 'transition', to, owner: 'sbx: stream-1' }), ctx());
+  s.append(ev(id, { type: 'implementation_done', head: 'aaa1111' }), ctx());
+  s.append({ kind: 'observe_health', target: id, payload: { head: 'aaa1111', conflict: true } }, ctx({ by: 'github' }));
+  assert.equal(s.state.work[id].phase, 'fixes');
+  s.append(ev(id, { type: 'review', head: 'aaa1111', by: 'sbx: stream-1 internal-review', result: 'clean' }), ctx());
+  assert.equal(s.state.work[id].reviews.at(-1).result, 'clean');
+  assert.equal(s.state.work[id].phase, 'fixes');
+});
+
+test("absorb folds a poller's duplicate PR record into the record that built the PR", async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const { sourceIndex } = await import('../core/correlate.mjs');
+  const s = openStore();
+  const pr = 'https://github.com/builtforteams/built-rails/pull/8487';
+  const builder = s.append({ kind: 'create', payload: { title: 'Upgrade rubyzip', links: { pr } } }, ctx()).id;
+  const dup = s.append({ kind: 'import', target: 'work/W-9', payload: { id: 'W-9', title: 'PR 8487', phase: 'intake', kind: 'pr-feedback', owner: 'sup: other', source: { type: 'pr', key: 'built-rails-8487' }, links: { pr }, assignments: [], requests: [], updates: [], aliases: [], reviews: [], findings: [], checks: [] } }, ctx()).id;
+  s.appendAll(commandsFor('absorb', { work: 'W-9', into: builder }), ctx({ by: 'triage board worker' }));
+  assert.equal(s.state.work['W-9'].phase, 'cancelled');
+  assert.equal(sourceIndex(s.state).get('built-rails-8487'), builder);
+  assert.ok(dup);
+});
