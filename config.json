@@ -159,15 +159,6 @@
         "cwd": "~/Code",
         "run": "python3 -B ~/Code/scripts/herdr-blocked-alert.py",
         "expect": "herdr-blocked-alert.py"
-      },
-      {
-        "label": "Agent action checks",
-        "kind": "shell",
-        "workspace": "Services",
-        "tab": "Board",
-        "cwd": "~/Code",
-        "run": "python3 -B ~/Code/scripts/herdr-action-check.py",
-        "expect": "herdr-action-check.py"
       }
     ]
   },
