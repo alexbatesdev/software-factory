@@ -58,6 +58,15 @@ export async function preflight(worker) {
   return parsePreflight(stdout);
 }
 
+/** The plugin's own start line for this pane: its HERDR_AGENT env is what lets herdr see the agent's status. */
+export async function bridgeLine(worker) {
+  const src = f => import(join(PLUGIN, 'src', f));
+  const [{ bridgeCommand }, { loadConfig }, { getPaneEntry }, { agentForEntry }] = await Promise.all(['action-main.mjs', 'config.mjs', 'state.mjs', 'lifecycle.mjs'].map(src));
+  const config = loadConfig(CONFIG), entry = getPaneEntry(STATE, worker.ref);
+  const agent = agentForEntry(config, entry || {});
+  return bridgeCommand({ pluginEnv: { pluginRoot: PLUGIN, stateDir: STATE, configDir: CONFIG, herdrBin: '/opt/homebrew/bin/herdr' }, mode: 'start', paneId: worker.ref, detectionKind: agent.herdrDetectionKind, sbxBin: 'sbx' });
+}
+
 /** Exit the agent, remove the sandbox, then the plugin's bridge recreates it (same name, template and kit) in the same pane. */
 export async function recycle(worker, log = () => {}) {
   const herdr = (...a) => run('herdr', a, { timeout: 30000 });
@@ -67,8 +76,7 @@ export async function recycle(worker, log = () => {}) {
   if (!(await atShell())) return { ok: false, detail: 'the agent did not exit; nothing removed' };
   log(`recycle ${worker.label}: agent exited; removing ${worker.sandbox}`);
   await run('sbx', ['rm', '--force', worker.sandbox], { timeout: 300000 });
-  const bridge = ['node', join(PLUGIN, 'src/bridge.mjs'), 'start', '--state-dir', STATE, '--config-dir', CONFIG, '--pane-id', worker.ref, '--herdr-bin', '/opt/homebrew/bin/herdr', '--sbx-bin', 'sbx'].map(a => `'${a}'`).join(' ');
-  await herdr('pane', 'run', worker.ref, bridge);
+  await herdr('pane', 'run', worker.ref, await bridgeLine(worker));
   log(`recycle ${worker.label}: recreating ${worker.sandbox}`);
   // Creating from the template and running its setup takes minutes.
   for (let i = 0; i < 120; i++) {

@@ -41,3 +41,10 @@ test('only configured streams are ever drained or recycled (Mutation is Alex own
   const p = planRecycles({ units: [mut], health: { m: { diskPct: 0.99 } }, works: {}, supervisors: [S] });
   assert.deepEqual([p.drain.size, p.due.length], [0, 0]);
 });
+
+test("a recycled sandbox's agent starts the way the sbx plugin starts it, so herdr can see whether it is working", async () => {
+  const { bridgeLine } = await import('../hosts/sbx.mjs');
+  const line = await bridgeLine({ ref: 'w2G:p3' });
+  assert.match(line, /HERDR_AGENT='?claude'?\s/);
+  assert.match(line, /bridge\.mjs'? '?start'? /);
+});
