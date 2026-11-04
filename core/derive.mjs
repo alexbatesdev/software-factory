@@ -53,6 +53,8 @@ const live = (w, kind) => (w.assignments || []).find(a => LIVE_ASSIGNMENT.includ
  * @returns {{who: string|null, text: string, question?: object}|null} null when nothing waits (done, cancelled)
  */
 export function waitingOn(w, { questions = [] } = {}) {
+  // Factory records are the board developer's queue, never a stream's.
+  if (w.kind === 'factory' && !TERMINAL.includes(w.phase)) return { who: 'triage board worker', text: 'Waiting on the board developer (triage board worker) to fix it' };
   if (TERMINAL.includes(w.phase)) return null;
   const open = questions.filter(q => q.status === 'open');
   const mine = open.find(reachesAlex);

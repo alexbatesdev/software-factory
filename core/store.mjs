@@ -95,7 +95,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
     case 'unverify_head': state.work[id] = W.unverifyHead(cur, ctx); break;
     case 'sync_intake': {
       // Open questions come from the fold, never from the caller.
-      state.work[id] = W.syncIntake(cur, { bucket: payload.bucket, openQuestions: ctx.openQuestions });
+      state.work[id] = { ...W.syncIntake(cur, { bucket: payload.bucket, openQuestions: ctx.openQuestions }), triage: { bucket: payload.bucket, by: ctx.by, at: ctx.now } };
       if (payload.note) state.work[id] = { ...state.work[id], updates: [...cur.updates, { at: ctx.now, by: ctx.by, text: `Triaged ${payload.bucket} by ${ctx.by}: ${payload.note}` }] };
       break;
     }

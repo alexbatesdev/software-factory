@@ -158,3 +158,36 @@ test("absorb folds a poller's duplicate PR record into the record that built the
   assert.equal(sourceIndex(s.state).get('built-rails-8487'), builder);
   assert.ok(dup);
 });
+
+test("a review assignment leaves the record's owner as its supervisor", () => {
+  const s = openStore();
+  const { id } = s.append(build, ctx());
+  for (const to of ['ready', 'queued', 'implementation']) s.append(ev(id, { type: 'transition', to, owner: 'sup: stream-1' }), ctx());
+  s.append(ev(id, { type: 'implementation_done', head: 'aaa1111' }), ctx());
+  s.append(ev(id, { type: 'assign', assignmentId: 'R2', kind: 'review', owner: 'sbx: stream-1', status: 'started', evidence: 'internal review' }), ctx({ by: 'sup: stream-1' }));
+  assert.equal(s.state.work[id].owner, 'sup: stream-1');
+});
+
+test('a triaged record shows its verdict, and a factory record waits on the board developer', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const { boardView } = await import('../views/board.mjs');
+  const s = openStore();
+  const f = s.append({ kind: 'create', payload: { title: 'Board bug', kind: 'factory' } }, ctx()).id;
+  s.appendAll(commandsFor('triage', { work: f, bucket: 'ready', note: 'clear' }), ctx({ by: 'board lead' }));
+  const [card] = boardView(s.state, { supervisors: ['sup: stream-1'] });
+  assert.equal(card.category, 'ready');
+  assert.deepEqual([card.waiting.who, card.waiting.text], ['triage board worker', 'Waiting on the board developer (triage board worker) to fix it']);
+});
+
+test('resolve closes a factory record, or a manual one with no criteria, with a note; never PR work', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = openStore();
+  const f = s.append({ kind: 'create', payload: { title: 'Board bug', kind: 'factory' } }, ctx()).id;
+  const m = s.append({ kind: 'create', payload: { title: 'Guard script', kind: 'manual' } }, ctx()).id;
+  const p = s.append(build, ctx()).id;
+  s.appendAll(commandsFor('resolve', { work: f, note: 'fixed in abc1234' }), ctx({ by: 'triage board worker' }));
+  s.appendAll(commandsFor('resolve', { work: m, note: 'done by hand (Alex)' }), ctx({ by: 'triage board worker' }));
+  assert.deepEqual([s.state.work[f].phase, s.state.work[m].phase], ['done', 'done']);
+  assert.match(s.state.work[f].completion.note, /abc1234/);
+  assert.throws(() => s.appendAll(commandsFor('resolve', { work: p, note: 'x' }), ctx()), /PR work/);
+});

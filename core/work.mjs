@@ -6,6 +6,8 @@ export const PHASES = ['proposed', 'intake', 'clarification', 'ready', 'queued',
   'review', 'fixes', 'rereview', 'ready_for_human', 'awaiting_human_approval', 'awaiting_alex_review', 'done', 'cancelled'];
 // Kinds that finish as a PR need the review/check gate; the rest finish with an accepted artifact.
 export const PR_KINDS = ['build', 'pr-feedback'];
+// A review runs in the worker's pane, but the record stays its supervisor's (W-172); other assignments take the owner.
+const takesOwner = a => a.kind !== 'review';
 
 // Manual transitions only. Review, fixes, re-review, ready and done are reached through events.
 const MANUAL = {
@@ -366,6 +368,16 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Completed with ${e.artifact}.`);
       break;
     }
+    case 'resolve': {
+      // Work with no PR and no criteria to accept (a factory fix, a manual chore) closes on a note saying what settled it.
+      if (isPr(w) || w.links?.pr) fail('PR work finishes through the ready gate, not "resolve".');
+      if (w.criteria.length) fail(`${w.id} has acceptance criteria; complete it against them.`);
+      if (!e.note) fail('Resolving needs a note saying what settled it (a commit, or who did it).');
+      w.completion = { kind: 'resolved', note: e.note, at: ctx.now, by: ctx.by };
+      w.phase = 'done';
+      note(w, ctx, `Resolved: ${e.note}`);
+      break;
+    }
     case 'discovery':
       if (!e.text) fail('A discovery needs text.');
       if (e.inScope) {
@@ -506,7 +518,7 @@ export function applyEvent(work, e, ctx) {
       if (e.dependsOn?.length) w.deps = [...new Set([...(w.deps || []), ...e.dependsOn])];
       const a = { id: e.assignmentId, kind: e.kind, owner: e.owner || null, status: 'queued', version: 1, brief: e.brief || null, evidence: e.evidence, dependsOn: e.dependsOn || [], after: e.after || [], afterAssignments: waits, parallel: !!e.parallel, at: ctx.now, by: ctx.by, history: [], recordedFrom: { phase: w.phase, head: w.head, prUrl: w.links?.pr || null } };
       w.assignments = [...(w.assignments || []), a];
-      if (e.owner && (!other || e.status === 'started')) w.owner = e.owner;
+      if (e.owner && takesOwner(e) && (!other || e.status === 'started')) w.owner = e.owner;
       if (PRE_QUEUE.includes(w.phase)) w.phase = 'queued';
       note(w, ctx, `Assignment ${a.id} (${a.kind}) recorded as queued${a.owner ? ` for ${a.owner}` : ''}${a.dependsOn.length ? `, depending on ${a.dependsOn.join(', ')}` : ''}${a.after.length ? `, after ${a.after.join(', ')}'s worker finishes` : ''}${waits.length ? `, after ${waits.join(', ')} ends` : ''}${a.parallel ? `, in parallel with ${other?.id}` : ''}. Evidence: ${e.evidence}.`);
       if (e.status === 'started') startAssignment(w, a, ctx, false); // recorded as started: still version 1
@@ -741,7 +753,7 @@ function startAssignment(w, a, ctx, bump = true) {
   a.status = 'started'; if (bump) a.version++;
   if (a.kind === 'fixes') w.phase = 'fixes';
   if (a.kind === 'implementation') { w.phase = 'implementation'; w.implementer = a.owner || w.owner; }
-  if (a.owner) w.owner = a.owner;
+  if (a.owner && takesOwner(a)) w.owner = a.owner;
   note(w, ctx, `Assignment ${a.id} started${a.owner ? ` by ${a.owner}` : ''}.`);
 }
 

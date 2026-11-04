@@ -44,7 +44,8 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
   const paneBlocked = w => (w.assignments || []).some(a => a.status === 'started') && [unitOf(w)?.supervisor, unitOf(w)?.worker].find(a => a?.status === 'blocked')?.label || null;
   const inputs = w => {
     const { questions, workerStop } = withDelivery(state, w, byWork.get(w.id) || []);
-    const rec = state.legacy.items?.[w.source?.key] || {};
+    // A V2 triage verdict lives on the record; V1's lives on its legacy item.
+    const legacy = state.legacy.items?.[w.source?.key] || {}, rec = w.triage ? { ...legacy, triage: w.triage } : legacy;
     const base = {
       ...w, workerStop, openQuestions: questions.filter(q => q.status === 'open').length,
       openDeps: (w.deps || []).filter(d => !W.SATISFIES_DEPS.includes(state.work[d]?.phase)),
