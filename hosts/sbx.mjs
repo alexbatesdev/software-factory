@@ -71,13 +71,14 @@ export async function bridgeLine(worker) {
 /** Exit the agent, remove the sandbox, then the plugin's bridge recreates it (same name, template and kit) in the same pane. */
 export async function recycle(worker, log = () => {}) {
   const herdr = (...a) => run('herdr', a, { timeout: 30000 });
+  const line = await bridgeLine(worker);
   const atShell = async () => !(await herdr('pane', 'process-info', '--pane', worker.ref)).stdout.includes('bridge.mjs');
   await herdr('pane', 'send-text', worker.ref, '/exit'); await herdr('pane', 'send-keys', worker.ref, 'enter');
   for (let i = 0; i < 20 && !(await atShell()); i++) await pause(3000);
   if (!(await atShell())) return { ok: false, detail: 'the agent did not exit; nothing removed' };
   log(`recycle ${worker.label}: agent exited; removing ${worker.sandbox}`);
   await run('sbx', ['rm', '--force', worker.sandbox], { timeout: 300000 });
-  await herdr('pane', 'run', worker.ref, await bridgeLine(worker));
+  await herdr('pane', 'run', worker.ref, line);
   log(`recycle ${worker.label}: recreating ${worker.sandbox}`);
   // Creating from the template and running its setup takes minutes.
   for (let i = 0; i < 120; i++) {
