@@ -44,10 +44,12 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   // An internal review runs on the stream's own worker (Alex, 10-28), so it holds the stream; a reviewer pane's doesn't.
   const workers = new Set(labels.map(l => cfg.supervisors[l]?.worker).filter(Boolean));
   const running = w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => (a.kind !== 'review' || workers.has(a.owner)) && ['started', 'blocked'].includes(a.status));
-  for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && pass(w) && !busy.has(to)) busy.set(to, w.id); }
+  // Work blocked on a person holds no stream (Alex: keep workers on unblocked work while a part waits), unless an agent is on it.
+  const onAlex = w => w.openQuestions > 0 && !(w.assignments || []).some(a => ['started', 'blocked'].includes(a.status));
+  for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && !onAlex(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
   // Priority work (priority 1) cuts in behind whatever a stream is running, ahead of anything queued there.
   const runningOn = new Map();
-  for (const w of works) { const to = routeOf(w, labels); if (to && running(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
+  for (const w of works) { const to = routeOf(w, labels); if (to && !onAlex(w) && running(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
   const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && (pendingDispatch(w) || takenUp(w) || live(w))))
     .sort(queueOrder);

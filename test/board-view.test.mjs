@@ -73,3 +73,14 @@ test("a record with no stream never takes another pane's prompt as its own", () 
   const c = boardView(s.state, { supervisors: [S1], units: [orphan] }).find(x => x.id === 'W-1');
   assert.doesNotMatch(c.waiting?.text || '', /waiting at a prompt/);
 });
+
+test("a ready record's waiting line and queue position come from the auto-dispatch plan", async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const { boardView } = await import('../views/board.mjs');
+  const s = openStore(), ctx = { now: '2026-11-04T12:00:00.000Z', by: 'test' };
+  const ids = ['A', 'B', 'M'].map(t => s.append({ kind: 'create', payload: { title: t } }, ctx).id);
+  const queue = [{ id: ids[0], action: null, reason: 'every stream is busy; waits its turn' }, { id: ids[2], action: null, reason: 'Mutation work is never auto-dispatched' }, { id: ids[1], action: null, reason: 'every stream is busy; waits its turn' }];
+  const cards = Object.fromEntries(boardView(s.state, { queue }).map(c => [c.id, c]));
+  assert.equal(cards[ids[1]].waiting.text, 'In queue, #2: every stream is busy; waits its turn');
+  assert.equal(cards[ids[2]].waiting.text, 'Not dispatched: Mutation work is never auto-dispatched');
+});

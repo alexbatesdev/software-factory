@@ -61,7 +61,7 @@ log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
-let fleet = null, watches = {}, woken = {}, openPrs = new Map();
+let fleet = null, watches = {}, woken = {}, openPrs = new Map(), lastPlan = [];
 // A refusal that repeats every tick is logged once.
 const seen = new Set(), once = line => { if (!seen.has(line)) { seen.add(line); log(line); } };
 const quiet = {}, screens = {};
@@ -104,6 +104,7 @@ function autoDispatchTick() {
   const views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
   const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], mutationBranch: config.mutationBranch }, { terminals });
+  lastPlan = plan;
   for (const p of plan.filter(p => p.action)) {
     const w = s.work[p.id], who = 'board (auto-dispatch)';
     const cmds = [
@@ -200,7 +201,7 @@ async function fleetTick() {
 }
 
 http.createServer(createApi({ store, config, readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ units: fleet?.units || [], prs: openPrs, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000 }) }))
+  observed: () => ({ units: fleet?.units || [], prs: openPrs, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 
 const every = (ms, fn) => { let running = false; const run = async () => { if (running) return; running = true; try { await fn(); } catch (e) { log(e.message); } finally { running = false; } }; run(); setInterval(run, ms); };

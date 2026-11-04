@@ -99,3 +99,8 @@ test('a factory record is the board developer\'s, never stream work', () => {
   assert.equal(p['W-1'].action, null);
   assert.match(p['W-1'].reason, /board developer/);
 });
+
+test('a record waiting on Alex holds no stream, so queued work can start there', () => {
+  const p = plan([w('W-1', { phase: 'fixes', openQuestions: 2 }), w('W-2')]);
+  assert.equal(p['W-2'].action, 'queue');
+});

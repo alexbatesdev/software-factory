@@ -43,6 +43,13 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .card .w { font-size: 12px; margin-top: 2px; } .you-t .card .w { color: var(--you); font-weight: 600; }
 .tag { display: inline-block; font-size: 11px; border-radius: 4px; padding: 0 5px; margin-right: 4px; background: var(--bg); color: var(--mute); }
 .badge { display: inline-block; font-size: 11px; font-weight: 700; color: var(--you); border: 1px solid var(--you); border-radius: 4px; padding: 0 4px; margin-right: 4px; }
+.lane { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.lane > .lh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; } .lane > .lh b { color: var(--factory); }
+.lane .row { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; } .lane .row + .row { margin-top: 6px; }
+.lane .row > .k { font-size: 11px; color: var(--mute); width: 70px; padding-top: 8px; text-transform: uppercase; letter-spacing: .04em; }
+.card.now { border-left-color: var(--factory); opacity: 1; box-shadow: 0 0 0 1px var(--factory) inset; }
+.pos { display: inline-block; min-width: 22px; text-align: center; font-size: 11px; font-weight: 700; border-radius: 10px; background: var(--factory); color: var(--card); margin-right: 4px; }
+.run { font-size: 12px; color: var(--factory); font-weight: 600; }
 .seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 details summary { cursor: pointer; }
 </style>
@@ -70,7 +77,9 @@ function cardEl(c, labels) {
   const d = el('div', 'card');
   const t = el('div', 't', `${c.id} · ${c.title}`); t.title = c.title;
   if (c.priority) t.prepend(el('span', 'badge', 'Priority'));
+  if (c.queue?.position) t.prepend(el('span', 'pos', `#${c.queue.position}`));
   d.append(t);
+  if (c.running) { d.classList.add('now'); d.append(el('div', 'run', `▶ ${c.running.id} ${c.running.kind}${c.running.owner ? ` · ${c.running.owner}` : ''}`)); }
   const meta = el('div', 'mute');
   meta.append(el('span', 'tag', labels[c.category] || (c.category === 'in-unit' ? 'Part of a PR' : c.category)));
   if (c.stream) meta.append(el('span', null, c.stream.replace(/^sup: /, '') + ' '));
@@ -78,6 +87,29 @@ function cardEl(c, labels) {
   d.append(meta);
   if (c.waiting) d.append(el('div', 'w', c.waiting.text));
   return d;
+}
+
+// Inside the factory: each stream's running job and what's next on it, then the shared queue, then the rest.
+function factoryLanes(cards, labels) {
+  const box = el('div'), left = new Set(cards);
+  const lane = (title, sub, rows) => {
+    rows = rows.filter(([, cs]) => cs.length);
+    if (!rows.length) return;
+    const l = el('div', 'lane'), h = el('div', 'lh'); h.append(el('b', null, title), el('span', 'mute', sub)); l.append(h);
+    for (const [k, cs] of rows) { const r = el('div', 'row'); r.append(el('span', 'k', k), ...cs.map(c => { left.delete(c); return cardEl(c, labels); })); l.append(r); }
+    box.append(l);
+  };
+  const streams = [...new Set(cards.map(c => c.stream).filter(s => /^sup: /.test(s || '')))].sort();
+  for (const s of streams) {
+    const mine = cards.filter(c => c.stream === s && c.kind !== 'factory' && !c.queue?.position);
+    const now = mine.filter(c => c.running), next = mine.filter(c => !c.running && !c.queue);
+    lane(s.replace(/^sup: /, ''), now.length ? `working on ${now.map(c => c.id).join(', ')}` : 'nothing running', [['Now', now], ['Next here', next]]);
+  }
+  const queue = cards.filter(c => c.queue?.position).sort((a, b) => a.queue.position - b.queue.position);
+  lane('Queue', 'the next free stream takes #1', [['Waiting', queue]]);
+  lane('Board developer', 'fixes to the factory itself', [['Fixes', cards.filter(c => c.kind === 'factory')]]);
+  lane('Not in the queue', 'held for a reason on the card', [['Held', [...left]]]);
+  return box;
 }
 
 async function render() {
@@ -111,8 +143,9 @@ async function render() {
     const sec = el('section', `tier ${tier}-t`), h = el('div', 'h');
     h.append(el('h2', null, name), el('span', 'mute', String(cards.length)));
     sec.append(h);
+    if (tier === 'factory') { sec.append(factoryLanes(cards, b.buckets.labels)); board.append(sec); continue; }
     const tiles = el('div', 'tiles'); tiles.append(...cards.map(c => cardEl(c, b.buckets.labels)));
-    if (tier === 'done' || tier === 'factory') { const det = el('details'); det.open = tier === 'factory'; det.append(el('summary', 'mute', tier === 'done' ? 'show' : 'hide / show'), tiles); sec.append(det); }
+    if (tier === 'done') { const det = el('details'); det.open = tier === 'factory'; det.append(el('summary', 'mute', tier === 'done' ? 'show' : 'hide / show'), tiles); sec.append(det); }
     else sec.append(tiles);
     board.append(sec);
   }
