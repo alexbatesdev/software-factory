@@ -47,3 +47,8 @@ test('the board lead adds notes but never relays a worker report', () => {
   assert.equal(refusal('board-lead', 'progress', { work: 'W-1', text: 'seen again' }), null);
   assert.match(refusal('board-lead', 'progress', { work: 'W-1', assignmentId: 'R1', stage: 'working' }), /adds notes/);
 });
+
+test('the board lead acks the messages addressed to it', () => {
+  assert.equal(refusal('board-lead', 'ack', { ref: 'M-1' }), null);
+  assert.match(refusal('board-lead', 'ack', { ref: 'W-1/R1' }), /only messages/);
+});

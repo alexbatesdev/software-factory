@@ -5,7 +5,7 @@ export const ROLES = {
   'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner'],
   'questions-router': ['read', 'route', 'create', 'set_owner'],
   'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask'],
-  'board-lead': ['read', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask'],
+  'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask'],
   'board-developer': ACTIONS,
 };
 
@@ -14,7 +14,8 @@ const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
 const LIMITS = {
   'local-head': { set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word' },
   'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
-    progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s' },
+    progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',
+    ack: a => /^M-\d+$/.test(a.ref || '') || 'the board lead acks only messages addressed to it' },
   'questions-router': { set_owner: noPin },
 };
 
