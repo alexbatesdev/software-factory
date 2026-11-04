@@ -58,6 +58,10 @@ export function inboxCommands(state, cfg, fleet = null) {
       if (!told.has(`quietWorker:${key}`)) cmds.push(msg(u.supervisor.label, job[0].id, { quietWorker: key }, `${u.worker.label} shows as working, but its pane hasn't changed for ${Math.round((fleet.now - since) / 60000)} min while ${job[0].id} ${job[1].id} is started: read its pane; if it finished, record what it reported.`));
     }
   }
+  // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.
+  if (cfg.triage?.since) for (const w of Object.values(state.work))
+    if (w.phase === 'intake' && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`))
+      cmds.push(msg(cfg.triage.seat, w.id, { intake: w.id }, `${w.id} ${quote(w.title)} is in intake: triage it (ready, clarify with a question for Alex, or leave in intake with a note).`));
   // The board lead's hourly check-in (Alex, 2026-11-04): one message per hour, delivered like any other.
   const hour = cfg.checkIn?.now?.slice(0, 13);
   if (hour && !told.has(`checkIn:${hour}`)) cmds.push(msg(cfg.checkIn.seat, null, { checkIn: hour }, `Hourly check-in ${hour}:00Z: run your role file's check-in, file what you find as factory records, then ack this message.`));

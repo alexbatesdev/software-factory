@@ -121,3 +121,15 @@ test('a new record cannot link a PR another record already carries', () => {
   assert.throws(() => s.append({ kind: 'create', payload: { title: 'Manual record', links: { pr } } }, ctx()), /already belongs to W-1/);
   assert.deepEqual(Object.keys(s.state.work), ['W-1']);
 });
+
+test('triage moves an intake record to ready, or to clarification while a question is open', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = openStore();
+  const a = s.append(build, ctx()).id, b = s.append(build, ctx()).id;
+  ask(s, b);
+  s.appendAll(commandsFor('triage', { work: a, bucket: 'ready', note: 'clear ACs' }), ctx({ by: 'board lead' }));
+  s.appendAll(commandsFor('triage', { work: b, bucket: 'ready', note: 'clear ACs' }), ctx({ by: 'board lead' }));
+  assert.deepEqual([s.state.work[a].phase, s.state.work[b].phase], ['ready', 'clarification']);
+  assert.match(s.state.work[a].updates.at(-1).text, /Triaged ready by board lead: clear ACs/);
+  assert.throws(() => commandsFor('triage', { work: a, bucket: 'queued' }), /ready, clarify or intake/);
+});

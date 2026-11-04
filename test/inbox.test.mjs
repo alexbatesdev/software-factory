@@ -75,3 +75,12 @@ test('the board lead gets one check-in message per hour', () => {
   assert.deepEqual(at('2026-11-05T09:50:00.000Z'), []);
   assert.equal(at('2026-11-05T10:00:00.000Z').length, 1);
 });
+
+test('a record that lands in intake after intakeSince messages the triage seat once', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'intake', requests: [], createdAt: '2026-11-05T09:00:00.000Z' }), 'W-2': work({ id: 'W-2', phase: 'intake', requests: [], createdAt: '2026-11-01T09:00:00.000Z' }) } });
+  const c = { ...cfg, triage: { seat: 'board lead', since: '2026-11-05T00:00:00.000Z' } };
+  const cmds = inboxCommands(s.state, c).cmds.filter(x => x.payload.about.intake);
+  assert.deepEqual(cmds.map(x => [x.payload.to, x.payload.about.intake]), [['board lead', 'W-1']]);
+  s.append(cmds[0], ctx('board'));
+  assert.deepEqual(inboxCommands(s.state, c).cmds.filter(x => x.payload.about.intake), []);
+});

@@ -91,7 +91,12 @@ export function fold(state, row, { supervisors = [] } = {}) {
     case 'observe_head': state.work[id] = W.observeHead(cur, payload, ctx); break;
     case 'observe_health': state.work[id] = W.observeHealth(cur, payload, ctx); break;
     case 'unverify_head': state.work[id] = W.unverifyHead(cur, ctx); break;
-    case 'sync_intake': state.work[id] = W.syncIntake(cur, payload); break;
+    case 'sync_intake': {
+      // Open questions come from the fold, never from the caller.
+      state.work[id] = W.syncIntake(cur, { bucket: payload.bucket, openQuestions: ctx.openQuestions });
+      if (payload.note) state.work[id] = { ...state.work[id], updates: [...cur.updates, { at: ctx.now, by: ctx.by, text: `Triaged ${payload.bucket} by ${ctx.by}: ${payload.note}` }] };
+      break;
+    }
     default: throw new Error(`Unknown command kind "${kind}".`);
   }
   finish(state, row, observed, touched, supervisors);

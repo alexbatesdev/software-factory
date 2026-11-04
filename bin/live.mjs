@@ -58,6 +58,8 @@ if (store.state.seq === 0) {
   log(`final import from V1: ${cmds.length} rows`);
 }
 log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
+// Intake triage covers records created since the final import, the moment V2 became the system of record.
+const LIVE_SINCE = store.rows()[0]?.at || now();
 
 let fleet = null, watches = {}, woken = {}, openPrs = new Map();
 const quiet = {}, screens = {};
@@ -103,7 +105,8 @@ async function inboxTick() {
   const seats = [...supervisors, config.routing.questionsRouter, ...Object.keys(config.roles || {}), ...(config.factory?.seats || []).map(s => s.label)];
   const since = store.state.legacy.notifier?.activatedAt;
   const checkIn = config.boardLead?.checkIn !== false ? { seat: config.boardLead?.seat || 'board lead', now: now() } : null;
-  const plan = inboxCommands(store.state, { supervisors, seats, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, quietMs: config.notify?.quietWorkerMs },
+  const triage = { seat: config.boardLead?.seat || 'board lead', since: LIVE_SINCE };
+  const plan = inboxCommands(store.state, { supervisors, seats, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
     fleet && { units: fleet.units, now: Date.now(), watches, quiet });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
