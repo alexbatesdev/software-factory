@@ -45,3 +45,10 @@ test('an uncorrelated legacy request at the same timestamp as a newer assignment
 test('an explicit no-change legacy completion cannot silently become a code review request',()=>{
  const w=ready();w.phase='implementation';assert.throws(()=>ev(w,{type:'implementation_done',head,noChange:{verifiedOn:head,evidence:'Explicit no-code outcome'}}),/no-change.*assignment|assignment.*no-change/i);
 });
+test('a no-change fixes round on red CI accepts the CI finding with its verdict and puts a ready PR back in approval wait',()=>{
+ const red=W.observeHealth(ready(),{head,conflict:false,failing:['ci/circleci: test']},ctx);
+ assert.equal(red.phase,'fixes');
+ const x=ev(assign(red),{...done,noChange:{verifiedOn:head,evidence:'flake: import_spec:118; red on main: participant_spec:454'}},{...ctx,now:'2026-11-05T00:00:00Z'});
+ assert.deepEqual(x.findings.map(f=>[f.status,f.note]),[['accepted','No change (R6): flake: import_spec:118; red on main: participant_spec:454']]);
+ assert.deepEqual([x.phase,x.approvalWait?.head],['awaiting_human_approval',head]);
+});

@@ -704,15 +704,9 @@ function enterApprovalWait(w, ctx, evidence) {
   w.approvalWait = { head: w.head, prUrl: w.links.pr, at: ctx.now, by: ctx.by, evidence, requiredApprovals: { qa: 1, dev: 1 } };
   note(w, ctx, `PR observed ready at ${w.head}; waiting for human review/approval (1 QA + 1 dev). No GitHub approval, merge, deployment or Teamwork completion is recorded.`);
 }
-function finishNoChangeProbe(w, a, ctx) {
-  if (!['implementation', 'fixes', 'discovery'].includes(a.kind)) fail('A review assignment cannot be relabelled as a no-change probe.');
-  const baseline = a.startedFrom || a.recordedFrom, remote = ctx.prState;
-  if (!baseline?.head || !baseline.prUrl || baseline.prUrl !== w.links?.pr) fail('A PR no-change report needs its recorded assignment baseline and unchanged PR link.');
-  if (!sameSha(baseline.head, a.noChange.verifiedOn) || !sameSha(baseline.head, w.head)) fail(`Assignment baseline ${baseline.head} changed; no-change needs an unchanged commit.`);
-  if (!remote || remote.url !== w.links?.pr || remote.state !== 'OPEN' || !sameSha(remote.head, w.head)) fail('GitHub must freshly confirm the same open PR and unchanged head for a no-change report.');
-  setHead(w, remote.head, ctx, 'github');
-  a.noChange.verifiedOn = remote.head;
-  // Finishing this check doesn't finish the PR or dispose of another assignment's work.
+// ponytail: one rule date, so rows decided before W-184 replay as decided; snapshots or reducer versions if these pile up.
+const NO_CHANGE_MOVES_ON = '2026-11-04T23:10:00.000Z';
+function legacyNoChangePhase(w, a, ctx, baseline, remote) {
   if (!liveAssignment(w)) {
     if (baseline.phase === 'awaiting_human_approval') {
       const candidate = normalize({ ...w, phase: 'awaiting_human_approval' }, ctx);
@@ -722,6 +716,29 @@ function finishNoChangeProbe(w, a, ctx) {
     } else w.phase = ['review', 'rereview', 'ready_for_human', 'fixes'].includes(baseline.phase) ? baseline.phase : 'rereview';
   }
   note(w, ctx, `No-change assignment ${a.id} finished at unchanged ${remote.head}; PR work remains ${w.phase}. Existing review/approval requirements remain; no internal review requested.`);
+}
+function finishNoChangeProbe(w, a, ctx) {
+  if (!['implementation', 'fixes', 'discovery'].includes(a.kind)) fail('A review assignment cannot be relabelled as a no-change probe.');
+  const baseline = a.startedFrom || a.recordedFrom, remote = ctx.prState;
+  if (!baseline?.head || !baseline.prUrl || baseline.prUrl !== w.links?.pr) fail('A PR no-change report needs its recorded assignment baseline and unchanged PR link.');
+  if (!sameSha(baseline.head, a.noChange.verifiedOn) || !sameSha(baseline.head, w.head)) fail(`Assignment baseline ${baseline.head} changed; no-change needs an unchanged commit.`);
+  if (!remote || remote.url !== w.links?.pr || remote.state !== 'OPEN' || !sameSha(remote.head, w.head)) fail('GitHub must freshly confirm the same open PR and unchanged head for a no-change report.');
+  setHead(w, remote.head, ctx, 'github');
+  a.noChange.verifiedOn = remote.head;
+  // Finishing this check doesn't finish the PR or dispose of another assignment's work.
+  if (!(ctx.now >= NO_CHANGE_MOVES_ON)) return legacyNoChangePhase(w, a, ctx, baseline, remote);
+  // A red-CI round that changes nothing is the verdict the CI finding asks for (flake / red on main): accept it.
+  if (a.kind === 'fixes') for (const f of w.findings.filter(f => f.status === 'open' && f.source?.type === 'ci' && sameSha(f.source.head, w.head)))
+    Object.assign(f, { status: 'accepted', note: `No change (${a.id}): ${a.noChange.evidence}`, at: ctx.now });
+  if (!liveAssignment(w)) {
+    const open = w.findings.some(f => f.status === 'open');
+    const waived = (w.internalReviewWaivers || []).some(x => sameSha(x.head, w.head) && x.prUrl === w.links?.pr);
+    if (baseline.phase === 'awaiting_human_approval' && normalize({ ...w, phase: 'awaiting_human_approval' }, ctx).phase === 'awaiting_human_approval' && remote.isDraft === false && !open) w.phase = 'awaiting_human_approval';
+    else if (!open && remote.isDraft === false && (waived || gate(w, ctx).ok)) enterApprovalWait(w, ctx, `no-change ${a.id} at ${remote.head}`);
+    else if (open) { w.phase = 'fixes'; w.approvalWait = null; }
+    else { w.approvalWait = null; w.phase = baseline.phase === 'ready_for_human' && gate(w, ctx).ok ? 'ready_for_human' : ['review', 'rereview'].includes(baseline.phase) ? baseline.phase : 'rereview'; if (w.phase !== 'ready_for_human') requestRereview(w, ctx); }
+  }
+  note(w, ctx, `No-change assignment ${a.id} finished at unchanged ${remote.head}; PR work is now ${w.phase}.`);
 }
 function closeNoChange(w, a, ctx, evidence) {
   if (prLinked(w) || (w.coverage?.prs || []).some(p => p.state === 'OPEN')) fail('A PR/code deliverable must follow its review lifecycle; no-change cannot close it.');
