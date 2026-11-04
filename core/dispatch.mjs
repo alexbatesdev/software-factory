@@ -41,7 +41,9 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   const labels = Object.keys(cfg.supervisors || {});
   const busy = new Map();
   // Running work names the busy stream first; queued assignments and unacked dispatches still hold the slot.
-  const running = w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked'].includes(a.status));
+  // An internal review runs on the stream's own worker (Alex, 10-28), so it holds the stream; a reviewer pane's doesn't.
+  const workers = new Set(labels.map(l => cfg.supervisors[l]?.worker).filter(Boolean));
+  const running = w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => (a.kind !== 'review' || workers.has(a.owner)) && ['started', 'blocked'].includes(a.status));
   for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && pass(w) && !busy.has(to)) busy.set(to, w.id); }
   // Priority work (priority 1) cuts in behind whatever a stream is running, ahead of anything queued there.
   const runningOn = new Map();

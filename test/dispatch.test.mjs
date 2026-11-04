@@ -85,3 +85,11 @@ test('queue order is decided only by queueOrder in core/work.mjs', async () => {
   const copies = readdirSync(dir).filter(f => f !== 'work.mjs' && /priority \?\? 3/.test(readFileSync(new URL(f, dir), 'utf8')));
   assert.deepEqual(copies, []);
 });
+
+test("an internal review the stream's own worker is running holds the stream", () => {
+  const c = { ...cfg, supervisors: { [S1]: { worker: 'sbx: stream-1' }, [S2]: { worker: 'sbx: stream-conf-stack' } } };
+  const p = Object.fromEntries(autoDispatchPlan([w('W-1', { phase: 'rereview', assignments: [{ id: 'R3', kind: 'review', owner: 'sbx: stream-1', status: 'started' }] }), loose('W-2', { owner: null }), w('W-3')], c).map(x => [x.id, x]));
+  assert.equal(p['W-3'].action, null, 'pinned to the busy stream, so it waits');
+  assert.match(p['W-3'].reason, /busy with W-1/);
+  assert.equal(p['W-2'].to, S2, 'unbound work goes to the free stream');
+});
