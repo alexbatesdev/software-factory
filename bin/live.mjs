@@ -233,7 +233,7 @@ async function recycleTick() {
     log(`recycle ${d.worker.label}: starting (disk ${Math.round(d.diskPct * 100)}%)`);
     const r = await host.recycle(d.worker, log).catch(e => ({ ok: false, detail: e.message }));
     log(`recycle ${d.worker.label}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
-    if (r.ok) { delete recycling[d.unit]; delete health[d.unit]; tell(d.to, { recycled: `${d.worker.sandbox}/${now()}` }, `${d.worker.label} was recycled (fresh sandbox, clean disk). It has none of its earlier context; brief it cold.${dropped ? ` Discarded with the old sandbox (replaced or stale): ${dropped}.` : ''}`); }
+    if (r.ok) { delete recycling[d.unit]; delete health[d.unit]; tell(d.to, { recycled: `${d.worker.sandbox}/${now()}` }, `${d.worker.label} was recycled (fresh sandbox, clean disk). It has none of its earlier context; brief it cold. If its pane shows Claude's bypass-permissions prompt, that one is Alex's to accept: ask local-head to tell him.${dropped ? ` Discarded with the old sandbox (replaced or stale): ${dropped}.` : ''}`); }
     else { recycling[d.unit] = { step: 'failed', failed: r.detail }; tell(config.boardLead?.seat || 'board lead', { recycleFailed: `${d.worker.sandbox}/${now()}` }, `Recycling ${d.worker.label} failed: ${r.detail}. Its stream takes no new work until this is fixed; file it as a factory record.`); }
   }
 }
