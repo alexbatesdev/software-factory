@@ -44,6 +44,26 @@ export function projectTasks(tasks, site) {
   return out;
 }
 
+/** The Teamwork task a record is about: its own key or an alias (tw-n), else the task id ending its PR branch. */
+export function taskIdOf(w) {
+  const tw = [w.source?.key, ...(w.aliases || [])].find(k => /^tw-\d+$/.test(k || ''));
+  return tw ? tw.slice(3) : String(w.links?.branch || '').match(/\/(\d{6,})$/)?.[1] || null;
+}
+
+/**
+ * observe_project commands: each live record's project is its task's top-level parent (Alex, 11-04: "parent").
+ * @param tops Map taskId → {id, name} of the top-level ancestor (the task itself when it has no parent)
+ */
+export function projectCommands(state, tops) {
+  const out = [];
+  for (const w of Object.values(state.work)) {
+    if (W.TERMINAL.includes(w.phase)) continue;
+    const top = tops.get(taskIdOf(w));
+    if (top && (w.project?.id !== top.id || w.project?.name !== top.name)) out.push({ kind: 'observe_project', target: w.id, payload: { id: top.id, name: top.name } });
+  }
+  return out;
+}
+
 const sansCheckTime = w => JSON.stringify({ ...w, headVerified: w.headVerified && { ...w.headVerified, at: null } });
 
 /**

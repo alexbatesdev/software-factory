@@ -92,6 +92,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
     }
     case 'observe_head': state.work[id] = W.observeHead(cur, payload, ctx); break;
     case 'observe_health': state.work[id] = W.observeHealth(cur, payload, ctx); break;
+    case 'observe_project': state.work[id] = { ...cur, project: { id: String(payload.id), name: String(payload.name) } }; break;
     case 'unverify_head': state.work[id] = W.unverifyHead(cur, ctx); break;
     case 'sync_intake': {
       // Open questions come from the fold, never from the caller.

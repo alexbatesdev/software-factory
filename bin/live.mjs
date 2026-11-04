@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { openStore, derivedCtx } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 import { importCommands } from '../core/import.mjs';
-import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey } from '../core/observe.mjs';
+import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey, taskIdOf, projectCommands } from '../core/observe.mjs';
 import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
 import { inboxCommands } from '../core/inbox.mjs';
@@ -21,7 +21,7 @@ import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { mergeCloses } from '../core/units.mjs';
 import { TERMINAL, trackOf } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs } from '../sources/github.mjs';
-import { readTasks } from '../sources/teamwork.mjs';
+import { readTasks, readTopParents } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -174,9 +174,15 @@ async function alexReviewTick() {
   }
 }
 
+const parents = new Map();
 async function teamworkTick() {
   try { apply(sourceCommands(store.state, projectTasks(await readTasks(), process.env.TEAMWORK_SITE), 'teamwork', parseAcs), 'poller'); }
   catch (e) { log(`teamwork: ${e.message}`); }
+  // Each record's project, for the page's "waiting on you" breakdown.
+  try {
+    const ids = [...new Set(Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(taskIdOf).filter(Boolean))];
+    apply(projectCommands(store.state, await readTopParents(ids, parents)), 'teamwork');
+  } catch (e) { log(`projects: ${e.message}`); }
 }
 
 // A working worker's screen with digits and symbols stripped: spinners and timers change, a stuck screen doesn't.

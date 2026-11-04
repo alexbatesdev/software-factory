@@ -52,3 +52,19 @@ test('a PR carried by several records gets one health finding: its own record if
   assert.deepEqual(targets({ 'W-1': rec('W-1', 'awaiting_human_approval'), 'W-2': rec('W-2', 'awaiting_human_approval', true) }), ['W-2']);
   assert.deepEqual(targets({ 'W-1': rec('W-1', 'awaiting_human_approval'), 'W-2': rec('W-2', 'intake', true) }), ['W-1']);
 });
+
+test("a record's project is its task's top-level parent, found from its Teamwork key or its PR branch", async () => {
+  const { taskIdOf, projectCommands } = await import('../core/observe.mjs');
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(), ctx = { now: '2026-11-04T12:00:00.000Z', by: 'test' };
+  const task = s.append({ kind: 'create', payload: { title: 'A task', source: { type: 'teamwork', key: 'tw-41474063' } } }, ctx).id;
+  const pr = s.append({ kind: 'create', payload: { title: 'A PR', links: { pr: 'https://github.com/o/r/pull/1', branch: 'alex/security/rubyzip/41474200' } } }, ctx).id;
+  const loose = s.append({ kind: 'create', payload: { title: 'No task' } }, ctx).id;
+  assert.deepEqual([taskIdOf(s.state.work[task]), taskIdOf(s.state.work[pr]), taskIdOf(s.state.work[loose])], ['41474063', '41474200', null]);
+  const tops = new Map([['41474063', { id: '41000001', name: 'Security fixes' }], ['41474200', { id: '41000001', name: 'Security fixes' }]]);
+  const cmds = projectCommands(s.state, tops);
+  assert.deepEqual(cmds.map(c => [c.target, c.payload.name]), [[task, 'Security fixes'], [pr, 'Security fixes']]);
+  s.appendAll(cmds, ctx);
+  assert.equal(s.state.work[task].project.name, 'Security fixes');
+  assert.deepEqual(projectCommands(s.state, tops), [], 'an unchanged project is not re-recorded');
+});
