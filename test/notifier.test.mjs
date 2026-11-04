@@ -104,7 +104,6 @@ test('no notice while blocked, with no started assignment, for a stop the board 
   assert.deepEqual(after('done', { 'W-60': { ...busy['W-60'], assignments: [{ id: 'R2', kind: 'discovery', status: 'done' }] } }), []);
   assert.deepEqual(after('done', { 'W-9': { id: 'W-9', stream: SUP, assignments: [{ id: 'R1', kind: 'review', owner: 'pr-1-trusted-review', status: 'started' }] } }), [], 'a review in a reviewer pane is not the worker');
   assert.equal(after('done', { 'W-9': { id: 'W-9', stream: SUP, assignments: [{ id: 'R1', kind: 'review', owner: 'sbx: stream-1', status: 'started' }] } }).length, 1, 'an internal review the worker runs counts');
-  assert.deepEqual(stops(stops({}, 'done', T0).watch, 'done', T0 + 70000).due, [], 'first seen already stopped (e.g. after a restart): not a stop the board watched');
   assert.deepEqual(planWorkerStops({ units: [unit('done')], works: busy, watch: { 'stream-1': { armed: true, stoppedAt: T0 } }, now: T0 + 70000, graceMs: 60000, supervisors: [] }).due, []);
 });
 
@@ -155,4 +154,13 @@ test('a worker stop names the most recently started assignment, not the newest r
   const a = planWorkerStops({ units: [u('idle')], works, watch, now: 0, supervisors: [S] });
   const { due } = planWorkerStops({ units: [u('idle')], works, watch: a.watch, now: 120000, supervisors: [S] });
   assert.deepEqual(due.map(d => `${d.work}/${d.assignment}`), ['W-1/R2']);
+});
+
+test('after a restart, a worker already stopped with a started assignment still messages its supervisor', async () => {
+  const { planWorkerStops } = await import('../core/notifier.mjs');
+  const S = 'sup: s', works = { 'W-1': { id: 'W-1', stream: S, assignments: [{ id: 'R1', kind: 'implementation', status: 'started' }] } };
+  const u = { id: 'u', supervisor: { label: S, status: 'idle' }, worker: { label: 'sbx: s', status: 'idle' } };
+  const a = planWorkerStops({ units: [u], works, now: 0, supervisors: [S] });
+  const { due } = planWorkerStops({ units: [u], works, watch: a.watch, now: 120000, supervisors: [S] });
+  assert.deepEqual(due.map(d => d.work), ['W-1']);
 });

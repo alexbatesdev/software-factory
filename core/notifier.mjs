@@ -111,7 +111,8 @@ export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000
   for (const u of units) {
     const to = u.supervisor?.label, st = u.worker?.status;
     if (!u.worker || !supervisors.includes(to)) continue;
-    const w = next[u.id] || { armed: false, stoppedAt: null };
+    // A unit first seen with a started job is armed: the watch is in memory, and a restart must not swallow a stop.
+    const w = next[u.id] || { armed: !!workerJob(u, works), stoppedAt: null };
     if (st === 'working') { next[u.id] = { armed: true, stoppedAt: null }; continue; }
     if (!['done', 'idle'].includes(st)) { next[u.id] = { ...w, stoppedAt: null }; continue; }
     const stoppedAt = w.stoppedAt ?? now;
