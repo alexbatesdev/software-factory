@@ -2,13 +2,15 @@
 // The caller's seat is its herdr pane's label, so no tool takes a "by".
 import { ACTIONS, ROLES } from '../core/capabilities.mjs';
 import { roleOf } from '../core/api.mjs';
+import { reachesAlex } from '../core/derive.mjs';
 
 const obj = (props, required = []) => ({ type: 'object', properties: props, required, additionalProperties: true });
 const str = description => ({ type: 'string', description });
 // Read tools sit beside the 13 actions; `read` covers both.
 const TOOLS = {
   inbox: ['Your unread factory messages. Ack each once handled.', obj({}), 'read'],
-  read: ['A work record, or the whole board when no work id is given.', obj({ work: str('W-n') }), 'read'],
+  read: ['A work record (work: W-n), a question in full (question: TB-n), or the whole board when neither is given.', obj({ work: str('W-n'), question: str('TB-n') }), 'read'],
+  questions: ["Alex's open questions in full (options, recommendation, why, what prompted it), each with its record and project; all: true adds unverified ones.", obj({ all: { type: 'boolean' } }), 'read'],
   ack: ['Acknowledge a message (M-n), a request (W-n/R-n) or a delivered answer (TB-n).', obj({ ref: str('M-n, W-n/R-n or TB-n'), outcome: str('received | done | declined'), note: str('optional') }, ['ref']), 'ack'],
   assign: ['Record an assignment on a record.', obj({ work: str('W-n'), assignmentId: str('R-n'), kind: str('implementation | fixes | review | discovery'), status: str('queued | started | done'), owner: str('pane label'), evidence: str('why') }, ['work', 'assignmentId', 'kind', 'status']), 'assign'],
   progress: ['Relay a worker report, or add a note.', obj({ work: str('W-n'), assignmentId: str('R-n'), expectedVersion: { type: 'number' }, stage: str('started | working | blocked'), text: str('report') }, ['work']), 'progress'],
@@ -41,7 +43,16 @@ export function createMcp({ config, seatOf, api }) {
   async function call(name, args = {}) {
     if (!(await mine()).some(([n]) => n === name)) return text(`${seat} has no ${name} tool.`, true);
     if (name === 'inbox') return text(await api.get('/api/inbox', seat));
-    if (name === 'read') { const s = await api.get('/api/state', seat); return text(args.work ? s.work[args.work] || `There is no ${args.work}.` : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) }); }
+    if (name === 'read') {
+      const s = await api.get('/api/state', seat), q = args.question || (/^TB-\d+$/.test(args.work || '') ? args.work : null);
+      if (q) return text(s.questions[q] ? { id: q, ...s.questions[q] } : `There is no ${q}.`);
+      return text(args.work ? s.work[args.work] || `There is no ${args.work}.` : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) });
+    }
+    if (name === 'questions') {
+      const s = await api.get('/api/state', seat);
+      const open = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(q => q.status === 'open' && (args.all || reachesAlex(q)));
+      return text(open.map(q => { const w = s.work[q.work]; return { ...q, record: w ? { id: w.id, title: w.title, phase: w.phase, stream: w.stream || null, project: w.project?.name || null, pr: w.links?.pr || null } : null }; }));
+    }
     const r = await api.post(name, args, seat);
     return text(r, !!r.error);
   }
