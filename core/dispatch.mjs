@@ -57,6 +57,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const track = trackOf(w, cfg);
     if (track === 'mutation') { wait('Mutation work is never auto-dispatched'); continue; }
     if (track === 'trusted-review') { wait('a trusted review, not stream work'); continue; }
+    if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); continue; }
     if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); continue; }
     if (w.owner && terminals.includes(w.owner)) { wait(`owner ${w.owner} runs in Terminals`); continue; }
     if (w.openQuestions > 0) { wait(`${w.openQuestions} open question(s)`); continue; }

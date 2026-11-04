@@ -93,3 +93,9 @@ test("an internal review the stream's own worker is running holds the stream", (
   assert.match(p['W-3'].reason, /busy with W-1/);
   assert.equal(p['W-2'].to, S2, 'unbound work goes to the free stream');
 });
+
+test('a factory record is the board developer\'s, never stream work', () => {
+  const p = plan([loose('W-1', { kind: 'factory', owner: 'triage board worker' })]);
+  assert.equal(p['W-1'].action, null);
+  assert.match(p['W-1'].reason, /board developer/);
+});
