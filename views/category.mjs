@@ -6,9 +6,10 @@ import { reachesAlex } from '../core/derive.mjs';
 /** @returns {{category: string, reason: string, derived: boolean}} derived = decided by record state, not a bucket */
 export function categoryOf({ rec = {}, work = null, item = null, questions = [], group = {} }) {
   const state = (category, reason) => ({ category, reason, derived: true });
+  if (work && TERMINAL.includes(work.phase)) return state('history', `${work.id} is ${work.phase}${work.retro ? ` (${work.retro.outcome}, retrospective)` : ''}.`);
   if (rec.intakeHold) return state('untriaged', `Held untriaged by ${rec.intakeHold.by}: ${rec.intakeHold.reason}`);
+  if (work?.phase === 'intake' && work.triage?.bucket === 'intake') return state('parked', `Triaged as not factory work by ${work.triage.by}.`);
   if (work) {
-    if (TERMINAL.includes(work.phase)) return state('history', `${work.id} is ${work.phase}${work.retro ? ` (${work.retro.outcome}, retrospective)` : ''}.`);
     if (work.waitingOn) return state('waiting', `${work.id} waits on ${work.waitingOn.who}: ${work.waitingOn.what}.`);
     // In progress means an agent is working on it right now: a started assignment here, or on a member or child of this PR unit.
     const started = (work.assignments || []).find(a => a.status === 'started');

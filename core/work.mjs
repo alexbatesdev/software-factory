@@ -759,7 +759,8 @@ function startAssignment(w, a, ctx, bump = true) {
 
 /** Before work is queued, its phase follows triage: open questions mean clarification, a clean verdict means ready. */
 export function syncIntake(work, { bucket, openQuestions }) {
-  if (!PRE_QUEUE.includes(work.phase) || work.reconciled || COVERAGE_BLOCKS_QUEUE.includes(work.coverage?.state)) return work;
+  // A proposed record (a worker's discovery) is triaged like intake.
+  if (![...PRE_QUEUE, 'proposed'].includes(work.phase) || work.reconciled || COVERAGE_BLOCKS_QUEUE.includes(work.coverage?.state)) return work;
   const phase = openQuestions > 0 || bucket === 'clarify' && openQuestions > 0 ? 'clarification'
     : bucket === 'ready' || bucket === 'clarify' ? 'ready' : 'intake';
   return phase === work.phase ? work : { ...work, phase };

@@ -59,12 +59,12 @@ details summary { cursor: pointer; }
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 // Who a card is waiting on decides how loud it is. Agents (seats, triage, reviewer panes) are the factory.
 const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
-const tierOf = c => c.category === 'history' ? 'done'
+const tierOf = c => ['history', 'parked'].includes(c.category) ? 'done'
   : c.needs?.me || c.waiting?.who === 'you' ? 'you'
   : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others' : 'factory';
 // Cards folded into a PR's card show only when they need Alex; otherwise the PR's card speaks for them.
 const shown = (c, order) => order.includes(c.category) || tierOf(c) === 'you';
-const TIERS = [['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['done', 'Done / closed']];
+const TIERS = [['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['done', 'Done, closed or parked']];
 
 function cardEl(c, labels) {
   const d = el('div', 'card');

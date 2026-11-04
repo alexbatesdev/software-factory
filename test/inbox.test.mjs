@@ -84,3 +84,9 @@ test('a record that lands in intake after intakeSince messages the triage seat o
   s.append(cmds[0], ctx('board'));
   assert.deepEqual(inboxCommands(s.state, c).cmds.filter(x => x.payload.about.intake), []);
 });
+
+test('a proposed record created after intakeSince also messages the triage seat', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'proposed', requests: [], createdAt: '2026-11-05T09:00:00.000Z' }) } });
+  const cmds = inboxCommands(s.state, { ...cfg, triage: { seat: 'board lead', since: '2026-11-05T00:00:00.000Z' } }).cmds.filter(x => x.payload.about.intake);
+  assert.deepEqual(cmds.map(x => x.payload.about.intake), ['W-1']);
+});

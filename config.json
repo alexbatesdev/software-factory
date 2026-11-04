@@ -35,6 +35,7 @@
       "progress",
       "prreview",
       "waiting",
+      "parked",
       "history"
     ],
     "labels": {
@@ -46,7 +47,8 @@
       "progress": "In progress",
       "waiting": "Waiting / scope checks",
       "history": "Done / closed",
-      "prreview": "Waiting on PR review"
+      "prreview": "Waiting on PR review",
+      "parked": "Parked (not factory work)"
     },
     "hints": {
       "untriaged": "Not classified yet. New items are triaged automatically.",

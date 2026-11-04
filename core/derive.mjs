@@ -55,6 +55,7 @@ const live = (w, kind) => (w.assignments || []).find(a => LIVE_ASSIGNMENT.includ
 export function waitingOn(w, { questions = [] } = {}) {
   // Factory records are the board developer's queue, never a stream's.
   if (w.kind === 'factory' && !TERMINAL.includes(w.phase)) return { who: 'triage board worker', text: 'Waiting on the board developer (triage board worker) to fix it' };
+  if (w.phase === 'intake' && w.triage?.bucket === 'intake') return { who: null, text: `Parked by ${w.triage.by}${w.triage.note ? `: ${w.triage.note}` : ''}` };
   if (TERMINAL.includes(w.phase)) return null;
   const open = questions.filter(q => q.status === 'open');
   const mine = open.find(reachesAlex);

@@ -191,3 +191,22 @@ test('resolve closes a factory record, or a manual one with no criteria, with a 
   assert.match(s.state.work[f].completion.note, /abc1234/);
   assert.throws(() => s.appendAll(commandsFor('resolve', { work: p, note: 'x' }), ctx()), /PR work/);
 });
+
+test('triage takes a proposed record too, and a record triaged to intake shows as parked with its note', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const { boardView } = await import('../views/board.mjs');
+  const s = openStore();
+  const p = s.append({ kind: 'create', payload: { title: 'A discovery', phase: 'proposed' } }, ctx()).id;
+  const q = s.append(build, ctx()).id;
+  s.appendAll(commandsFor('triage', { work: p, bucket: 'ready', note: 'clear follow-up' }), ctx({ by: 'board lead' }));
+  s.appendAll(commandsFor('triage', { work: q, bucket: 'intake', note: 'tracked on W-9' }), ctx({ by: 'board lead' }));
+  assert.equal(s.state.work[p].phase, 'ready');
+  const card = boardView(s.state, { supervisors: [] }).find(c => c.id === q);
+  assert.equal(card.category, 'parked');
+  assert.equal(card.waiting.text, 'Parked by board lead: tracked on W-9');
+});
+
+test('a finished record is history even if it was once held out of triage', async () => {
+  const { categoryOf } = await import('../views/category.mjs');
+  assert.equal(categoryOf({ rec: { intakeHold: { by: 'x', reason: 'y' } }, work: { id: 'W-1', phase: 'done' } }).category, 'history');
+});
