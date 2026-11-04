@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseFooter, layoutIssues, RESERVED, REVIEWS, BOARD_ACTIONS } from './status.mjs';
+import { parseFooter, layoutIssues, RESERVED, REVIEWS } from './status.mjs';
 import { ORCHESTRATOR_TAB, WORKER_TAB as WORKER_TAB_LABEL } from './factory.mjs';
 
 /**
@@ -128,10 +128,6 @@ export async function send(unit, text, opts) {
   return sendTo(unit.supervisor, text, opts);
 }
 
-// ---------- Run triage: a dedicated pane for a user-launched triage agent ----------
-const pauseMs = ms => new Promise(r => setTimeout(r, ms));
-// oh-my-zsh asks "update? [Y/n]" in a new shell, which swallowed the first key of "claude". Pass on every pane herdr opens.
-export const QUIET_SHELL = ['--env', 'DISABLE_AUTO_UPDATE=true'];
 export async function herdrRaw(...args) {
   // herdr exits non-zero on an error and prints its JSON error on stderr; read it so callers see the code.
   const stdout = await run('herdr', args, { maxBuffer: 1 << 22, timeout: 20000 }).then(r => r.stdout, e => { if (String(e.stdout || e.stderr || "").trim().startsWith("{")) return e.stdout || e.stderr; throw e; });
@@ -140,74 +136,3 @@ export async function herdrRaw(...args) {
   if (j.error) throw Object.assign(new Error(`herdr ${args.slice(0, 2).join(' ')}: ${j.error.code || j.error.message}`), { herdrError: j.error });
   return j.result;
 }
-
-/**
- * Open a tab, start Claude in it, wait until it's ready, then prompt it with the brief. `step(name, data)` is
- * called after each step so the caller can persist progress. Throws {uncertain:true, pane} once a pane exists
- * and a later step can't be confirmed; throws plain errors before that.
- */
-export async function launchTriage({ runId, briefPath, model = 'sonnet' }, step) {
-  // Every agent the board spawns goes in Board Actions, one tab per run, so no tab passes 3 panes.
-  const { workspaces: all } = await herdrRaw('workspace', 'list');
-  let ws = all.find(w => w.label === BOARD_ACTIONS);
-  if (!ws) ws = (await herdrRaw('workspace', 'create', '--label', BOARD_ACTIONS, '--cwd', path.join(process.env.HOME, 'Code'), ...QUIET_SHELL, '--no-focus')).workspace;
-  if (!ws?.workspace_id) throw new Error(`Couldn't find or create the ${BOARD_ACTIONS} workspace.`);
-  const label = `triage-run ${runId}`;
-  // Recorded before the call: from here on, any unknown outcome means a tab may exist, so it's uncertain, never retried.
-  await step('create-attempt', { label, workspace: ws.label });
-  let created;
-  try { created = await herdrRaw('tab', 'create', '--workspace', ws.workspace_id, '--label', label, '--cwd', path.join(process.env.HOME, 'Code'), ...QUIET_SHELL, '--no-focus'); }
-  catch (e) { throw Object.assign(new Error(`tab create: ${e.message}`), { uncertain: !e.herdrError }); }
-  const tabId = created.tab?.tab_id;
-  await step('tab', { tab: tabId });
-  let pane;
-  try { pane = (await herdrRaw('pane', 'list')).panes.find(p => p.tab_id === tabId)?.pane_id; } catch { pane = null; }
-  if (!pane) throw Object.assign(new Error(`Tab ${tabId} was created but its pane couldn't be read.`), { uncertain: true, tab: tabId });
-  await step('pane', { tab: tabId, pane, workspace: ws.label });
-  const uncertain = msg => Object.assign(new Error(msg), { uncertain: true, pane });
-  await pauseMs(4000); // a fresh pane's shell isn't ready for agent start straight away
-  try { await herdrRaw('agent', 'start', `triage-run-${runId.toLowerCase()}`, '--kind', 'claude', '--pane', pane, '--', '--model', model); }
-  catch (e) { throw uncertain(`agent start: ${e.message}`); }
-  await step('agent-start', { pane });
-  let agent = null;
-  for (let i = 0; i < 45; i++) {
-    await pauseMs(2000);
-    try { agent = (await herdrRaw('agent', 'get', pane)).agent; } catch { agent = null; }
-    if (agent && ['idle', 'done'].includes(agent.agent_status) && agent.interactive_ready !== false) break;
-    agent = null;
-  }
-  if (!agent) throw uncertain('The agent never became ready to take the brief.');
-  await step('agent-ready', { session: agent.agent_session?.value, terminal: agent.terminal_id });
-  let res;
-  try { res = await herdrRaw('agent', 'prompt', pane, `Triage run ${runId} from the board: read ${briefPath} and execute it now.`); }
-  catch (e) { throw uncertain(`prompt: ${e.message}`); }
-  if (res?.type !== 'agent_prompted') throw uncertain('herdr did not confirm the prompt.');
-  return { pane, tab: tabId, terminal: agent.terminal_id, session: agent.agent_session?.value, workspace: ws.label };
-}
-
-/** The triage agent's current state, or null if its pane is gone. */
-export async function agentInfo(pane) {
-  let a;
-  try { a = (await herdrRaw('agent', 'get', pane)).agent; } catch (e) {
-    if (!['pane_not_found', 'agent_not_found'].includes(e.herdrError?.code)) return null;
-    // No agent can still mean a live pane with a bare shell; only a missing pane counts as gone.
-    try { await herdrRaw('pane', 'get', pane); return null; } catch (e2) { return e2.herdrError?.code === 'pane_not_found' ? { gone: true } : null; }
-  }
-  let jobs = null;
-  try { jobs = parseFooter((await run('herdr', ['pane', 'read', pane, '--source', 'visible', '--lines', '6'], { timeout: 5000 })).stdout).jobs; } catch { /* unknown */ }
-  return { status: a.agent_status, session: a.agent_session?.value, terminal: a.terminal_id, jobs };
-}
-
-/** Find an uncertain run's tab by its unique label, so it can be reconciled instead of relaunched. */
-export async function findRunPane(label) {
-  try {
-    const { tabs } = await herdrRaw('tab', 'list');
-    const t = tabs.find(x => x.label === label);
-    if (!t) return null;
-    const p = (await herdrRaw('pane', 'list')).panes.find(x => x.tab_id === t.tab_id);
-    return p ? { tab: t.tab_id, pane: p.pane_id } : { tab: t.tab_id, pane: null };
-  } catch { return null; }
-}
-
-/** Close a pane the board itself created for a run. */
-export async function closePane(pane) { await herdrRaw('pane', 'close', pane); }
