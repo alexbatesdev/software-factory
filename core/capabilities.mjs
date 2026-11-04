@@ -1,11 +1,11 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
-export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize'];
+export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage'];
 
 export const ROLES = {
   'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner'],
   'questions-router': ['read', 'route', 'create', 'set_owner'],
   'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask'],
-  'board-lead': ['read', 'create', 'set_owner', 'assign'],
+  'board-lead': ['read', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask'],
   'board-developer': ACTIONS,
 };
 
@@ -13,7 +13,8 @@ export const ROLES = {
 const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
 const LIMITS = {
   'local-head': { set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word' },
-  'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin },
+  'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
+    progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s' },
   'questions-router': { set_owner: noPin },
 };
 

@@ -42,3 +42,8 @@ test('local-head sets an owner only to pin one', () => {
   assert.equal(refusal('local-head', 'set_owner', { pin: 'Alex' }), null);
   assert.match(refusal('local-head', 'set_owner', {}), /only sets an owner to pin/);
 });
+
+test('the board lead adds notes but never relays a worker report', () => {
+  assert.equal(refusal('board-lead', 'progress', { work: 'W-1', text: 'seen again' }), null);
+  assert.match(refusal('board-lead', 'progress', { work: 'W-1', assignmentId: 'R1', stage: 'working' }), /adds notes/);
+});
