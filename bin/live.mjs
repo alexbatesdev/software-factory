@@ -62,6 +62,8 @@ log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
 let fleet = null, watches = {}, woken = {}, openPrs = new Map();
+// A refusal that repeats every tick is logged once.
+const seen = new Set(), once = line => { if (!seen.has(line)) { seen.add(line); log(line); } };
 const quiet = {}, screens = {};
 
 // Questions filed as JSON files (the pre-MCP path in the role files), same contract as V1's inbox folder.
@@ -79,6 +81,20 @@ function ingestInbox() {
       renameSync(src, join(INBOX, 'done', `${id}-${f}`));
       log(`question ${id} from ${q.from}`);
     } catch (e) { renameSync(src, join(INBOX, 'rejected', f)); writeFileSync(join(INBOX, 'rejected', `${f}.error.txt`), `${e.message}\n`); }
+  }
+}
+
+// board.mjs files events here when V1 is down; V1 never comes back, so tell the seat instead of losing the write.
+function retiredEvents() {
+  const dir = join(INBOX, 'events');
+  if (DRY || !existsSync(dir)) return;
+  for (const f of readdirSync(dir).filter(f => f.endsWith('.json'))) {
+    let e = {}; try { e = JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch {}
+    const to = String(e.by || config.boardLead?.seat || 'board lead');
+    renameSync(join(dir, f), join(dir, 'rejected', f));
+    writeFileSync(join(dir, 'rejected', `${f}.error.txt`), 'board.mjs is retired (V2 cutover); redo it with the software-factory MCP tool.\n');
+    apply([{ kind: 'message', payload: { to, work: e.work || null, about: { retired: f }, text: `[software factory] board.mjs is retired: your ${e.type || 'event'}${e.work ? ` on ${e.work}` : ''} was not recorded. Redo it with the software-factory MCP tool (file: inbox/events/rejected/${f}).` } }], 'board');
+    log(`retired board.mjs event ${f} from ${to}`);
   }
 }
 
@@ -101,6 +117,7 @@ function autoDispatchTick() {
 
 async function inboxTick() {
   ingestInbox();
+  retiredEvents();
   autoDispatchTick();
   const seats = [...supervisors, config.routing.questionsRouter, ...Object.keys(config.roles || {}), ...(config.factory?.seats || []).map(s => s.label)];
   const since = store.state.legacy.notifier?.activatedAt;
@@ -114,7 +131,7 @@ async function inboxTick() {
     const r = await wake(w).catch(e => ({ ok: false, reason: e.message }));
     if (r.ok) { woken[w.seat] = { at: Date.now(), ids: w.ids, reminded: w.reminder }; log(`woke ${w.seat}${w.reminder ? ' (reminder)' : ''}`); }
   }
-  await autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'mutation', now, log });
+  await autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'mutation', now, log: once });
 }
 
 async function githubTick() {
