@@ -88,7 +88,7 @@ export function headCommands(state, heads, { owner, now, standingWaiver }) {
  * observe_health commands for Alex's PRs into main whose merge or CI state at the record's head needs work.
  * @param health Map(repo:num → {head, base, conflict, failing}); a PR GitHub hasn't finished computing says neither.
  */
-export function healthCommands(state, health, { owner, now, mutationBranch, exclude }) {
+export function healthCommands(state, health, { owner, now, mutationBranch, exclude, mainGreen = new Map() }) {
   const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
   const byPr = new Map();
@@ -97,7 +97,7 @@ export function healthCommands(state, health, { owner, now, mutationBranch, excl
     const own = state.work[idx.get(key.replace(':', '-'))], w = acting(own) ? own : ws[0];
     const h = health.get(key);
     if (!h || h.base !== 'main' || W.trackOf(w, { mutationBranch, exclude }) === 'mutation') continue;
-    const payload = { head: h.head, conflict: h.conflict, failing: h.failing, changesRequested: h.changesRequested || [], threads: h.threads || [] };
+    const payload = { head: h.head, conflict: h.conflict, failing: h.failing, changesRequested: h.changesRequested || [], threads: h.threads || [], mainGreen: mainGreen.get(key.split(':')[0]) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   return cmds;

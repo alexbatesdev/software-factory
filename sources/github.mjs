@@ -59,3 +59,11 @@ export async function readPrHealth(specs, owner, run = exec, me = null) {
   }
   return out;
 }
+
+/** repo → the oid of main's latest commit when its checks passed, else null (red, pending or unknown). */
+export async function readMainGreen(repos, owner, run = exec) {
+  if (!repos.length) return new Map();
+  const q = `query{${repos.map((r, i) => `r${i}: repository(owner:"${owner}",name:"${r}"){ref(qualifiedName:"refs/heads/main"){target{... on Commit{oid statusCheckRollup{state}}}}}`).join(' ')}}`;
+  const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000 })).stdout);
+  return new Map(repos.map((r, i) => { const t = data?.[`r${i}`]?.ref?.target; return [r, t?.statusCheckRollup?.state === 'SUCCESS' ? t.oid : null]; }));
+}

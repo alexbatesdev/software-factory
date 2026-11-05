@@ -17,7 +17,7 @@ import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { mergeCloses } from '../core/units.mjs';
 import { TERMINAL, trackOf } from '../core/work.mjs';
-import { readPrLines, readPrHealth, readPrs } from '../sources/github.mjs';
+import { readPrLines, readPrHealth, readPrs, readMainGreen } from '../sources/github.mjs';
 import { readTasks, readTopParents } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
 import { execFile } from 'node:child_process';
@@ -131,7 +131,8 @@ async function githubTick() {
     const { lines, own } = await readPrLines({ owner, tracked });
     const { prs, heads } = projectPrs(lines, own);
     const health = await readPrHealth([...own], owner, undefined, config.githubLogin);
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...healthCommands(s, health, { owner, now: now(), mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude })], 'github');
+    const mainGreen = await readMainGreen([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...healthCommands(s, health, { owner, now: now(), mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude }), 'poller');
     // PR states for the page and merge close: every PR a live record links.
     const links = [...new Set(Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean))];

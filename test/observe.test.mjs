@@ -81,3 +81,10 @@ test("the health read carries other people's change requests on the head and the
   assert.deepEqual(h.changesRequested.map(r => [r.id, r.by]), [['PRR_1', 'sam-built']]);
   assert.deepEqual(h.threads.map(t => [t.id, t.by]), [['T1', 'sam-built']]);
 });
+
+test("main counts as green only when its latest commit's checks passed (W-208)", async () => {
+  const { readMainGreen } = await import('../sources/github.mjs');
+  const reply = state => async () => ({ stdout: JSON.stringify({ data: { r0: { ref: { target: { oid: 'main0001', statusCheckRollup: state && { state } } } } } }) });
+  assert.equal((await readMainGreen(['built-rails'], 'o', reply('SUCCESS'))).get('built-rails'), 'main0001');
+  for (const s of ['FAILURE', 'PENDING', null]) assert.equal((await readMainGreen(['built-rails'], 'o', reply(s))).get('built-rails'), null, String(s));
+});

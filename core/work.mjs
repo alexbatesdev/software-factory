@@ -674,20 +674,24 @@ const FEEDBACK_TEXT = {
 export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, failing = [], changesRequested = [], threads = [] }, ctx) {
+export function observeHealth(work, { head, conflict, failing = [], changesRequested = [], threads = [], mainGreen = null }, ctx) {
   if (TERMINAL.includes(work.phase) || !head || !sameSha(head, work.head)) return work;
   const seen = type => (work.findings || []).some(f => f.source?.type === type && sameSha(f.source.head, head));
   const fresh = [conflict && 'conflict', failing.length && 'ci'].filter(t => t && !seen(t));
   // Reviewer feedback (W-207) is news once per review and per thread, whatever the head.
   const told = new Set((work.findings || []).flatMap(f => f.source?.ids || []));
   const reviews = changesRequested.filter(r => !told.has(r.id)), newThreads = threads.filter(t => !told.has(t.id));
-  if (!fresh.length && !reviews.length && !newThreads.length) return work;
+  // W-208: CI still red at a head whose failure was judged "red on main", and main is green now: merging main reruns CI.
+  const redOnMain = (work.findings || []).some(f => f.source?.type === 'ci' && sameSha(f.source.head, head) && f.status === 'accepted' && /red on main/i.test(f.note || ''));
+  const mergeMain = !!(mainGreen && failing.length && redOnMain && !(work.findings || []).some(f => f.source?.type === 'merge_main' && f.source.main === mainGreen));
+  if (!fresh.length && !reviews.length && !newThreads.length && !mergeMain) return work;
   const w = structuredClone(work);
+  if (mergeMain) w.findings.push({ id: nextId(w.findings, 'F'), text: `main is green again at ${mainGreen.slice(0, 7)}, and CI at ${head.slice(0, 7)} failed only on what was red on main. Merge origin/main into the branch (merge, never rebase or force push) and push, so CI reruns.`, severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'merge_main', head, main: mainGreen } });
   for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
   if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id) } });
   if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id) } });
   const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main'),
-    ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : [])];
+    ...(mergeMain ? ['main is green again: merge it in'] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : [])];
   note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${said.join('; ')}.`);
   if (HEALTH_REOPENS.includes(w.phase)) {
     w.phase = 'fixes'; w.approvalWait = null;

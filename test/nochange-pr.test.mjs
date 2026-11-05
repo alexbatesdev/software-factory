@@ -66,3 +66,18 @@ test('W-80 shape: a CI finding from an old head closes when the head moves, and 
  assert.equal(x.phase, 'fixes');
  assert.ok(x.requests.some(r => r.type === 'fixes' && !r.ack && r.head === B), 'fixes with nothing pending would strand the record');
 });
+
+test('a CI finding accepted as "red on main" asks for a merge of main once main is green again, once per main commit (W-208 part 3)', () => {
+ const later = { ...ctx, now: '2026-11-06T00:00:00Z' };
+ const red = W.observeHealth(ready(), { head, conflict: false, failing: ['ci/circleci: test'] }, later);
+ const x = ev(ev(red, { type: 'assign', assignmentId: 'R6', kind: 'fixes', status: 'started', owner: 'worker', evidence: 'probe' }, later),
+   { type: 'assignment_done', assignmentId: 'R6', expectedVersion: 1, noChange: { verifiedOn: head, evidence: 'red on main: participant_spec:454' } }, later);
+ assert.equal(x.phase, 'awaiting_human_approval');
+ const still = { head, conflict: false, failing: ['ci/circleci: test'] };
+ assert.equal(W.observeHealth(x, { ...still, mainGreen: null }, later), x, 'main still red: nothing to merge yet');
+ const m = W.observeHealth(x, { ...still, mainGreen: 'main0001' }, later);
+ assert.equal(m.phase, 'fixes');
+ assert.deepEqual([m.findings.at(-1).source.type, m.requests.at(-1).type], ['merge_main', 'fixes']);
+ assert.equal(W.observeHealth(m, { ...still, mainGreen: 'main0001' }, later), m, 'once per green main commit');
+ assert.equal(W.observeHealth(x, { ...still, failing: [], mainGreen: 'main0001' }, later), x, 'green at the head: nothing to do');
+});
