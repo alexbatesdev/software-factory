@@ -88,10 +88,14 @@ export function inboxCommands(state, cfg, fleet = null) {
   if (cfg.developer) for (const w of Object.values(state.work)) {
     if (w.stream !== cfg.developer || ['done', 'cancelled'].includes(w.phase) || w.waitingOn) continue;
     if (!told.has(`devRecord:${w.id}`)) cmds.push(msg(cfg.developer, w.id, { devRecord: w.id }, `${w.id} ${quote(w.title)} is yours (board developer): read it and work it, or park it with progress waitingOn.`));
-    else (w.updates || []).forEach((u, i) => {
-      if (i === 0 || u.by === cfg.developer || u.at < (cfg.developerSince || '') || told.has(`devNote:${w.id}/${i}`)) return;
+    else {
+      // Notes from before the record's own notice are its setup (created, owner set), which the notice already covers.
+      const since = [cfg.developerSince || '', Object.values(state.messages).find(m => m.about?.devRecord === w.id)?.at || ''].sort().at(-1);
+      (w.updates || []).forEach((u, i) => {
+      if (i === 0 || u.by === cfg.developer || u.at <= since || told.has(`devNote:${w.id}/${i}`)) return;
       cmds.push(msg(cfg.developer, w.id, { devNote: `${w.id}/${i}` }, `${u.by} on ${w.id}: ${u.text}`));
-    });
+      });
+    }
   }
   // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.
   if (cfg.triage?.since) for (const w of Object.values(state.work))

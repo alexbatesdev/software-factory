@@ -148,7 +148,7 @@ test("a record owned by the board developer reaches its pane when it's filed, an
   const cfg = { supervisors: [], seats: ['dev'], developer: 'dev', developerSince: '2026-11-05T23:00:00Z' };
   const dev = r => r.cmds.filter(c => c.payload.to === 'dev' && (c.payload.about?.devRecord || c.payload.about?.devNote)).map(c => Object.values(c.payload.about)[0]);
   assert.deepEqual(dev(inboxCommands(state, cfg)), ['W-1'], 'open and unparked only');
-  state.messages['M-1'] = { id: 'M-1', to: 'dev', about: { devRecord: 'W-1' } };
-  state.work['W-1'].updates.push({ at: '2026-11-06T00:05:00Z', by: 'board lead', text: 'Second instance.' }, { at: '2026-11-06T00:06:00Z', by: 'dev', text: 'mine' });
-  assert.deepEqual(dev(inboxCommands(state, cfg)), ['W-1/1'], "someone else's new note, not the developer's own");
+  state.messages['M-1'] = { id: 'M-1', to: 'dev', about: { devRecord: 'W-1' }, at: '2026-11-06T00:01:00Z' };
+  state.work['W-1'].updates.push({ at: '2026-11-06T00:00:30Z', by: 'board lead', text: 'Updated owner, stream.' }, { at: '2026-11-06T00:05:00Z', by: 'board lead', text: 'Second instance.' }, { at: '2026-11-06T00:06:00Z', by: 'dev', text: 'mine' });
+  assert.deepEqual(dev(inboxCommands(state, cfg)), ['W-1/2'], "someone else's note after the notice; not the record's setup, not the developer's own");
 });
