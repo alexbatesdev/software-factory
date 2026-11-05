@@ -83,6 +83,16 @@ export function inboxCommands(state, cfg, fleet = null) {
     const sup = cfg.workers?.[u.by], key = `${w.id}/${i}`;
     if (sup && !told.has(`workerNote:${key}`)) cmds.push(msg(sup, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
   });
+  // Board bugs reach the board developer's pane like stream work reaches a supervisor (W-211): once per new record it
+  // owns, and once per note someone else adds after developerSince. Parked records wait quietly.
+  if (cfg.developer) for (const w of Object.values(state.work)) {
+    if (w.stream !== cfg.developer || ['done', 'cancelled'].includes(w.phase) || w.waitingOn) continue;
+    if (!told.has(`devRecord:${w.id}`)) cmds.push(msg(cfg.developer, w.id, { devRecord: w.id }, `${w.id} ${quote(w.title)} is yours (board developer): read it and work it, or park it with progress waitingOn.`));
+    else (w.updates || []).forEach((u, i) => {
+      if (i === 0 || u.by === cfg.developer || u.at < (cfg.developerSince || '') || told.has(`devNote:${w.id}/${i}`)) return;
+      cmds.push(msg(cfg.developer, w.id, { devNote: `${w.id}/${i}` }, `${u.by} on ${w.id}: ${u.text}`));
+    });
+  }
   // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.
   if (cfg.triage?.since) for (const w of Object.values(state.work))
     if (['intake', 'proposed'].includes(w.phase) && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`))

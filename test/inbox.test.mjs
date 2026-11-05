@@ -140,3 +140,15 @@ test("a worker's own board note reaches its supervisor once, so nobody has to re
   state.messages['M-1'] = { id: 'M-1', to: 'sup: s1', about: { workerNote: 'W-5/1' } };
   assert.equal(notes(inboxCommands(state, cfg)).length, 0, 'once');
 });
+
+test("a record owned by the board developer reaches its pane when it's filed, and again when someone else adds a note", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const rec = (id, extra = {}) => ({ id, title: `Bug ${id}`, phase: 'ready', stream: 'dev', requests: [], assignments: [], updates: [{ at: '2026-11-06T00:00:00Z', by: 'board lead', text: 'Created.' }], ...extra });
+  const state = { work: { 'W-1': rec('W-1'), 'W-2': rec('W-2', { waitingOn: { who: 'Alex' } }), 'W-3': rec('W-3', { phase: 'done' }) }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: [], seats: ['dev'], developer: 'dev', developerSince: '2026-11-05T23:00:00Z' };
+  const dev = r => r.cmds.filter(c => c.payload.to === 'dev' && (c.payload.about?.devRecord || c.payload.about?.devNote)).map(c => Object.values(c.payload.about)[0]);
+  assert.deepEqual(dev(inboxCommands(state, cfg)), ['W-1'], 'open and unparked only');
+  state.messages['M-1'] = { id: 'M-1', to: 'dev', about: { devRecord: 'W-1' } };
+  state.work['W-1'].updates.push({ at: '2026-11-06T00:05:00Z', by: 'board lead', text: 'Second instance.' }, { at: '2026-11-06T00:06:00Z', by: 'dev', text: 'mine' });
+  assert.deepEqual(dev(inboxCommands(state, cfg)), ['W-1/1'], "someone else's new note, not the developer's own");
+});
