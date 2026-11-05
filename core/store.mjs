@@ -137,7 +137,7 @@ function finish(state, row, observed, touched, supervisors) {
 
 // A task or PR seen by a poller: refresh its record, attach it to the record that carries it, or open a new one.
 function observeSource(state, item, ctx) {
-  const o = ownerOf(state, item, sourceIndex(state));
+  const o = ownerOf(state, item, sourceIndex(state), ctx.now);
   if (!o) {
     const id = create(state, { title: item.title, kind: item.kind === 'task' ? 'build' : 'pr-feedback', source: { type: item.kind === 'task' ? 'teamwork' : 'pr', key: item.id } }, ctx);
     state.work[id] = refresh(state.work[id], item, parseAcs);

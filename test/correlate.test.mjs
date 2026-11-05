@@ -94,3 +94,19 @@ test('a second PR naming a task that already has a PR gets its own record, never
   assert.equal(s.state.work[w].links.pr, PR(8469));
   assert.equal(Object.keys(s.state.work).length, 2, 'the second PR is its own record');
 });
+
+test('a worker PR joins the one live record whose notes name its branch, even before the branch is linked (W-180: #8535 into W-124)', () => {
+  const at = now => ({ now, by: 'poller' });
+  const run = now => {
+    const s = open();
+    const id = s.append({ kind: 'create', payload: { title: 'Ask Built assign_assets', kind: 'build', criteria: ['checked'] } }, at(now)).id;
+    s.append({ kind: 'event', target: id, payload: { type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'started', owner: 'sup: stream-2', evidence: 'brief' } }, at(now));
+    s.append({ kind: 'event', target: id, payload: { type: 'note', text: 'Worker on branch alex/ask-built/assign-assets-check, PR to follow.' } }, at(now));
+    for (const c of sourceCommands(s.state, new Map([[`built-rails-8535`, pr(8535, 'alex/ask-built/assign-assets-check')]]), 'pr', parseAcs)) s.append(c, at(now));
+    return { s, id };
+  };
+  const { s, id } = run('2026-11-06T00:00:00.000Z');
+  assert.deepEqual(Object.keys(s.state.work), [id], 'no duplicate record');
+  assert.equal(s.state.work[id].links.pr, PR(8535));
+  assert.equal(Object.keys(run('2026-11-04T18:48:00.000Z').s.state.work).length, 2, 'rows from before the rule replay as they were decided');
+});

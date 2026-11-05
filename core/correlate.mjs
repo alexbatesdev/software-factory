@@ -19,8 +19,23 @@ export const isPlaceholder = w => w.source?.type === 'pr' && [...PRE_QUEUE, 'pro
 // Branches name their Teamwork task last (alex/<area>/<slug>/<tw-id>).
 const taskOfBranch = branch => { const m = String(branch || '').match(/\/(\d{6,})$/); return m ? `tw-${m[1]}` : null; };
 
-/** The live record a newly seen source item should join instead of getting its own, if any. */
-export function ownerOf(state, item, idx = sourceIndex(state)) {
+// W-180: from this moment a PR also joins the one live record whose notes or assignments name its branch; older rows replay as decided.
+export const BRANCH_IN_NOTES_FROM = '2026-11-05T20:00:00.000Z';
+const LIVE = ['queued', 'started', 'blocked'];
+
+/** The one live, PR-less record with a live assignment whose notes or assignment text name this exact branch. */
+function namedBranchOwner(state, branch) {
+  if (!branch || branch.length < 8) return null;
+  const hits = Object.values(state.work).filter(w => !TERMINAL.includes(w.phase) && !w.links?.pr && (w.assignments || []).some(a => LIVE.includes(a.status))
+    && JSON.stringify([w.updates.map(u => u.text), w.assignments.map(a => [a.brief, a.evidence])]).includes(branch));
+  return hits.length === 1 ? hits[0].id : null;
+}
+
+/**
+ * The live record a newly seen source item should join instead of getting its own, if any.
+ * @param now the row's time in the reducer (gates rules added later); omitted, only the original rules apply
+ */
+export function ownerOf(state, item, idx = sourceIndex(state), now = null) {
   if (idx.has(item.id)) return { id: idx.get(item.id), why: 'known' };
   const task = item.kind === 'pr' && idx.get(taskOfBranch(item.branch));
   if (task && !TERMINAL.includes(state.work[task].phase)) {
@@ -29,6 +44,8 @@ export function ownerOf(state, item, idx = sourceIndex(state)) {
     if (other && other !== item.id) return null;
     return { id: task, why: `branch names ${taskOfBranch(item.branch)}` };
   }
+  const named = item.kind === 'pr' && now && now >= BRANCH_IN_NOTES_FROM && namedBranchOwner(state, item.branch);
+  if (named) return { id: named, why: `its notes name branch ${item.branch}` };
   return null;
 }
 
