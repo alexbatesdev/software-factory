@@ -281,7 +281,8 @@ export function applyEvent(work, e, ctx) {
       if (!e.by || e.by === w.implementer) fail('A review must be independent of the implementer.');
       if (!['clean', 'findings'].includes(e.result)) fail('A review result is "clean" or "findings".');
       w.reviews.push({ head: e.head, by: e.by, result: e.result, at: ctx.now, link: e.link || null });
-      for (const f of e.findings || []) w.findings.push({ id: nextId(w.findings, 'F'), text: f.text, severity: f.severity || null, status: 'open', reviewHead: e.head, note: null });
+      // A finding may come as plain text (W-160 had four stored with none).
+      for (const f of e.findings || []) w.findings.push({ id: nextId(w.findings, 'F'), text: typeof f === 'string' ? f : f.text, severity: f.severity || null, status: 'open', reviewHead: e.head, note: null });
       if (e.result === 'findings' && w.phase !== 'fixes') {
         w.phase = 'fixes';
         w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
@@ -290,7 +291,8 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Review at ${e.head} by ${e.by}: ${e.result}${e.findings?.length ? ` (${e.findings.length} finding(s))` : ''}.`);
       if (e.result === 'clean') {
         // A clean review of a later head saw the fixes, so it settles the earlier rounds' findings.
-        for (const f of w.findings.filter(f => f.status === 'open' && f.reviewHead !== e.head)) Object.assign(f, { status: 'resolved', note: `Resolved by the clean review at ${e.head}.` });
+        // From W-210 on, a later clean review of the same head is the final word on that head's findings too.
+        for (const f of w.findings.filter(f => f.status === 'open' && f.reviewHead && (f.reviewHead !== e.head || ctx.now >= SAME_HEAD_CLEAN_FROM))) Object.assign(f, { status: 'resolved', note: `Resolved by the clean review at ${e.head}.` });
         if (REVIEWING.includes(w.phase) && gate(w, ctx).ok) { w.phase = 'ready_for_human'; note(w, ctx, `Internal review passed at ${w.head}. This is not merged, deployed or complete in Teamwork.`); }
       }
       break;
@@ -751,6 +753,8 @@ const NO_CHANGE_MOVES_ON = '2026-11-04T23:10:00.000Z';
 const FINDINGS_FOLLOW_HEAD_FROM = '2026-11-05T22:00:00.000Z';
 // W-149: a no-change round answers review threads and change requests too (the worker replied instead of changing code).
 const FEEDBACK_NO_CHANGE_FROM = '2026-11-05T22:30:00.000Z';
+// W-210: a clean review settles open review findings recorded at its own head as well as earlier ones.
+const SAME_HEAD_CLEAN_FROM = '2026-11-05T22:45:00.000Z';
 /** Fixes with nothing pending strands a record: queue the request unless one is already open for this head. */
 function requestFixes(w, ctx) {
   if (w.requests.some(r => r.type === 'fixes' && !r.ack && sameSha(r.head, w.head))) return;

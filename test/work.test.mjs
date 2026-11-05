@@ -619,3 +619,13 @@ test('a reviewer asking for changes or opening threads on a tracked PR reopens i
   assert.deepEqual(more.findings.at(-1).source.ids, ['T4'], 'only the new thread is a new finding');
   assert.equal(observeHealth(w, { head: H, conflict: false, failing: [] }, ctx()), w, 'a read with no review data changes nothing (older rows)');
 });
+
+test('W-160 shape: findings given as plain text keep their text, and a later clean review at the same head settles them', () => {
+  const H = 'aaaaaaa1', later = ctx({ now: '2026-11-06T00:00:00.000Z' });
+  let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
+  w = applyEvent(w, { type: 'review', head: H, by: 'reviewer 1', result: 'findings', findings: ['Fixed (PR body): Risk 3 understated who is blocked.'] }, later).work;
+  assert.equal(w.findings.at(-1).text, 'Fixed (PR body): Risk 3 understated who is blocked.');
+  w = applyEvent(w, { type: 'review', head: H, by: 'reviewer 2', result: 'clean' }, later).work;
+  assert.equal(w.findings.at(-1).status, 'resolved', 'the later clean review is the final word on this head');
+});

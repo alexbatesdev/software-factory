@@ -291,3 +291,10 @@ test('cancel closes a stuck assignment with evidence, keeping its history', asyn
   assert.deepEqual([a.status, a.history.at(-1).status], ['cancelled', 'started']);
   assert.throws(() => commandsFor('cancel', { work: id, assignmentId: 'R1' }), /evidence/);
 });
+
+test('the board developer settles a finding by hand with a note (resolved or accepted)', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const [c] = commandsFor('settle_finding', { work: 'W-1', findingId: 'F2', status: 'resolved', note: 'fixed in 97dcf04' });
+  assert.deepEqual(c.payload, { type: 'finding', findingId: 'F2', status: 'resolved', note: 'fixed in 97dcf04' });
+  assert.throws(() => commandsFor('settle_finding', { work: 'W-1', findingId: 'F2', status: 'open', note: 'x' }), /resolved or accepted/);
+});
