@@ -36,3 +36,15 @@ export function planFactory(seats, panes) {
     return { ...base, action: 'none', why: 'running' };
   });
 }
+
+/**
+ * Tear-down order: sbx workers, supervisors, the other seats, the board server, then local-head if asked.
+ * @returns [{seat, pane, action}] action: stop | skip-stopped | skip-missing
+ */
+export function planStop(seats, panes, { serverLabel, withLocalHead = false } = {}) {
+  const rank = s => s.kind === 'sbx' ? 0 : s.role === 'stream-supervisor' ? 1 : s.label === serverLabel ? 3 : s.label === 'local-head' ? 4 : 2;
+  return seats.filter(s => withLocalHead || s.label !== 'local-head')
+    .map(seat => ({ seat, p: panes.find(x => x.label === seat.label) }))
+    .sort((a, b) => rank(a.seat) - rank(b.seat))
+    .map(({ seat, p }) => ({ seat, pane: p?.pane, action: !p ? 'skip-missing' : running(seat, p.argv) ? 'stop' : 'skip-stopped' }));
+}

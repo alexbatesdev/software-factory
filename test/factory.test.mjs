@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seatsOf, planFactory } from '../fleet/factory.mjs';
+import { seatsOf, planFactory, planStop } from '../fleet/factory.mjs';
 
 const config = {
   routing: { supervisors: { 'sup: s1': { workspace: 'Stream 1', worker: 'sbx: s1' } } },
@@ -41,4 +41,19 @@ test('a missing seat is created where the manifest puts it; in Terminals, which 
 test('a seat found outside its workspace is reported, not moved or restarted', () => {
   const plan = planFactory(seatsOf(config), [pane('local-head', 'Terminals', 'x', 'zsh')]);
   assert.equal(actionsOf(plan)['local-head'], 'report-misplaced');
+});
+
+test('tear-down stops workers first and the board server last, skips what is stopped, and keeps local-head unless asked', () => {
+  const seats = [{ label: 'server', kind: 'shell', expect: 'live.mjs' }, ...seatsOf(config)];
+  const panes = [
+    pane('server', 'Services', 'Board', 'node bin/live.mjs'),
+    pane('local-head', 'Main', 'Local head', 'claude --agent local-head'),
+    pane('unblocker', 'Main', 'Agent Unblocker', 'zsh'),
+    pane('sup: s1', 'Stream 1', 'Orchestrator', 'claude --agent stream-supervisor'),
+    pane('sbx: s1', 'Stream 1', 'Worker', 'sbx exec -it s1 claude'),
+  ];
+  const order = s => s.map(x => [x.seat.label, x.action]);
+  assert.deepEqual(order(planStop(seats, panes, { serverLabel: 'server' })),
+    [['sbx: s1', 'stop'], ['sup: s1', 'stop'], ['board', 'skip-missing'], ['unblocker', 'skip-stopped'], ['server', 'stop']]);
+  assert.equal(planStop(seats, panes, { serverLabel: 'server', withLocalHead: true }).at(-1).seat.label, 'local-head');
 });
