@@ -1,5 +1,6 @@
 // What each seat should find in its inbox: board requests, worker stops, idle queues and answers, as message commands.
 // Pure. A message is created once per subject; waking the seat is the Wake port's job, not this one's.
+import { isTrustedReviewSeat } from './capabilities.mjs';
 import { eligibleRequests, planWorkerStops, planIdleQueues, planIdleOwners, routeOf, workerJob, PREFIX } from './notifier.mjs';
 
 /**
@@ -57,7 +58,7 @@ export function inboxCommands(state, cfg, fleet = null) {
     for (const d of idle.due) cmds.push(msg(d.to, d.work, { idleQueue: d.key }, `Your stream is free and ${d.work} ${d.assignment} (${d.kind}) is queued on it: start it.`));
     // A seat with unread messages is the wake loop's to remind; this nudges only a seat with nothing new to read.
     const unread = new Set(Object.values(state.messages).filter(m => !m.ackedAt).map(m => m.to));
-    const owners = planIdleOwners({ seats: (fleet.others || []).filter(a => !unread.has(a.label)), works: state.work, watch: watches.idleOwners, now: fleet.now });
+    const owners = planIdleOwners({ seats: (fleet.others || []).filter(a => !unread.has(a.label) && !isTrustedReviewSeat(a.label)), works: state.work, watch: watches.idleOwners, now: fleet.now });
     for (const d of owners.due) cmds.push(msg(d.to, d.work, { idleOwner: `${d.to}/${fleet.now}` }, `You're idle and own ${d.count} open record(s). Next: ${d.work} ${quote(d.title)}. Work it, or park it with progress waitingOn (what blocks it) so it stops counting.`));
     watches = { workerStops: stops.watch, idleQueues: idle.watch, idleOwners: owners.watch };
     // herdr can report a finished worker as working (a spinner left on screen); an unchanged pane is the tell.

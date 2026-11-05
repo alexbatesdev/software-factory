@@ -1,7 +1,7 @@
 // The factory's HTTP API: every write is a board action, checked against the caller's role, appended atomically.
 // The caller's seat comes from the x-seat header, which the MCP server fills from its pane. ponytail: trusted because
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
-import { refusal } from './capabilities.mjs';
+import { refusal, isTrustedReviewSeat } from './capabilities.mjs';
 import { commandsFor } from './actions.mjs';
 import { readFileSync } from 'node:fs';
 import { boardView } from '../views/board.mjs';
@@ -10,7 +10,7 @@ import { reachesAlex } from './derive.mjs';
 const PAGE = new URL('../views/index.html', import.meta.url);
 
 /** The role a seat label holds; every stream supervisor label is a stream-supervisor. */
-export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config.routing?.supervisors || {}) ? 'stream-supervisor' : null);
+export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config.routing?.supervisors || {}) ? 'stream-supervisor' : isTrustedReviewSeat(seat) ? 'trusted-reviewer' : null);
 
 /**
  * @param readOnly the shadow runner serves the page and reads only; every write is refused

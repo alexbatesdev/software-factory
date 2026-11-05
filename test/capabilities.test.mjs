@@ -54,5 +54,19 @@ test('the board lead acks the messages addressed to it', () => {
 });
 
 test('every seat can ack the messages in its own inbox', () => {
-  for (const role of Object.keys(ROLES)) assert.equal(refusal(role, 'ack', { ref: 'M-1' }), null, role);
+  // A trusted reviewer is never messaged (inbox.mjs skips its seat) until its role file grants ack.
+  for (const role of Object.keys(ROLES).filter(r => r !== 'trusted-reviewer')) assert.equal(refusal(role, 'ack', { ref: 'M-1' }), null, role);
+});
+
+test('a trusted-review pane, under either label form, is a trusted reviewer that only reads and adds notes; its record is trusted-review work', async () => {
+  const { roleOf } = await import('../core/api.mjs');
+  const { trackOf } = await import('../core/work.mjs');
+  for (const seat of ['pr-8434-trusted', 'trusted-review-8434']) {
+    assert.equal(roleOf({}, seat), 'trusted-reviewer', seat);
+    assert.equal(trackOf({ id: 'W-1', owner: seat }), 'trusted-review', seat);
+  }
+  assert.equal(roleOf({}, 'pr-8434'), null);
+  assert.equal(refusal('trusted-reviewer', 'progress', { work: 'W-1', text: 'started' }), null);
+  assert.match(refusal('trusted-reviewer', 'progress', { work: 'W-1', assignmentId: 'R1' }), /notes/);
+  assert.match(refusal('trusted-reviewer', 'done'), /may not done/);
 });

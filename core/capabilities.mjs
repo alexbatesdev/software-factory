@@ -7,7 +7,11 @@ export const ROLES = {
   'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask'],
   'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify'],
   'board-developer': ACTIONS,
+  'trusted-reviewer': ['read', 'progress'],
 };
+
+/** A trusted-review pane's label: `pr-<n>-trusted` (its role file) or `trusted-review-<n>` (older panes). */
+export const isTrustedReviewSeat = label => /^(pr-\d+-trusted|trusted-review-\d+)$/.test(label || '');
 
 // Narrower grants inside an action, keyed role → action → check on the command's arguments.
 const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
@@ -16,6 +20,7 @@ const LIMITS = {
   'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
     progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',
     ack: a => /^M-\d+$/.test(a.ref || '') || 'the board lead acks only messages addressed to it' },
+  'trusted-reviewer': { progress: a => !a.assignmentId || 'a trusted reviewer adds notes only; its dispatcher records the assignment' },
   'questions-router': { set_owner: noPin, ack: a => /^M-\d+$/.test(a.ref || '') || 'the questions router acks only messages addressed to it' },
 };
 

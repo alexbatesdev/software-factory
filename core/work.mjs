@@ -1,4 +1,5 @@
 import { prKey } from './units.mjs';
+import { isTrustedReviewSeat } from './capabilities.mjs';
 // Work records: the durable lifecycle behind every board item. Pure functions, no I/O.
 // The ready gate lives here so no route can set `ready_for_human` or `done` around it.
 
@@ -37,7 +38,7 @@ export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
  */
 export function trackOf(w, cfg = {}) {
   if ((cfg.exclude || []).includes(w.id) || new RegExp(cfg.mutationBranch || 'mutation', 'i').test(`${w.links?.branch || ''} ${w.links?.pr || ''}`)) return 'mutation';
-  if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '')) return 'trusted-review';
+  if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '') || isTrustedReviewSeat(w.owner)) return 'trusted-review';
   return 'stream';
 }
 /** Queue order everywhere work waits for a stream: priority 1 (Alex's "priority") first, then oldest record. */
