@@ -74,6 +74,7 @@ test("a recreated sandbox gets back Alex's comment hook without losing its other
   const bare = { themeId: 1, permissions: { defaultMode: 'bypassPermissions' } };
   const once = withBaseline(bare);
   assert.equal(once.themeId, 1);
+  assert.deepEqual([once.promptSuggestionEnabled, once.feedbackDrafts, once.awaySummaryEnabled], [false, 'off', false]);
   assert.equal(once.hooks.PreToolUse.filter(h => h.hooks.some(x => x.command === ROBOT_HOOK.hooks[0].command)).length, 1);
   assert.deepEqual(withBaseline(once), once, 'applying it twice changes nothing');
 });

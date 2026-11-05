@@ -96,11 +96,14 @@ const HOOK_PATH = '/home/agent/.claude/hooks/require-robot-wrapper.sh';
 export const ROBOT_HOOK = { matcher: 'Bash|mcp__.*(add_issue_comment|update_issue_comment|add_comment_to_pending_review|pull_request_review_write|create_pull_request_review|add_reply_to_pull_request_comment)',
   hooks: [{ type: 'command', command: `bash ${HOOK_PATH}`, timeout: 10, onFailure: 'block' }] };
 
-/** The sandbox's settings with the comment hook present once; everything else kept. Pure. */
+// Alex's own switches for things that clutter or park an unattended pane (his ~/.claude/settings.json, 11-05).
+export const QUIET = { promptSuggestionEnabled: false, feedbackDrafts: 'off', awaySummaryEnabled: false };
+
+/** The sandbox's settings with the comment hook present once and the quiet switches set; everything else kept. Pure. */
 export function withBaseline(settings = {}) {
   const pre = settings.hooks?.PreToolUse || [];
-  if (pre.some(h => (h.hooks || []).some(x => x.command === ROBOT_HOOK.hooks[0].command))) return settings;
-  return { ...settings, hooks: { ...settings.hooks, PreToolUse: [...pre, ROBOT_HOOK] } };
+  const hooked = pre.some(h => (h.hooks || []).some(x => x.command === ROBOT_HOOK.hooks[0].command));
+  return { ...settings, ...QUIET, hooks: { ...settings.hooks, PreToolUse: hooked ? pre : [...pre, ROBOT_HOOK] } };
 }
 
 /** Put the comment hook script and its settings entry back in a sandbox. */
