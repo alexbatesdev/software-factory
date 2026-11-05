@@ -1,3 +1,4 @@
+import { PREFIX } from './notifier.mjs';
 // Who to wake: seats with unacked messages they haven't been woken for, plus one reminder after remindMs. Pure.
 /**
  * @param woken {seat: {at: ms, ids: [M-n]}} from earlier wakes
@@ -16,4 +17,4 @@ export function wakePlan(state, woken, nowMs, remindMs = 20 * 60000) {
 }
 
 export const wakeText = ({ seat, ids, reminder }) =>
-  `[software factory, automated, not Alex] ${seat}: ${ids.length} unread message(s) in your factory inbox${reminder ? ' (reminder)' : ''}. Read them with the board inbox tool and ack each.`;
+  `${PREFIX} ${seat}: ${ids.length} unread message(s) in your factory inbox${reminder ? ' (reminder)' : ''}. Read them with the board inbox tool and ack each.`;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveTarget, routeOf, inferStream, eligibleRequests, planNotifications, reconcileOnStart, notificationText } from '../core/notifier.mjs';
+import { resolveTarget, routeOf, inferStream, eligibleRequests } from '../core/notifier.mjs';
 
 const SUP = 'sup: stream-1 (support+sec)';
 const agent = (over = {}) => ({ agent: 'claude', pane_id: 'w5:p24', label: SUP, agent_status: 'idle', interactive_ready: true, agent_session: { value: 'sess-1' }, ...over });
@@ -19,6 +19,7 @@ test('busy, blocked, unknown or not interactive-ready defers', () => {
   assert.match(resolveTarget([agent({ interactive_ready: false })], SUP).defer, /ready/);
   assert.equal(resolveTarget([agent({ agent_status: 'done' })], SUP).defer, undefined);
 });
+
 
 test('a record routes to its stream only; the stream is inferred once from its latest supervisor, never a reviewer pane', () => {
   const sups = [SUP, 'sup: stream-conf-stack'];
@@ -41,46 +42,6 @@ test('only current, unacked requests on live items are eligible', () => {
   const rev = work({ phase: 'review', head: 'bbb', requests: [{ id: 'R2', type: 'review', head: 'aaa', ack: null }, { id: 'R3', type: 'review', head: 'bbb', ack: null }] });
   assert.deepEqual(eligibleRequests({ 'W-1': rev }).map(x => x.request), ['R3'], 'stale-head review skipped');
   assert.equal(eligibleRequests({ 'W-1': work({ synthetic: true }) }).length, 1, 'synthetic items are notified like any other');
-});
-
-test('a request is notified once, reminded once, and never re-sent while uncertain', () => {
-  const works = { 'W-1': work() };
-  const cfg = { reminderMs: 20 * 60000 };
-  assert.deepEqual(planNotifications(works, {}, T0, cfg).map(x => x.key), ['W-1/R1']);
-  const sent = { 'N-1': { status: 'submitted', at: iso(T0), requests: ['W-1/R1'] } };
-  assert.equal(planNotifications(works, sent, T0 + 60000, cfg).length, 0, 'no resend inside the window');
-  assert.deepEqual(planNotifications(works, sent, T0 + 21 * 60000, cfg).map(x => [x.key, x.reminder]), [['W-1/R1', true]]);
-  const twice = { ...sent, 'N-2': { status: 'submitted', at: iso(T0 + 21 * 60000), requests: ['W-1/R1'], reminder: true } };
-  assert.equal(planNotifications(works, twice, T0 + 90 * 60000, cfg).length, 0, 'one reminder only');
-  const unsure = { 'N-1': { status: 'uncertain', at: iso(T0), requests: ['W-1/R1'] } };
-  assert.equal(planNotifications(works, unsure, T0 + 90 * 60000, cfg).length, 0, 'uncertain is never auto-replayed');
-  const failed = { 'N-1': { status: 'failed', at: iso(T0), requests: ['W-1/R1'] } };
-  assert.equal(planNotifications(works, failed, T0 + 60000, cfg).length, 1, 'a send that certainly failed can go again');
-});
-
-test('a send interrupted by a restart becomes uncertain', () => {
-  const n = reconcileOnStart({ 'N-1': { status: 'sending', requests: ['W-1/R1'] }, 'N-2': { status: 'submitted', requests: [] } }, iso(T0));
-  assert.equal(n['N-1'].status, 'uncertain');
-  assert.equal(n['N-2'].status, 'submitted');
-});
-
-test('the prompt is one labelled line with stable ids and no commands', () => {
-  const t = notificationText([{ key: 'W-1/R1', type: 'dispatch', title: 'Fix it' }, { key: 'W-9/R2', type: 'review', title: 'Other' }], 'http://127.0.0.1:4747', SUP);
-  assert.match(t, /^\[triage-board notifier, automated, not Alex\]/);
-  assert.match(t, /W-1\/R1 dispatch/);
-  assert.match(t, /W-9\/R2 review/);
-  assert.match(t, /for sup: stream-1 \(support\+sec\)/);
-  assert.doesNotMatch(t, /\n/);
-});
-
-test('a request reminded inside a mixed batch is never reminded again', () => {
-  const works = { 'W-1': work(), 'W-2': work({ id: 'W-2', title: 'Two' }) };
-  const cfg = { reminderMs: 20 * 60000 };
-  const history = {
-    'N-1': { status: 'submitted', at: iso(T0), requests: ['W-1/R1'] },
-    'N-2': { status: 'submitted', at: iso(T0 + 21 * 60000), requests: ['W-1/R1', 'W-2/R1'], reminders: ['W-1/R1'] },
-  };
-  assert.deepEqual(planNotifications(works, history, T0 + 60 * 60000, cfg).map(p => [p.key, p.reminder]), [['W-2/R1', true]]);
 });
 
 import { planWorkerStops } from '../core/notifier.mjs';
@@ -163,4 +124,10 @@ test('after a restart, a worker already stopped with a started assignment still 
   const a = planWorkerStops({ units: [u], works, now: 0, supervisors: [S] });
   const { due } = planWorkerStops({ units: [u], works, watch: a.watch, now: 120000, supervisors: [S] });
   assert.deepEqual(due.map(d => d.work), ['W-1']);
+});
+
+test('every automated notice a seat receives carries the one factory prefix', async () => {
+  const { wakeText } = await import('../core/wake.mjs');
+  const { PREFIX } = await import('../core/notifier.mjs');
+  assert.ok(wakeText({ seat: 's', ids: ['M-1'], reminder: false }).startsWith(`${PREFIX} `));
 });

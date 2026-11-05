@@ -1,17 +1,14 @@
 #!/usr/bin/env node
-// Live mode: V2 is the system of record. The first start imports V1's state.json once (V1 must be stopped);
-// after that only this process writes the log. It polls, decides, messages and wakes seats, dispatches, marks PRs ready.
+// Live mode: V2 is the system of record; only this process writes the log. It polls, decides, messages and wakes seats, dispatches, marks PRs ready.
 // Run: FACTORY_MODE=live node --env-file="$HOME/Code/teamwork mini mcp/.env" bin/live.mjs
 if (process.env.FACTORY_MODE !== 'live') { console.error('Refusing to run: set FACTORY_MODE=live.'); process.exit(2); }
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
 import { dirname, join } from 'node:path';
-import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { openStore, derivedCtx } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
-import { importCommands } from '../core/import.mjs';
 import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey, taskIdOf, projectCommands } from '../core/observe.mjs';
 import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
@@ -30,11 +27,10 @@ import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles } from '../core/recycle.mjs';
 import { gh as liveGh } from '../effects/github.mjs';
 
-// Dry run (FACTORY_DRY=1): a scratch DB from a copy of V1's state; reads are real, nothing is typed, marked or moved.
+// Dry run (FACTORY_DRY=1, FACTORY_DB=<a copy of data/factory.db>): reads are real, nothing is typed, marked or moved.
 const DRY = process.env.FACTORY_DRY === '1';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const V1 = join(homedir(), 'Code/triage-board');
 const config = JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8'));
 const supervisors = Object.keys(config.routing.supervisors);
 const DB = process.env.FACTORY_DB || join(ROOT, 'data/factory.db');
@@ -49,15 +45,8 @@ const by = name => ({ now: now(), by: name });
 // One command at a time: a refused observation is logged and the rest still land.
 const apply = (cmds, who) => { for (const c of cmds) try { store.append(c, by(who)); } catch (e) { log(`refused ${c.kind} ${c.target || ''}: ${e.message}`); } };
 
-// Two systems typing into panes at once is the failure cutover must avoid: V1 has to be down first.
-if (!DRY && await fetch('http://127.0.0.1:4747/').then(() => true, () => false)) { console.error('V1 is still serving on :4747. Stop it first.'); process.exit(2); }
 mkdirSync(dirname(DB), { recursive: true });
 const store = openStore(DB, { supervisors });
-if (store.state.seq === 0) {
-  const cmds = importCommands(JSON.parse(readFileSync(process.env.FACTORY_IMPORT || join(V1, 'state.json'), 'utf8')), store.state);
-  store.appendAll(cmds, by('import'));
-  log(`final import from V1: ${cmds.length} rows`);
-}
 log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
@@ -71,8 +60,8 @@ let health = {}, recycling = {}, drain = new Map();
 const seen = new Set(), once = line => { if (!seen.has(line)) { seen.add(line); log(line); } };
 const quiet = {}, screens = {};
 
-// Questions filed as JSON files (the pre-MCP path in the role files), same contract as V1's inbox folder.
-const INBOX = join(V1, 'inbox');
+// Questions filed as JSON files, the fallback when a seat's MCP tools are down (~/Code/CLAUDE.md).
+const INBOX = join(ROOT, 'inbox');
 function ingestInbox() {
   if (DRY || !existsSync(INBOX)) return;
   for (const d of ['done', 'rejected']) mkdirSync(join(INBOX, d), { recursive: true });
@@ -86,20 +75,6 @@ function ingestInbox() {
       renameSync(src, join(INBOX, 'done', `${id}-${f}`));
       log(`question ${id} from ${q.from}`);
     } catch (e) { renameSync(src, join(INBOX, 'rejected', f)); writeFileSync(join(INBOX, 'rejected', `${f}.error.txt`), `${e.message}\n`); }
-  }
-}
-
-// board.mjs files events here when V1 is down; V1 never comes back, so tell the seat instead of losing the write.
-function retiredEvents() {
-  const dir = join(INBOX, 'events');
-  if (DRY || !existsSync(dir)) return;
-  for (const f of readdirSync(dir).filter(f => f.endsWith('.json'))) {
-    let e = {}; try { e = JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch {}
-    const to = String(e.by || config.boardLead?.seat || 'board lead');
-    renameSync(join(dir, f), join(dir, 'rejected', f));
-    writeFileSync(join(dir, 'rejected', `${f}.error.txt`), 'board.mjs is retired (V2 cutover); redo it with the software-factory MCP tool.\n');
-    apply([{ kind: 'message', payload: { to, work: e.work || null, about: { retired: f }, text: `[software factory] board.mjs is retired: your ${e.type || 'event'}${e.work ? ` on ${e.work}` : ''} was not recorded. Redo it with the software-factory MCP tool (file: inbox/events/rejected/${f}).` } }], 'board');
-    log(`retired board.mjs event ${f} from ${to}`);
   }
 }
 
@@ -130,7 +105,6 @@ function autoDispatchTick() {
 
 async function inboxTick() {
   ingestInbox();
-  retiredEvents();
   autoDispatchTick();
   const seats = [...supervisors, config.routing.questionsRouter, ...Object.keys(config.roles || {}), ...(config.factory?.seats || []).map(s => s.label)];
   const since = store.state.legacy.notifier?.activatedAt;

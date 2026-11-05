@@ -1,8 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+
 import { openStore } from '../core/store.mjs';
 import { importCommands, exportV1 } from '../core/import.mjs';
 
@@ -29,15 +27,6 @@ test('a re-import writes only what changed, including removals', () => {
   const next = v1(); next.work['W-2'].phase = 'ready'; delete next.notifications['N-1'];
   assert.deepEqual(importAll(s, next).map(r => r.id), ['work/W-2', 'notifications/N-1']);
   assert.deepEqual(exportV1(s.state), next);
-});
-
-// The live V1 board, when present: the round trip must be lossless on real data.
-const live = join(homedir(), 'Code/triage-board/state.json');
-test('the live V1 state.json round-trips', { skip: !existsSync(live) && 'no V1 board here' }, () => {
-  const real = JSON.parse(readFileSync(live, 'utf8'));
-  const s = openStore();
-  importAll(s, real);
-  assert.deepEqual(exportV1(s.replay()), real);
 });
 
 test("a change to one of V1's other keys re-imports that key alone", () => {

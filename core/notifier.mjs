@@ -2,7 +2,7 @@ import { TERMINAL as TERMINAL_PHASES, REVIEWING, queueOrder } from './work.mjs';
 // Automatic request pickup: decide which board requests each stream supervisor should hear about, and when.
 // Pure functions; the server persists notification records and owns the transport.
 
-export const PREFIX = '[triage-board notifier, automated, not Alex]';
+export const PREFIX = '[software factory, automated, not Alex]';
 const TERMINAL = TERMINAL_PHASES;
 
 /** Where a record's requests and answers go: its stream, and nothing else. */
@@ -18,6 +18,8 @@ export function inferStream(w, supervisors) {
   const owners = [...(w.assignments || [])].reverse().map(a => a.owner);
   return [...owners, w.owner, w.implementer].find(l => l && supervisors.includes(l)) || null;
 }
+
+
 
 /**
  * Find the one Claude agent whose pane carries the supervisor's label.
@@ -56,37 +58,6 @@ export function eligibleRequests(works, cutoff = null, supervisors = []) {
     if (current(w, r)) out.push({ key: `${w.id}/${r.id}`, work: w.id, request: r.id, type: r.type, title: w.title, synthetic: !!w.synthetic, to: routeOf(w, supervisors) });
   }
   return out;
-}
-
-/**
- * What to send this tick. A request gets one notice and at most one reminder (after cfg.reminderMs).
- * Anything with a send in flight or of uncertain outcome is left alone; only a certain failure is retried.
- */
-export function planNotifications(works, notifications, nowMs, cfg) {
-  const plan = [];
-  const all = Object.values(notifications || {});
-  for (const e of eligibleRequests(works, cfg.cutoff, cfg.supervisors)) {
-    const hist = all.filter(n => n.requests.includes(e.key));
-    if (hist.some(n => ['sending', 'uncertain'].includes(n.status))) continue; // abandoned/failed don't block
-    const submitted = hist.filter(n => n.status === 'submitted');
-    if (!submitted.length) { plan.push({ ...e, reminder: false }); continue; }
-    if (submitted.some(n => (n.reminders || []).includes(e.key) || (n.reminder === true && !n.reminders))) continue;
-    const last = Math.max(...submitted.map(n => Date.parse(n.at)));
-    if (nowMs - last >= cfg.reminderMs) plan.push({ ...e, reminder: true });
-  }
-  return plan;
-}
-
-/** After a restart, a send that never recorded its outcome may or may not have reached its supervisor. */
-export function reconcileOnStart(notifications, now) {
-  for (const n of Object.values(notifications || {})) if (n.status === 'sending') Object.assign(n, { status: 'uncertain', detail: 'Server restarted mid-send; outcome unknown.', at2: now });
-  return notifications;
-}
-
-/** One line, stable W/R ids, nothing to execute. The supervisor's own contract says what to do with it. */
-export function notificationText(plan, base, to) {
-  const list = plan.map(p => `${p.key} ${p.type}${p.reminder ? ' (reminder)' : ''}${p.synthetic ? ' [SYNTHETIC]' : ''} "${String(p.title).replace(/["\n]/g, "'").slice(0, 60)}"`).join('; ');
-  return `${PREFIX} ${plan.length} board request(s) for ${to}: ${list}. Read GET ${base}/api/work/<W> and handle per the README contract; this grants no authority.`;
 }
 
 /**
