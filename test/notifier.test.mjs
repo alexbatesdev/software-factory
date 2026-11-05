@@ -131,3 +131,17 @@ test('every automated notice a seat receives carries the one factory prefix', as
   const { PREFIX } = await import('../core/notifier.mjs');
   assert.ok(wakeText({ seat: 's', ids: ['M-1'], reminder: false }).startsWith(`${PREFIX} `));
 });
+
+test('an idle seat that owns open records is pestered after a grace period, then again every repeat, until it works', async () => {
+  const { planIdleOwners } = await import('../core/notifier.mjs');
+  const works = { 'W-9': { id: 'W-9', title: 'Fix the poller', phase: 'ready', stream: 'dev' }, 'W-3': { id: 'W-3', title: 'Old', phase: 'done', stream: 'dev' },
+    'W-5': { id: 'W-5', title: 'Held', phase: 'ready', stream: 'dev', waitingOn: 'TB-1' } };
+  const seat = status => [{ label: 'dev', status }];
+  const run = (watch, status, now) => planIdleOwners({ seats: seat(status), works, watch, now, graceMs: 600000, repeatMs: 1800000 });
+  let r = run({}, 'idle', T0); assert.deepEqual(r.due, [], 'just went idle');
+  r = run(r.watch, 'idle', T0 + 600000); assert.deepEqual(r.due.map(d => [d.to, d.work, d.count]), [['dev', 'W-9', 1]]);
+  r = run(r.watch, 'idle', T0 + 900000); assert.deepEqual(r.due, [], 'no repeat inside the repeat window');
+  r = run(r.watch, 'done', T0 + 2400000); assert.equal(r.due.length, 1, 'pestered again');
+  r = run(r.watch, 'working', T0 + 2500000); assert.deepEqual([r.due, r.watch], [[], {}], 'working clears the watch');
+  assert.deepEqual(planIdleOwners({ seats: seat('idle'), works: { 'W-3': works['W-3'] }, watch: {}, now: T0 }).due, [], 'nothing open, nothing to say');
+});

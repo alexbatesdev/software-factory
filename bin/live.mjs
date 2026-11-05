@@ -111,7 +111,7 @@ async function inboxTick() {
   const checkIn = config.boardLead?.checkIn !== false ? { seat: config.boardLead?.seat || 'board lead', now: now() } : null;
   const triage = { seat: config.boardLead?.seat || 'board lead', since: LIVE_SINCE };
   const plan = inboxCommands(store.state, { supervisors, seats, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
-    fleet && { units: fleet.units, now: Date.now(), watches, quiet, drain });
+    fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
   const sessions = Object.fromEntries([...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => [a.label, a.session]));

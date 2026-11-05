@@ -1,6 +1,6 @@
 // What each seat should find in its inbox: board requests, worker stops, idle queues and answers, as message commands.
 // Pure. A message is created once per subject; waking the seat is the Wake port's job, not this one's.
-import { eligibleRequests, planWorkerStops, planIdleQueues, routeOf, workerJob, PREFIX } from './notifier.mjs';
+import { eligibleRequests, planWorkerStops, planIdleQueues, planIdleOwners, routeOf, workerJob, PREFIX } from './notifier.mjs';
 
 /**
  * Subjects already told: V2 messages, and imported V1 notifications (so cutover tells nobody twice).
@@ -55,7 +55,11 @@ export function inboxCommands(state, cfg, fleet = null) {
     }
     const idle = planIdleQueues({ units: fleet.units.filter(u => !drain.has(u.supervisor?.label)), works: state.work, watch: watches.idleQueues, sent, now: fleet.now, supervisors: cfg.supervisors });
     for (const d of idle.due) cmds.push(msg(d.to, d.work, { idleQueue: d.key }, `Your stream is free and ${d.work} ${d.assignment} (${d.kind}) is queued on it: start it.`));
-    watches = { workerStops: stops.watch, idleQueues: idle.watch };
+    // A seat with unread messages is the wake loop's to remind; this nudges only a seat with nothing new to read.
+    const unread = new Set(Object.values(state.messages).filter(m => !m.ackedAt).map(m => m.to));
+    const owners = planIdleOwners({ seats: (fleet.others || []).filter(a => !unread.has(a.label)), works: state.work, watch: watches.idleOwners, now: fleet.now });
+    for (const d of owners.due) cmds.push(msg(d.to, d.work, { idleOwner: `${d.to}/${fleet.now}` }, `You're idle and own ${d.count} open record(s). Next: ${d.work} ${quote(d.title)}. Work it, or progress it with what blocks it (--waitingOn) so it stops counting.`));
+    watches = { workerStops: stops.watch, idleQueues: idle.watch, idleOwners: owners.watch };
     // herdr can report a finished worker as working (a spinner left on screen); an unchanged pane is the tell.
     for (const u of fleet.units) {
       const since = fleet.quiet?.[u.id], job = u.worker?.status === 'working' && workerJob(u, state.work);

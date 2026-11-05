@@ -124,3 +124,23 @@ export function planIdleQueues({ units, works, watch = {}, sent = {}, now, grace
   }
   return { watch: next, due };
 }
+
+// Phases where a record waits on Alex or on intake, not on the seat that owns it.
+const NOT_THE_OWNERS_MOVE = ['intake', 'proposed', 'clarification', 'ready_for_human', 'awaiting_human_approval'];
+
+/**
+ * Keep seats working (Alex, 11-05): a seat idle past graceMs that owns open records it can move is told its next one,
+ * and told again every repeatMs until it is working. Streams have their own check (planIdleQueues).
+ * @param seats [{label, status}] @param watch {label: {since, last}} @returns {{watch, due: [{to, work, title, count}]}}
+ */
+export function planIdleOwners({ seats, works, watch = {}, now, graceMs = 600000, repeatMs = 1800000 }) {
+  const next = {}, due = [];
+  for (const s of seats) {
+    if (!['idle', 'done'].includes(s.status)) continue;
+    const open = Object.values(works).filter(w => w.stream === s.label && !TERMINAL.includes(w.phase) && !NOT_THE_OWNERS_MOVE.includes(w.phase) && !w.waitingOn && !w.paused).sort(queueOrder);
+    if (!open.length) continue;
+    const w = next[s.label] = { since: watch[s.label]?.since ?? now, last: watch[s.label]?.last ?? null };
+    if (now - w.since >= graceMs && (w.last == null || now - w.last >= repeatMs)) { w.last = now; due.push({ to: s.label, work: open[0].id, title: open[0].title, count: open.length }); }
+  }
+  return { watch: next, due };
+}

@@ -100,3 +100,13 @@ test('a draining stream tells its supervisor once per sandbox, and gets no idle-
   s.append(first[0], ctx('board'));
   assert.deepEqual(inboxCommands(s.state, cfg, fleet(10 * 60000)).cmds, [], 'no repeat, and no idle-queue wake while draining');
 });
+
+test('an idle non-stream seat that owns ready records gets a nudge from the inbox planner', async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const state = { work: { 'W-9': { id: 'W-9', title: 'Fix it', phase: 'ready', stream: 'dev', requests: [] } }, questions: {}, messages: {}, notifications: {} };
+  const fleet = now => ({ units: [], others: [{ label: 'dev', status: 'idle' }], now, watches });
+  let watches = {};
+  let r = inboxCommands(state, { supervisors: [], seats: ['dev'] }, fleet(0)); watches = r.watches;
+  r = inboxCommands(state, { supervisors: [], seats: ['dev'] }, fleet(600000));
+  assert.deepEqual(r.cmds.map(c => [c.payload.to, c.payload.work]), [['dev', 'W-9']]);
+});
