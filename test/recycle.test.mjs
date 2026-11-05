@@ -42,9 +42,29 @@ test('only configured streams are ever drained or recycled (Mutation is Alex own
   assert.deepEqual([p.drain.size, p.due.length], [0, 0]);
 });
 
+// A plugin state dir holding one mapping, as the sbx plugin writes it.
+async function pluginState(paneId, sandboxName) {
+  const { mkdtempSync } = await import('node:fs'), { tmpdir } = await import('node:os'), { join } = await import('node:path');
+  const { PLUGIN } = await import('../hosts/sbx.mjs');
+  const { savePaneEntry } = await import(join(PLUGIN, 'src', 'state.mjs'));
+  const dir = mkdtempSync(join(tmpdir(), 'sf-sbx-'));
+  savePaneEntry(dir, paneId, { sandboxName, workspaceId: paneId.split(':')[0], agentKind: 'claude-code', sbxAgent: 'claude', localPath: '/x', workdir: '/x', workspaceMode: 'clone', lifecycleState: 'ready', bridgePid: null });
+  return dir;
+}
+
 test("a recycled sandbox's agent starts the way the sbx plugin starts it, so herdr can see whether it is working", async () => {
   const { bridgeLine } = await import('../hosts/sbx.mjs');
-  const line = await bridgeLine({ ref: 'w2G:p3' });
+  const line = await bridgeLine({ ref: 'w9:p3' }, await pluginState('w9:p3', 'box-1'));
   assert.match(line, /HERDR_AGENT='?claude'?\s/);
   assert.match(line, /bridge\.mjs'? '?start'? /);
+});
+
+test('a sandbox whose pane is gone (herdr restarted) moves to a new pane, and only when its old pane really is gone', async () => {
+  const { adoptSandbox, bridgeLine, sandboxOf } = await import('../hosts/sbx.mjs');
+  const dir = await pluginState('w9:p3', 'box-1');
+  await assert.rejects(adoptSandbox('box-1', 'w2:p1', 'w2', { stateDir: dir, livePanes: ['w9:p3'] }), /still holds box-1/);
+  await adoptSandbox('box-1', 'w2:p1', 'w2', { stateDir: dir, livePanes: [] });
+  assert.equal(await sandboxOf('w2:p1', dir), 'box-1');
+  assert.equal(await sandboxOf('w9:p3', dir), null);
+  assert.match(await bridgeLine({ ref: 'w2:p1' }, dir), /--pane-id'? '?w2:p1/);
 });

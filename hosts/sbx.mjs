@@ -10,7 +10,7 @@ import { join } from 'node:path';
 
 const run = promisify(execFile);
 // The herdr sbx plugin owns the pane ↔ sandbox mapping; its bridge's start mode recreates a missing sandbox from it.
-const PLUGIN = join(homedir(), '.config/herdr/plugins/github/sbx.sandbox-95a2fab8176f');
+export const PLUGIN = join(homedir(), '.config/herdr/plugins/github/sbx.sandbox-95a2fab8176f');
 const STATE = join(homedir(), '.local/state/herdr/plugins/sbx.sandbox'), CONFIG = join(homedir(), '.config/herdr/plugins/config/sbx.sandbox');
 const pause = ms => new Promise(r => setTimeout(r, ms));
 
@@ -58,14 +58,35 @@ export async function preflight(worker) {
   return parsePreflight(stdout);
 }
 
+const plugin = f => import(join(PLUGIN, 'src', f));
+
 /** The plugin's own start line for this pane: its HERDR_AGENT env is what lets herdr see the agent's status. */
-export async function bridgeLine(worker) {
-  const src = f => import(join(PLUGIN, 'src', f));
-  const [{ bridgeCommand }, { loadConfig }, { getPaneEntry }, { agentForEntry }] = await Promise.all(['action-main.mjs', 'config.mjs', 'state.mjs', 'lifecycle.mjs'].map(src));
-  const config = loadConfig(CONFIG), entry = getPaneEntry(STATE, worker.ref);
+export async function bridgeLine(worker, stateDir = STATE) {
+  const [{ bridgeCommand }, { loadConfig }, { getPaneEntry }, { agentForEntry }] = await Promise.all(['action-main.mjs', 'config.mjs', 'state.mjs', 'lifecycle.mjs'].map(plugin));
+  const config = loadConfig(CONFIG), entry = getPaneEntry(stateDir, worker.ref);
   if (!entry) throw new Error(`the sbx plugin has no mapping for pane ${worker.ref}`);
   const agent = agentForEntry(config, entry);
-  return bridgeCommand({ pluginEnv: { pluginRoot: PLUGIN, stateDir: STATE, configDir: CONFIG, herdrBin: '/opt/homebrew/bin/herdr' }, mode: 'start', paneId: worker.ref, detectionKind: agent.herdrDetectionKind, sbxBin: 'sbx' });
+  return bridgeCommand({ pluginEnv: { pluginRoot: PLUGIN, stateDir, configDir: CONFIG, herdrBin: '/opt/homebrew/bin/herdr' }, mode: 'start', paneId: worker.ref, detectionKind: agent.herdrDetectionKind, sbxBin: 'sbx' });
+}
+
+/** The sandbox the plugin maps to this pane, or null. */
+export async function sandboxOf(paneId, stateDir = STATE) {
+  return (await plugin('state.mjs')).getPaneEntry(stateDir, paneId)?.sandboxName || null;
+}
+
+/**
+ * Move a sandbox's mapping to a new pane, as the plugin's reconnect does for an orphan, so bridgeLine can start it there.
+ * Refuses while its old pane is still in herdr or its bridge still runs.
+ */
+export async function adoptSandbox(sandboxName, paneId, workspaceId, { stateDir = STATE, livePanes }) {
+  const [{ loadState, savePaneEntry, deletePaneEntry }, { bridgeIsRunning }] = await Promise.all(['state.mjs', 'lifecycle.mjs'].map(plugin));
+  const found = Object.values(loadState(stateDir).panes).filter(e => e.sandboxName === sandboxName);
+  if (found.length !== 1) throw new Error(`the sbx plugin maps ${sandboxName} ${found.length} times; expected once`);
+  const [entry] = found;
+  if (livePanes.includes(entry.paneId)) throw new Error(`pane ${entry.paneId} still holds ${sandboxName}; reconnect it there`);
+  if (bridgeIsRunning(entry)) throw new Error(`the bridge for ${sandboxName} is still running`);
+  savePaneEntry(stateDir, paneId, { ...entry, workspaceId, sourcePaneId: paneId, adoptedFrom: entry.paneId });
+  deletePaneEntry(stateDir, entry.paneId);
 }
 
 /** Exit the agent, remove the sandbox, then the plugin's bridge recreates it (same name, template and kit) in the same pane. */

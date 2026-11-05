@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seatsOf, planFactory, planStop } from '../fleet/factory.mjs';
+import { seatsOf, planFactory, planStop, slotFor } from '../fleet/factory.mjs';
 
 const config = {
   routing: { supervisors: { 'sup: s1': { workspace: 'Stream 1', worker: 'sbx: s1' } } },
@@ -65,4 +65,38 @@ test('a seat still under its old label is found, stopped and relabelled, never d
   const up = planFactory(seats, panes).find(s => s.seat.label === 'sup: s2');
   assert.deepEqual([up.action, up.pane, up.rename], ['none', 'p-sup: old', true]);
   assert.deepEqual(planStop(seats, panes).map(s => [s.seat.label, s.action]), [['sbx: s2', 'skip-missing'], ['sup: s2', 'stop']]);
+});
+
+// A fake herdr: a created workspace comes with one tab labelled "1" holding one pane, as real herdr does.
+function fakeHerdr() {
+  const st = { workspaces: [], tabs: [], panes: [] }, calls = [];
+  let n = 0;
+  const run = async (...a) => {
+    calls.push(a.join(' '));
+    const [k, op] = a;
+    if (op === 'list') return { [`${k}s`]: structuredClone(st[`${k}s`]) };
+    const tab = ws => { const t = { tab_id: `t${++n}`, workspace_id: ws, label: '1', pane_count: 1 }; st.tabs.push(t); st.panes.push({ pane_id: `p${++n}`, tab_id: t.tab_id }); return t; };
+    if (k === 'workspace' && op === 'create') { const w = { workspace_id: `w${++n}`, label: a[a.indexOf('--label') + 1] }; st.workspaces.push(w); tab(w.workspace_id); return { workspace: w }; }
+    if (k === 'tab' && op === 'create') { const t = tab(a[a.indexOf('--workspace') + 1]); t.label = a[a.indexOf('--label') + 1]; return { tab: t }; }
+    if (k === 'tab' && op === 'rename') { st.tabs.find(t => t.tab_id === a[2]).label = a[3]; return {}; }
+    if (k === 'pane' && op === 'split') { const t = st.panes.find(p => p.pane_id === a[2]).tab_id; const p = { pane_id: `p${++n}`, tab_id: t }; st.panes.push(p); st.tabs.find(x => x.tab_id === t).pane_count++; return { pane: p }; }
+    throw new Error(`fake herdr: ${a.join(' ')}`);
+  };
+  return { run, st, calls };
+}
+
+test('seats created into a missing workspace share one workspace and use its first tab instead of leaving a stray "1"', async () => {
+  const h = fakeHerdr();
+  const a = await slotFor({ workspace: 'Services', tab: 'Board' }, h.run);
+  const b = await slotFor({ workspace: 'Services', tab: 'Factory' }, h.run);
+  const c = await slotFor({ workspace: 'Services', tab: 'Factory' }, h.run);
+  assert.equal(h.st.workspaces.length, 1);
+  assert.deepEqual(h.st.tabs.map(t => [t.label, t.pane_count]), [['Board', 1], ['Factory', 2]]);
+  assert.equal(new Set([a, b, c]).size, 3);
+});
+
+test('a worker whose pane is gone but whose sandbox is known is adopted into a new Worker pane; unknown stays Alex\'s call', () => {
+  const seats = seatsOf(config).map(s => s.label === 'sbx: s1' ? { ...s, sandbox: 'box-1' } : s);
+  assert.equal(planFactory(seats, []).find(s => s.seat.label === 'sbx: s1').action, 'adopt');
+  assert.equal(planFactory(seatsOf(config), []).find(s => s.seat.label === 'sbx: s1').action, 'report-missing');
 });

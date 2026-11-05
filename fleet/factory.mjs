@@ -1,4 +1,4 @@
-// The software factory's seats, and what it takes to bring each one up. Pure: bin/factory.mjs does the herdr calls.
+// The software factory's seats, and what it takes to bring each one up. Planners are pure; slotFor takes herdr as an argument.
 export const ORCHESTRATOR_TAB = 'Orchestrator', WORKER_TAB = 'Worker', TERMINALS = 'Terminals';
 
 /** Fixed seats from `config.factory.seats`, plus a supervisor and sbx worker per stream in `routing.supervisors`. */
@@ -24,11 +24,12 @@ const running = (seat, argv) => ({
 /**
  * @param seats from seatsOf
  * @param panes [{pane, label, agentName, workspace, tab, argv}] argv: the pane's foreground command lines, joined
- * @returns [{seat, pane, action, rename, why}] action: none | run | start | reconnect | create | report-*
+ * @returns [{seat, pane, action, rename, why}] action: none | run | start | reconnect | adopt | create | report-*
  */
 export function planFactory(seats, panes) {
   return seats.map(seat => {
     const p = paneOf(seat, panes) || panes.find(x => !x.label && x.agentName === seat.label);
+    if (!p && seat.kind === 'sbx' && seat.sandbox) return { seat, action: 'adopt', why: `pane gone; moving sandbox ${seat.sandbox} into a new pane in ${seat.workspace} / ${seat.tab}` };
     if (!p) return seat.workspace === TERMINALS || seat.kind === 'sbx'
       ? { seat, action: 'report-missing', why: seat.kind === 'sbx' ? 'no worker pane; creating a sandbox is Alex\'s call' : 'Terminals is Alex\'s; start it there yourself' }
       : { seat, action: 'create', why: `new pane in ${seat.workspace} / ${seat.tab}` };
@@ -51,4 +52,29 @@ export function planStop(seats, panes, { serverLabel, withLocalHead = false } = 
     .map(seat => ({ seat, p: paneOf(seat, panes) }))
     .sort((a, b) => rank(a.seat) - rank(b.seat))
     .map(({ seat, p }) => ({ seat, pane: p?.pane, action: !p ? 'skip-missing' : running(seat, p.argv) ? 'stop' : 'skip-stopped' }));
+}
+
+const QUIET_SHELL = ['--env', 'DISABLE_AUTO_UPDATE=true'];
+
+/**
+ * A pane for a new seat: the seat's tab if it has room (3 panes per tab), else a new tab. Reads herdr fresh each call,
+ * so seats created in one run share the workspace the first one made; a new workspace's own first tab becomes the seat's tab.
+ * @param herdr (...args) => parsed herdr result @returns pane id
+ */
+export async function slotFor(seat, herdr, cwd = seat.cwd) {
+  const [{ panes }, { tabs }, { workspaces }] = await Promise.all(['pane', 'tab', 'workspace'].map(k => herdr(k, 'list')));
+  const firstPane = async tabId => (await herdr('pane', 'list')).panes.find(p => p.tab_id === tabId).pane_id;
+  let w = workspaces.find(x => x.label === seat.workspace);
+  if (!w) {
+    w = (await herdr('workspace', 'create', '--label', seat.workspace, '--cwd', cwd, ...QUIET_SHELL, '--no-focus')).workspace;
+    const t = (await herdr('tab', 'list')).tabs.find(x => x.workspace_id === w.workspace_id);
+    await herdr('tab', 'rename', t.tab_id, seat.tab);
+    return firstPane(t.tab_id);
+  }
+  const t = tabs.find(x => x.workspace_id === w.workspace_id && x.label === seat.tab && x.pane_count < 3);
+  const anchor = t && panes.find(p => p.tab_id === t.tab_id);
+  if (anchor) return (await herdr('pane', 'split', anchor.pane_id, '--direction', 'right', '--cwd', cwd, ...QUIET_SHELL, '--no-focus')).pane.pane_id;
+  const label = tabs.some(x => x.workspace_id === w.workspace_id && x.label === seat.tab) ? `${seat.tab} 2` : seat.tab;
+  const created = await herdr('tab', 'create', '--workspace', w.workspace_id, '--label', label, '--cwd', cwd, ...QUIET_SHELL, '--no-focus');
+  return firstPane(created.tab.tab_id);
 }
