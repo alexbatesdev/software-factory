@@ -20,7 +20,7 @@ const pause = ms => new Promise(r => setTimeout(r, ms));
 const seats = seatsOf(config);
 const serverLabel = seats.find(s => s.expect === 'live.mjs')?.label;
 
-const argvOf = async pane => ((await herdr('pane', 'process-info', '--pane', pane).catch(() => null))?.process_info?.foreground_processes || []).map(x => x.argv.join(' ')).join(' | ');
+const argvOf = async pane => ((await herdr('pane', 'process-info', '--pane', pane).catch(() => null))?.process_info?.foreground_processes || []).map(x => (x.argv || []).join(' ')).join(' | ');
 
 async function observe() {
   const [{ panes }, { agents }, { tabs }, { workspaces }] = await Promise.all(['pane', 'agent', 'tab', 'workspace'].map(k => herdr(k, 'list')));
