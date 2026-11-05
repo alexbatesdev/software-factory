@@ -602,3 +602,20 @@ test('resolving a record closes its open assignments with it', () => {
   w = run(w, { type: 'resolve', note: 'fixed in abc1234' });
   assert.deepEqual([w.phase, w.assignments[0].status, w.assignments[0].history.at(-1).status], ['done', 'cancelled', 'queued']);
 });
+
+test('a reviewer asking for changes or opening threads on a tracked PR reopens it as fixes, once per review and thread (W-207, #8276)', () => {
+  const H = 'aaaaaaa1';
+  let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
+  w = run(evidenced(run(w, { type: 'review', head: H, by: 'reviewer', result: 'clean' })), { type: 'mark_ready' });
+  const read = threads => ({ head: H, conflict: false, failing: [], changesRequested: [{ id: 'PRR_1', by: 'sam-built', url: 'u1' }], threads });
+  const t = id => ({ id, by: 'sam-built', url: `https://x/${id}` });
+  const fb = observeHealth(w, read([t('T1'), t('T2'), t('T3')]), ctx());
+  assert.equal(fb.phase, 'fixes');
+  assert.deepEqual(fb.findings.map(f => f.source.type), ['changes_requested', 'threads']);
+  assert.equal(fb.requests.at(-1).type, 'fixes');
+  assert.equal(observeHealth(fb, read([t('T1'), t('T2'), t('T3')]), ctx()), fb, 'the same review and threads are news once');
+  const more = observeHealth(fb, read([t('T1'), t('T4')]), ctx());
+  assert.deepEqual(more.findings.at(-1).source.ids, ['T4'], 'only the new thread is a new finding');
+  assert.equal(observeHealth(w, { head: H, conflict: false, failing: [] }, ctx()), w, 'a read with no review data changes nothing (older rows)');
+});

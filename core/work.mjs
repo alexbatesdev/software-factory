@@ -663,18 +663,29 @@ const HEALTH_TEXT = {
   conflict: head => `Conflicts with main at ${head.slice(0, 7)}. Merge origin/main into the branch (merge, never rebase or force push), resolve, run the specs for the files the conflict touched, push.`,
   ci: (head, failing) => `CI is red at ${head.slice(0, 7)}: ${failing.join(', ')}. Assess once for this commit before changing code. 1) Find the failing tests: GitHub Actions via gh run view --log-failed; CircleCI via the circleci MCP, read only (list_runs on the branch, list_run_workflows, list_workflow_jobs, list_job_tests on the failed job; never rerun or cancel), read by the supervisor and put in the brief when the worker can't reach it. 2) Re-run each failure once locally. 3) Passes locally: accept this finding as "flake: <test>". 4) Fails on origin/main too: accept it as "red on main: <test>" and change nothing. 5) Fails only on this branch: fix it red-first. Anything outside this PR's scope is a discovery, never a fix.`,
 };
+const FEEDBACK_TEXT = {
+  changes_requested: rs => `Changes requested by ${rs.map(r => `${r.by} (${r.url})`).join(', ')}. Work the review round (review-round skill): verify each thread at the head, fix what's real red-first, post factual replies; resolving threads waits for Alex.`,
+  threads: ts => `${ts.length} new unresolved review thread(s): ${ts.map(t => `${t.by} ${t.url}`).join('; ')}. Work them as a review round (review-round skill); resolving waits for Alex.`,
+};
 // Work waiting on review or on Alex goes back to fixes; work being built only gets the finding.
 export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, failing = [] }, ctx) {
+export function observeHealth(work, { head, conflict, failing = [], changesRequested = [], threads = [] }, ctx) {
   if (TERMINAL.includes(work.phase) || !head || !sameSha(head, work.head)) return work;
   const seen = type => (work.findings || []).some(f => f.source?.type === type && sameSha(f.source.head, head));
   const fresh = [conflict && 'conflict', failing.length && 'ci'].filter(t => t && !seen(t));
-  if (!fresh.length) return work;
+  // Reviewer feedback (W-207) is news once per review and per thread, whatever the head.
+  const told = new Set((work.findings || []).flatMap(f => f.source?.ids || []));
+  const reviews = changesRequested.filter(r => !told.has(r.id)), newThreads = threads.filter(t => !told.has(t.id));
+  if (!fresh.length && !reviews.length && !newThreads.length) return work;
   const w = structuredClone(work);
   for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
-  note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main').join('; ')}.`);
+  if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id) } });
+  if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id) } });
+  const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main'),
+    ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : [])];
+  note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${said.join('; ')}.`);
   if (HEALTH_REOPENS.includes(w.phase)) {
     w.phase = 'fixes'; w.approvalWait = null;
     w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by || 'github', delivery: 'pending', ack: null, head: w.head });

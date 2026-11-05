@@ -97,7 +97,7 @@ export function healthCommands(state, health, { owner, now, mutationBranch, excl
     const own = state.work[idx.get(key.replace(':', '-'))], w = acting(own) ? own : ws[0];
     const h = health.get(key);
     if (!h || h.base !== 'main' || W.trackOf(w, { mutationBranch, exclude }) === 'mutation') continue;
-    const payload = { head: h.head, conflict: h.conflict, failing: h.failing };
+    const payload = { head: h.head, conflict: h.conflict, failing: h.failing, changesRequested: h.changesRequested || [], threads: h.threads || [] };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   return cmds;

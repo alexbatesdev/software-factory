@@ -68,3 +68,16 @@ test("a record's project is its task's top-level parent, found from its Teamwork
   assert.equal(s.state.work[task].project.name, 'Security fixes');
   assert.deepEqual(projectCommands(s.state, tops), [], 'an unchanged project is not re-recorded');
 });
+
+test("the health read carries other people's change requests on the head and their unanswered threads, never Alex's own, answered or resolved ones (W-207)", async () => {
+  const { readPrHealth } = await import('../sources/github.mjs');
+  const node = (login, extra = {}) => ({ author: { login }, url: `https://x/${login}`, ...extra });
+  const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'aaaaaaa1', commits: { nodes: [] },
+    reviews: { nodes: [{ id: 'PRR_1', ...node('sam-built'), commit: { oid: 'aaaaaaa1' } }, { id: 'PRR_2', ...node('alexbatesdev'), commit: { oid: 'aaaaaaa1' } }, { id: 'PRR_3', ...node('sam-built'), commit: { oid: 'old0000' } }] },
+    reviewThreads: { nodes: [{ id: 'T1', isResolved: false, comments: { nodes: [node('sam-built')] }, last: { nodes: [node('sam-built')] } }, { id: 'T2', isResolved: true, comments: { nodes: [node('sam-built')] } },
+      { id: 'T3', isResolved: false, comments: { nodes: [node('alexbatesdev')] } }, { id: 'T4', isResolved: false, comments: { nodes: [node('sam-built')] }, last: { nodes: [node('alexbatesdev')] } }] } } } };
+  const run = async () => ({ stdout: JSON.stringify({ data }) });
+  const h = (await readPrHealth(['built-rails:8276'], 'builtforteams', run, 'alexbatesdev')).get('built-rails:8276');
+  assert.deepEqual(h.changesRequested.map(r => [r.id, r.by]), [['PRR_1', 'sam-built']]);
+  assert.deepEqual(h.threads.map(t => [t.id, t.by]), [['T1', 'sam-built']]);
+});
