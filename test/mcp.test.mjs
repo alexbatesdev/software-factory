@@ -36,3 +36,13 @@ test('read takes a question id, and questions lists what reaches Alex in full, w
   assert.deepEqual(qs.map(q => [q.id, q.record.title, q.record.project]), [['TB-1', 'Ashby openings', 'Ashby']]);
   assert.equal(qs[0].promptedBy, 'reviewer: "count per req"');
 });
+
+test('a relabelled pane acts as its new seat on the next call, without restarting the session', async () => {
+  const api = fake();
+  let label = 'some pane';
+  const mcp = createMcp({ config, seatOf: async () => label, api });
+  assert.deepEqual((await mcp(rpc('tools/list'))).result.tools, []);
+  label = 'questions router';
+  assert.equal((await mcp(rpc('tools/call', { name: 'route', arguments: { id: 'TB-1', to: 'sup: s1' } }))).result.isError, false);
+  assert.equal(api.calls.at(-1)[2], 'questions router');
+});

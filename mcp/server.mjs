@@ -38,7 +38,8 @@ for (const a of ACTIONS) if (!Object.values(TOOLS).some(t => t[2] === a)) throw 
  */
 export function createMcp({ config, seatOf, api }) {
   let seat;
-  const mine = async () => { seat ??= await seatOf(); const role = roleOf(config, seat); return Object.entries(TOOLS).filter(([, t]) => role && ROLES[role].includes(t[2])); };
+  // Read every call: a pane relabelled mid-session (a seat rename) must act as its new seat.
+  const mine = async () => { seat = await seatOf(); const role = roleOf(config, seat); return Object.entries(TOOLS).filter(([, t]) => role && ROLES[role].includes(t[2])); };
   const text = (body, isError = false) => ({ content: [{ type: 'text', text: typeof body === 'string' ? body : JSON.stringify(body, null, 1) }], isError });
   async function call(name, args = {}) {
     if (!(await mine()).some(([n]) => n === name)) return text(`${seat} has no ${name} tool.`, true);
