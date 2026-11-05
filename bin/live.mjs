@@ -119,8 +119,10 @@ async function inboxTick() {
     const r = await wake(w).catch(e => ({ ok: false, reason: e.message }));
     if (r.ok) { woken[w.seat] = { at: Date.now(), ids: w.ids, reminded: w.reminder, session: r.session }; log(`woke ${w.seat}${w.reminder ? ' (reminder)' : ''}`); }
   }
-  await autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'mutation', now, log: once });
 }
+
+// Marking PRs ready waits on GitHub; on its own loop so a slow GitHub never holds up messages and wakes (W-199).
+const readyTick = () => autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'mutation', now, log: once });
 
 async function githubTick() {
   try {
@@ -220,10 +222,12 @@ async function recycleTick() {
   }
 }
 
-const every = (ms, fn) => { let running = false; const run = async () => { if (running) return; running = true; try { await fn(); } catch (e) { log(e.message); } finally { running = false; } }; run(); setInterval(run, ms); };
+// A tick still running skips the next; one slower than a minute is logged so a stalled loop names itself.
+const every = (ms, fn) => { let running = false; const run = async () => { if (running) return; running = true; const t0 = Date.now(); try { await fn(); } catch (e) { log(e.message); } finally { running = false; if (Date.now() - t0 > 60000) log(`slow tick: ${fn.name || 'tick'} took ${Math.round((Date.now() - t0) / 1000)}s`); } }; run(); setInterval(run, ms); };
 await fleetTick();
 every(config.poll.fleetMs, fleetTick);
 every(config.notify?.intervalMs ?? 15000, inboxTick);
+every(config.notify?.intervalMs ?? 15000, readyTick);
 every(config.poll.githubMs, githubTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);
