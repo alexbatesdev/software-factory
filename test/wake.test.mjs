@@ -19,3 +19,10 @@ test('the herdr wake adapter refuses to load in shadow mode', async () => {
   try { await assert.rejects(import(`../wake/herdr.mjs?shadow=${Date.now()}`), /disabled in shadow mode/); }
   finally { delete process.env.FACTORY_MODE; }
 });
+
+test('a seat restarted into a new session is woken again for messages its old session never read', () => {
+  const s = state([{ id: 'M-1', to: 'sup' }]);
+  const woken = { sup: { at: 0, ids: ['M-1'], reminded: true, session: 'old' } };
+  assert.deepEqual(wakePlan(s, woken, 60000, undefined, { sup: 'old' }), []);
+  assert.deepEqual(wakePlan(s, woken, 60000, undefined, { sup: 'new' }), [{ seat: 'sup', ids: ['M-1'], reminder: false }]);
+});

@@ -17,5 +17,5 @@ export async function wake(w) {
   const h = resolveTarget(await agents(), w.seat);
   if (!h.ok) return { ok: false, reason: h.defer || h.reason };
   const r = await herdrRaw('agent', 'prompt', h.agent.pane_id, wakeText(w));
-  return r?.type === 'agent_prompted' ? { ok: true } : { ok: false, reason: `herdr did not confirm: ${JSON.stringify(r).slice(0, 200)}` };
+  return r?.type === 'agent_prompted' ? { ok: true, session: h.agent.agent_session?.value || null } : { ok: false, reason: `herdr did not confirm: ${JSON.stringify(r).slice(0, 200)}` };
 }

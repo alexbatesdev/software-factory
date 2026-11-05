@@ -114,9 +114,10 @@ async function inboxTick() {
     fleet && { units: fleet.units, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
-  for (const w of wakePlan(store.state, woken, Date.now(), config.notify?.reminderMs)) {
+  const sessions = Object.fromEntries([...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => [a.label, a.session]));
+  for (const w of wakePlan(store.state, woken, Date.now(), config.notify?.reminderMs, sessions)) {
     const r = await wake(w).catch(e => ({ ok: false, reason: e.message }));
-    if (r.ok) { woken[w.seat] = { at: Date.now(), ids: w.ids, reminded: w.reminder }; log(`woke ${w.seat}${w.reminder ? ' (reminder)' : ''}`); }
+    if (r.ok) { woken[w.seat] = { at: Date.now(), ids: w.ids, reminded: w.reminder, session: r.session }; log(`woke ${w.seat}${w.reminder ? ' (reminder)' : ''}`); }
   }
   await autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'mutation', now, log: once });
 }

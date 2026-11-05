@@ -9,7 +9,7 @@ import { ORCHESTRATOR_TAB, WORKER_TAB as WORKER_TAB_LABEL } from './factory.mjs'
 
 /**
  * @typedef {'working'|'idle'|'blocked'|'done'|'unknown'} AgentStatus
- * @typedef {{ ref: string, label: string, status: AgentStatus, now: string, sandbox: string|null, workspace: string, tab: string, jobs?: number|null }} Agent
+ * @typedef {{ ref: string, label: string, status: AgentStatus, now: string, sandbox: string|null, session: string|null, workspace: string, tab: string, jobs?: number|null }} Agent
  *   `status` is the native turn state. `jobs` counts background shells still running (null when unknown).
  *   `ref` is the adapter's own handle (a herdr pane id here, an instance id for a cloud adapter).
  * @typedef {{ id: string, name: string, backend: string, paired: 'layout'|'convention'|'manual'|null,
@@ -50,7 +50,7 @@ export async function list(pairs = {}) {
     const a = byPane.get(p.pane_id);
     return { ref: p.pane_id, label: p.label || `${wsById.get(p.workspace_id)?.label || p.workspace_id} / ${tabById.get(p.tab_id)?.label || p.tab_id}`,
       status: ['working', 'idle', 'blocked', 'done'].includes(a.agent_status) ? a.agent_status : 'unknown',
-      now: (a.terminal_title_stripped || p.terminal_title || '').replace(/^[^\w#]+/, ''), sandbox: null,
+      now: (a.terminal_title_stripped || p.terminal_title || '').replace(/^[^\w#]+/, ''), sandbox: null, session: a.agent_session?.value || null,
       workspace: wsById.get(p.workspace_id)?.label || '', tab: tabById.get(p.tab_id)?.label || '' };
   });
   await Promise.all(all.map(async a => { a.sandbox = await sandboxOf(a.ref).catch(() => null); }));
