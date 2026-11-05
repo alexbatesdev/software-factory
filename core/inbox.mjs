@@ -65,7 +65,7 @@ export function inboxCommands(state, cfg, fleet = null) {
     // ponytail: "sbx: " prefix stands in for "a stream's worker"; pass the worker labels if another worker naming appears.
     const live = new Set([...(fleet.others || []), ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => a.label));
     const lead = cfg.triage?.seat || 'board lead';
-    for (const w of Object.values(state.work)) for (const a of w.assignments || []) {
+    for (const w of Object.values(state.work).filter(x => !['done', 'cancelled'].includes(x.phase))) for (const a of w.assignments || []) {
       const key = `${w.id}/${a.id}/v${a.version ?? 1}`;
       if (a.status !== 'started' || !a.owner || live.has(a.owner) || (cfg.seats || []).includes(a.owner) || /^sbx: /.test(a.owner) || told.has(`ghost:${key}`)) continue;
       cmds.push(msg(lead, w.id, { ghost: key }, `${w.id} ${a.id} (${a.kind}) is started by ${a.owner}, but no pane has that label, so it will never report. Re-dispatch it or have it cancelled (board developer: cancel).`));

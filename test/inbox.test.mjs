@@ -123,4 +123,6 @@ test('a started assignment whose owner has no pane is flagged to the board lead 
   state.messages['M-1'] = { id: 'M-1', to: 'board lead', about: { ghost: 'W-129/R-1/v1' } };
   assert.equal(inboxCommands(state, cfg, fleet).cmds.filter(c => c.payload.about?.ghost).length, 0, 'once');
   assert.equal(inboxCommands(state, cfg, { ...fleet, others: [...fleet.others, { label: 'trusted-review-8434', status: 'working' }] }).cmds.filter(c => c.payload.about?.ghost).length, 0, 'not while the pane exists');
+  delete state.messages['M-1']; work.phase = 'done';
+  assert.equal(inboxCommands(state, cfg, fleet).cmds.filter(c => c.payload.about?.ghost).length, 0, 'a finished record is never flagged: it takes no events');
 });
