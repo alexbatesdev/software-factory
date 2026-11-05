@@ -4,14 +4,20 @@
   "githubOwner": "builtforteams",
   "routing": {
     "supervisors": {
-      "sup: stream-1 (support+sec)": {
+      "sup: stream-1": {
         "workspace": "Stream 1",
         "worker": "sbx: stream-1"
       },
-      "sup: stream-conf-stack": {
+      "sup: stream-2": {
         "workspace": "Stream 2",
-        "worker": "sbx: stream-conf-stack"
+        "worker": "sbx: stream-2"
       }
+    },
+    "renamed": {
+      "_doc": "old seat label -> new (Alex, 11-05). `factory.mjs rename` moves the board's records; up/down find panes still under the old label.",
+      "sup: stream-1 (support+sec)": "sup: stream-1",
+      "sup: stream-conf-stack": "sup: stream-2",
+      "sbx: stream-conf-stack": "sbx: stream-2"
     },
     "questionsRouter": "questions router"
   },

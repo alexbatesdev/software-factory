@@ -72,6 +72,12 @@ export function fold(state, row, { supervisors = [] } = {}) {
     finish(state, row, observed, null, supervisors);
     return q;
   }
+  if (kind === 'rename_seat') {
+    // A seat's label is an exact string everywhere it's stored (stream, owners, askers, keys); free text keeps the old name.
+    const swap = v => v === payload.from ? payload.to : Array.isArray(v) ? v.map(swap)
+      : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k === payload.from ? payload.to : k, swap(x)])) : v;
+    Object.assign(state, swap(state)); state.seq = row.seq; return null;
+  }
   if (kind === 'observe_source') { const t = observeSource(state, payload, observed); finish(state, row, observed, t, supervisors); return t; }
   const ctx = id ? { ...observed, ...derivedCtx(state, id) } : observed;
   const cur = id && (state.work[id] || (() => { throw new Error(`There is no work item ${id}.`); })());

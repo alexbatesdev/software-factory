@@ -57,3 +57,12 @@ test('tear-down stops workers first and the board server last, skips what is sto
     [['sbx: s1', 'stop'], ['sup: s1', 'stop'], ['board', 'skip-missing'], ['unblocker', 'skip-stopped'], ['server', 'stop']]);
   assert.equal(planStop(seats, panes, { serverLabel: 'server', withLocalHead: true }).at(-1).seat.label, 'local-head');
 });
+
+test('a seat still under its old label is found, stopped and relabelled, never doubled', () => {
+  const cfg = { routing: { supervisors: { 'sup: s2': { workspace: 'Stream 2', worker: 'sbx: s2' } }, renamed: { _doc: 'x', 'sup: old': 'sup: s2' } } };
+  const seats = seatsOf(cfg);
+  const panes = [pane('sup: old', 'Stream 2', 'Orchestrator', 'claude --agent stream-supervisor')];
+  const up = planFactory(seats, panes).find(s => s.seat.label === 'sup: s2');
+  assert.deepEqual([up.action, up.pane, up.rename], ['none', 'p-sup: old', true]);
+  assert.deepEqual(planStop(seats, panes).map(s => [s.seat.label, s.action]), [['sbx: s2', 'skip-missing'], ['sup: s2', 'stop']]);
+});

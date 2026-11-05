@@ -3,12 +3,16 @@ export const ORCHESTRATOR_TAB = 'Orchestrator', WORKER_TAB = 'Worker', TERMINALS
 
 /** Fixed seats from `config.factory.seats`, plus a supervisor and sbx worker per stream in `routing.supervisors`. */
 export function seatsOf(config) {
+  const was = label => Object.entries(config.routing?.renamed || {}).filter(([, to]) => to === label).map(([from]) => from);
   const streams = Object.entries(config.routing?.supervisors || {}).filter(([, s]) => s.workspace).flatMap(([label, s]) => [
     { label, kind: 'claude', role: 'stream-supervisor', workspace: s.workspace, tab: ORCHESTRATOR_TAB },
     ...(s.worker ? [{ label: s.worker, kind: 'sbx', workspace: s.workspace, tab: WORKER_TAB }] : []),
   ]);
-  return [...(config.factory?.seats || []).filter(s => s.enabled !== false), ...streams];
+  return [...(config.factory?.seats || []).filter(s => s.enabled !== false), ...streams].map(s => ({ ...s, was: was(s.label) }));
 }
+
+// A renamed seat's pane may still carry its old label until up relabels it.
+const paneOf = (seat, panes) => panes.find(x => x.label === seat.label) || panes.find(x => (seat.was || []).includes(x.label));
 
 const running = (seat, argv) => ({
   shell: () => argv.includes(seat.expect),
@@ -24,7 +28,7 @@ const running = (seat, argv) => ({
  */
 export function planFactory(seats, panes) {
   return seats.map(seat => {
-    const p = panes.find(x => x.label === seat.label) || panes.find(x => !x.label && x.agentName === seat.label);
+    const p = paneOf(seat, panes) || panes.find(x => !x.label && x.agentName === seat.label);
     if (!p) return seat.workspace === TERMINALS || seat.kind === 'sbx'
       ? { seat, action: 'report-missing', why: seat.kind === 'sbx' ? 'no worker pane; creating a sandbox is Alex\'s call' : 'Terminals is Alex\'s; start it there yourself' }
       : { seat, action: 'create', why: `new pane in ${seat.workspace} / ${seat.tab}` };
@@ -44,7 +48,7 @@ export function planFactory(seats, panes) {
 export function planStop(seats, panes, { serverLabel, withLocalHead = false } = {}) {
   const rank = s => s.kind === 'sbx' ? 0 : s.role === 'stream-supervisor' ? 1 : s.label === serverLabel ? 3 : s.label === 'local-head' ? 4 : 2;
   return seats.filter(s => withLocalHead || s.label !== 'local-head')
-    .map(seat => ({ seat, p: panes.find(x => x.label === seat.label) }))
+    .map(seat => ({ seat, p: paneOf(seat, panes) }))
     .sort((a, b) => rank(a.seat) - rank(b.seat))
     .map(({ seat, p }) => ({ seat, pane: p?.pane, action: !p ? 'skip-missing' : running(seat, p.argv) ? 'stop' : 'skip-stopped' }));
 }

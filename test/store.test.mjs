@@ -251,3 +251,19 @@ test('answering the last open question moves a record out of clarification to re
   s.appendAll(commandsFor('answer', { id: 'TB-3', choice: 'a' }), ctx({ by: 'local-head' }));
   assert.deepEqual([s.state.work[a].phase, s.state.work[b].phase], ['ready', 'clarification']);
 });
+
+test('renaming a seat moves every exact use of its label (stream, owner, assignment owner, question asker) and nothing else', () => {
+  const old = 'sup: stream-conf-stack', next = 'sup: stream-2';
+  const s = openStore(':memory:', { supervisors: [old] });
+  const { id } = s.append(build, ctx());
+  s.append(ev(id, { type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'started', owner: old, evidence: 'brief' }), ctx());
+  s.append({ kind: 'import', target: 'questions/TB-1', payload: { title: 'Which?', status: 'open', work: id, from: old } }, ctx());
+  s.append({ kind: 'rename_seat', payload: { from: old, to: next } }, ctx());
+  const w = s.state.work[id];
+  assert.equal(w.stream, next);
+  assert.equal(w.owner, next);
+  assert.equal(w.assignments[0].owner, next);
+  assert.equal(s.state.questions['TB-1'].from, next);
+  assert.ok(!JSON.stringify(s.state).includes(`"${old}"`), 'no exact old label is left anywhere');
+  assert.deepEqual(s.replay(), s.state);
+});

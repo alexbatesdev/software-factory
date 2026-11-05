@@ -3,12 +3,14 @@
 //   node bin/factory.mjs                         show each seat and what `up` would do
 //   node bin/factory.mjs up                      start what's stopped, create what's missing (never restarts a running pane)
 //   node bin/factory.mjs down [--with-local-head] [--yes]   stop every seat's process, keep its pane for `up`
+//   node bin/factory.mjs rename                  with the server down: move the board's records to routing.renamed's new labels
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { herdrRaw as herdr } from '../fleet/herdr.mjs';
 import { seatsOf, planFactory, planStop } from '../fleet/factory.mjs';
+import { openStore } from '../core/store.mjs';
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
 const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
@@ -100,6 +102,24 @@ async function down() {
   console.log(failed.length ? `\nStill running: ${failed.join(', ')}. Stop them by hand, then re-run down (it skips what's stopped).` : '\nEvery seat is stopped. Bring it back with `node bin/factory.mjs up`.');
 }
 
+async function rename() {
+  const server = planStop(seats.filter(s => s.label === serverLabel), (await observe()).panes)[0];
+  if (server?.action === 'stop') { console.log(`The board server (${serverLabel}) is running; run \`down\` first.`); process.exit(1); }
+  const db = path.join(ROOT, 'data/factory.db'), backup = path.join(ROOT, 'data/spamton-factory-pre-rename.db');
+  fs.copyFileSync(db, backup);
+  const store = openStore(db, { supervisors: Object.keys(config.routing.supervisors) });
+  for (const [from, to] of Object.entries(config.routing.renamed || {}).filter(([k]) => k !== '_doc')) {
+    if (!JSON.stringify(store.state).includes(JSON.stringify(from))) { console.log(`skip  ${from}: not on the board`); continue; }
+    store.append({ kind: 'rename_seat', payload: { from, to } }, { now: new Date().toISOString(), by: 'factory.mjs rename' });
+    console.log(`moved ${from} -> ${to}`);
+  }
+  const same = JSON.stringify(store.replay()) === JSON.stringify(store.state);
+  store.close();
+  console.log(same ? `Replay matches. Backup: ${backup}` : `REPLAY DIFFERS: restore ${backup} over ${db} before starting the server.`);
+  if (!same) process.exit(1);
+}
+
 if (cmd === 'down') await down();
+else if (cmd === 'rename') await rename();
 else if (cmd === 'up' || cmd === 'status') await up(cmd === 'up');
-else { console.error(`unknown command ${cmd}: status | up | down`); process.exit(2); }
+else { console.error(`unknown command ${cmd}: status | up | down | rename`); process.exit(2); }
