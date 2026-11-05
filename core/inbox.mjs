@@ -58,7 +58,7 @@ export function inboxCommands(state, cfg, fleet = null) {
     // A seat with unread messages is the wake loop's to remind; this nudges only a seat with nothing new to read.
     const unread = new Set(Object.values(state.messages).filter(m => !m.ackedAt).map(m => m.to));
     const owners = planIdleOwners({ seats: (fleet.others || []).filter(a => !unread.has(a.label)), works: state.work, watch: watches.idleOwners, now: fleet.now });
-    for (const d of owners.due) cmds.push(msg(d.to, d.work, { idleOwner: `${d.to}/${fleet.now}` }, `You're idle and own ${d.count} open record(s). Next: ${d.work} ${quote(d.title)}. Work it, or progress it with what blocks it (--waitingOn) so it stops counting.`));
+    for (const d of owners.due) cmds.push(msg(d.to, d.work, { idleOwner: `${d.to}/${fleet.now}` }, `You're idle and own ${d.count} open record(s). Next: ${d.work} ${quote(d.title)}. Work it, or park it with progress waitingOn (what blocks it) so it stops counting.`));
     watches = { workerStops: stops.watch, idleQueues: idle.watch, idleOwners: owners.watch };
     // herdr can report a finished worker as working (a spinner left on screen); an unchanged pane is the tell.
     for (const u of fleet.units) {
