@@ -27,6 +27,7 @@ const TOOLS = {
   absorb: ["Repair: fold a poller's duplicate record (not started) into the record that carries its work.", obj({ work: str('W-n, the duplicate'), into: str('W-n that carries the work') }, ['work', 'into']), 'absorb'],
   resolve: ['Close a record with no PR and no criteria (a factory fix, a manual chore) with a note on what settled it.', obj({ work: str('W-n'), note: str('commit or who did it') }, ['work', 'note']), 'resolve'],
   verify: ['Decide whether an unverified question (filed by V1 triage) should reach Alex: keep: true lets it through, false drops it. Note why.', obj({ id: str('TB-n'), keep: { type: 'boolean' }, note: str('why') }, ['id', 'note']), 'verify'],
+  cancel: ['Cancel a stuck assignment (its pane is gone, its PR closed) with evidence; its history stays.', obj({ work: str('W-n'), assignmentId: str('R-n'), expectedVersion: { type: 'number' }, evidence: str('why it will never run') }, ['work', 'assignmentId', 'evidence']), 'cancel'],
   message: ['Send a seat a message on a record; the factory delivers it.', obj({ to: str('seat label'), text: str('message'), work: str('W-n') }, ['to', 'text']), 'message'],
 };
 for (const a of ACTIONS) if (!Object.values(TOOLS).some(t => t[2] === a)) throw new Error(`No MCP tool for board action ${a}.`);

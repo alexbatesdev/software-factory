@@ -110,3 +110,17 @@ test('an idle non-stream seat that owns ready records gets a nudge from the inbo
   r = inboxCommands(state, { supervisors: [], seats: ['dev'] }, fleet(600000));
   assert.deepEqual(r.cmds.map(c => [c.payload.to, c.payload.work]), [['dev', 'W-9']]);
 });
+
+test('a started assignment whose owner has no pane is flagged to the board lead once', async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const work = { id: 'W-129', title: 'Trusted review #8434', phase: 'rereview', requests: [], assignments: [{ id: 'R-1', kind: 'review', owner: 'trusted-review-8434', status: 'started', version: 1 }] };
+  const state = { work: { 'W-129': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: [], seats: ['board lead'], triage: { seat: 'board lead' } };
+  const fleet = { units: [], others: [{ label: 'board lead', status: 'working' }], now: 0, watches: {} };
+  const r = inboxCommands(state, cfg, fleet);
+  const flags = r.cmds.filter(c => c.payload.about?.ghost);
+  assert.deepEqual(flags.map(c => [c.payload.to, c.payload.work, c.payload.about.ghost]), [['board lead', 'W-129', 'W-129/R-1/v1']]);
+  state.messages['M-1'] = { id: 'M-1', to: 'board lead', about: { ghost: 'W-129/R-1/v1' } };
+  assert.equal(inboxCommands(state, cfg, fleet).cmds.filter(c => c.payload.about?.ghost).length, 0, 'once');
+  assert.equal(inboxCommands(state, cfg, { ...fleet, others: [...fleet.others, { label: 'trusted-review-8434', status: 'working' }] }).cmds.filter(c => c.payload.about?.ghost).length, 0, 'not while the pane exists');
+});

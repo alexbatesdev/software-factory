@@ -280,3 +280,14 @@ test('a seat parks a record with no assignment by naming what it waits on, and t
   s.appendAll(commandsFor('progress', { work: id, waitingOn: 'clear', text: 'Alex made the edit' }), ctx({ by: 'dev' }));
   assert.equal(s.state.work[id].waitingOn, null);
 });
+
+test('cancel closes a stuck assignment with evidence, keeping its history', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = openStore();
+  const { id } = s.append(build, ctx());
+  s.append(ev(id, { type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'started', owner: 'trusted-review-1', evidence: 'brief' }), ctx());
+  s.appendAll(commandsFor('cancel', { work: id, assignmentId: 'R1', expectedVersion: 1, evidence: 'its pane is gone' }), ctx({ by: 'triage board worker' }));
+  const a = s.state.work[id].assignments[0];
+  assert.deepEqual([a.status, a.history.at(-1).status], ['cancelled', 'started']);
+  assert.throws(() => commandsFor('cancel', { work: id, assignmentId: 'R1' }), /evidence/);
+});
