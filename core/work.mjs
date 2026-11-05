@@ -378,6 +378,8 @@ export function applyEvent(work, e, ctx) {
       if (!e.note) fail('Resolving needs a note saying what settled it (a commit, or who did it).');
       w.completion = { kind: 'resolved', note: e.note, at: ctx.now, by: ctx.by };
       w.phase = 'done';
+      // Ungated (W-204): done records take no later events, so replaying old resolves this way can't refuse anything.
+      for (const x of w.assignments || []) if (LIVE_ASSIGNMENT.includes(x.status)) { x.history.push({ status: x.status, at: ctx.now, by: ctx.by }); x.status = 'cancelled'; x.version++; }
       note(w, ctx, `Resolved: ${e.note}`);
       break;
     }

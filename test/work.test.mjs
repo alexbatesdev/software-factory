@@ -595,3 +595,10 @@ test('a build record with no PR and no criteria closes on a resolve note; one wi
   assert.deepEqual([w.phase, w.completion.kind], ['done', 'resolved']);
   assert.throws(() => run(build({ criteria: [], links: { pr: 'https://github.com/o/r/pull/1' } }), { type: 'resolve', note: 'x' }), /ready gate/);
 });
+
+test('resolving a record closes its open assignments with it', () => {
+  let w = build({ criteria: [] });
+  w = run(w, { type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'queued', owner: 'board lead', evidence: 'brief' });
+  w = run(w, { type: 'resolve', note: 'fixed in abc1234' });
+  assert.deepEqual([w.phase, w.assignments[0].status, w.assignments[0].history.at(-1).status], ['done', 'cancelled', 'queued']);
+});
