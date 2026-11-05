@@ -589,3 +589,9 @@ test('a blocked report records what it waits on; starting again clears it', () =
   const again = run(w, { type: 'progress', assignmentId: 'R1', expectedVersion: 2, stage: 'started' });
   assert.deepEqual([again.assignments[0].status, again.assignments[0].waitingOn], ['started', null]);
 });
+
+test('a build record with no PR and no criteria closes on a resolve note; one with a PR goes through the ready gate', () => {
+  const w = run(build({ criteria: [] }), { type: 'resolve', note: 'fixed in abc1234' });
+  assert.deepEqual([w.phase, w.completion.kind], ['done', 'resolved']);
+  assert.throws(() => run(build({ criteria: [], links: { pr: 'https://github.com/o/r/pull/1' } }), { type: 'resolve', note: 'x' }), /ready gate/);
+});

@@ -372,7 +372,7 @@ export function applyEvent(work, e, ctx) {
     }
     case 'resolve': {
       // Work with no PR and no criteria to accept (a factory fix, a manual chore) closes on a note saying what settled it.
-      if (isPr(w) || w.links?.pr) fail('PR work finishes through the ready gate, not "resolve".');
+      if (prLinked(w)) fail('PR work finishes through the ready gate, not "resolve".');
       if (w.criteria.length) fail(`${w.id} has acceptance criteria; complete it against them.`);
       if (!e.note) fail('Resolving needs a note saying what settled it (a commit, or who did it).');
       w.completion = { kind: 'resolved', note: e.note, at: ctx.now, by: ctx.by };

@@ -198,7 +198,7 @@ test('resolve closes a factory record, or a manual one with no criteria, with a 
   const s = openStore();
   const f = s.append({ kind: 'create', payload: { title: 'Board bug', kind: 'factory' } }, ctx()).id;
   const m = s.append({ kind: 'create', payload: { title: 'Guard script', kind: 'manual' } }, ctx()).id;
-  const p = s.append(build, ctx()).id;
+  const p = s.append({ ...build, payload: { ...build.payload, links: { pr: 'https://github.com/o/r/pull/1' } } }, ctx()).id;
   s.appendAll(commandsFor('resolve', { work: f, note: 'fixed in abc1234' }), ctx({ by: 'triage board worker' }));
   s.appendAll(commandsFor('resolve', { work: m, note: 'done by hand (Alex)' }), ctx({ by: 'triage board worker' }));
   assert.deepEqual([s.state.work[f].phase, s.state.work[m].phase], ['done', 'done']);
