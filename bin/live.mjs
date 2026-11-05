@@ -208,7 +208,8 @@ const workersOf = () => { try { return JSON.parse(readFileSync(join(dirname(DB),
 const local = (seat, path, init = {}) => fetch(`http://127.0.0.1:${PORT}${path}`, { ...init, headers: { ...init.headers, 'x-seat': seat, 'x-factory': '1' } }).then(r => r.json());
 const mcpApi = { get: (path, seat) => local(seat, path), post: (action, args, seat) => local(seat, '/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, args }) }) };
 http.createServer(async (req, res) => {
-  if (req.method !== 'POST' || !req.url.startsWith('/mcp')) { res.writeHead(405).end(); return; }
+  // No OAuth here: a 404 on discovery (/.well-known/...) tells an MCP client the server needs none.
+  if (req.method !== 'POST' || !req.url.startsWith('/mcp')) { res.writeHead(req.url.startsWith('/mcp') ? 405 : 404).end(); return; }
   let body = ''; for await (const c of req) body += c;
   const seat = sandboxSeat(req.headers, SANDBOX_SECRET, workersOf()) || `unverified sandbox ${req.headers['x-sandbox'] || '?'}`;
   try {
