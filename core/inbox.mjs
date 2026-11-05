@@ -24,7 +24,7 @@ const msg = (to, work, about, text) => ({ kind: 'message', payload: { to, work, 
 const quote = t => `"${String(t).replace(/["\n]/g, "'").slice(0, 60)}"`;
 
 /**
- * @param cfg {supervisors, seats: labels that exist, router, cutoff, answersSince, v1Before}
+ * @param cfg {supervisors, seats: labels that exist, router, cutoff, answersSince, v1Before, workers: {worker label: its supervisor}}
  * @param fleet {units, now, watches: {workerStops, idleQueues}} or null when the fleet couldn't be read
  * @returns {{cmds, watches}}
  */
@@ -78,6 +78,11 @@ export function inboxCommands(state, cfg, fleet = null) {
       if (!told.has(`quietWorker:${key}`)) cmds.push(msg(u.supervisor.label, job[0].id, { quietWorker: key }, `${u.worker.label} shows as working, but its pane hasn't changed for ${Math.round((fleet.now - since) / 60000)} min while ${job[0].id} ${job[1].id} is started: read its pane; if it finished, record what it reported.`));
     }
   }
+  // A worker's own board note (sbx workers on the board) goes to its supervisor, which records what it means.
+  for (const w of Object.values(state.work)) (w.updates || []).forEach((u, i) => {
+    const sup = cfg.workers?.[u.by], key = `${w.id}/${i}`;
+    if (sup && !told.has(`workerNote:${key}`)) cmds.push(msg(sup, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
+  });
   // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.
   if (cfg.triage?.since) for (const w of Object.values(state.work))
     if (['intake', 'proposed'].includes(w.phase) && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`))

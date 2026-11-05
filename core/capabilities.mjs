@@ -8,6 +8,8 @@ export const ROLES = {
   'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify'],
   'board-developer': ACTIONS,
   'trusted-reviewer': ['read', 'progress'],
+  // A stream's sbx worker, on the sandbox port only. Its instructions come in its brief, not a role file.
+  'sbx-worker': ['read', 'ack', 'progress'],
 };
 
 /** A trusted-review pane's label: `pr-<n>-trusted` (its role file) or `trusted-review-<n>` (older panes). */
@@ -20,6 +22,8 @@ const LIMITS = {
   'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
     progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',
     ack: a => /^M-\d+$/.test(a.ref || '') || 'the board lead acks only messages addressed to it' },
+  'sbx-worker': { progress: a => !a.assignmentId || 'a worker adds notes (and its branch); its supervisor records the assignment\'s stages',
+    ack: a => /^M-\d+$/.test(a.ref || '') || 'a worker acks only messages addressed to it' },
   'trusted-reviewer': { progress: a => !a.assignmentId || 'a trusted reviewer adds notes only; its dispatcher records the assignment' },
   'questions-router': { set_owner: noPin, ack: a => /^M-\d+$/.test(a.ref || '') || 'the questions router acks only messages addressed to it' },
 };

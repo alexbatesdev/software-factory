@@ -9,6 +9,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore, derivedCtx } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
+import { createMcp } from '../mcp/server.mjs';
+import { sandboxSeat } from '../core/sandbox-seat.mjs';
+import { randomBytes } from 'node:crypto';
 import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey, taskIdOf, projectCommands } from '../core/observe.mjs';
 import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
@@ -110,7 +113,8 @@ async function inboxTick() {
   const since = store.state.legacy.notifier?.activatedAt;
   const checkIn = config.boardLead?.checkIn !== false ? { seat: config.boardLead?.seat || 'board lead', now: now() } : null;
   const triage = { seat: config.boardLead?.seat || 'board lead', since: LIVE_SINCE };
-  const plan = inboxCommands(store.state, { supervisors, seats, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
+  const workers = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.worker).map(([sup, s]) => [s.worker, sup]));
+  const plan = inboxCommands(store.state, { supervisors, seats, workers, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
     fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
@@ -193,6 +197,26 @@ async function fleetTick() {
 http.createServer(createApi({ store, config, readPr: async url => (await readPrs([url]))[0] || null,
   observed: () => ({ units: fleet?.units || [], prs: openPrs, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
+
+// The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never
+// PORT, so a sandbox can't reach the seat-trusting API; here the seat comes only from the sandbox's factory-minted token.
+const SANDBOX_PORT = Number(process.env.FACTORY_SANDBOX_PORT || config.sandboxPort || 4849);
+const SECRET_FILE = join(dirname(DB), 'sandbox-secret');
+if (!existsSync(SECRET_FILE)) writeFileSync(SECRET_FILE, randomBytes(32).toString('hex'), { mode: 0o600 });
+const SANDBOX_SECRET = readFileSync(SECRET_FILE, 'utf8').trim();
+const workersOf = () => { try { return JSON.parse(readFileSync(join(dirname(DB), 'sandboxes.json'), 'utf8')); } catch { return {}; } };
+const local = (seat, path, init = {}) => fetch(`http://127.0.0.1:${PORT}${path}`, { ...init, headers: { ...init.headers, 'x-seat': seat, 'x-factory': '1' } }).then(r => r.json());
+const mcpApi = { get: (path, seat) => local(seat, path), post: (action, args, seat) => local(seat, '/api/actions', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action, args }) }) };
+http.createServer(async (req, res) => {
+  if (req.method !== 'POST' || !req.url.startsWith('/mcp')) { res.writeHead(405).end(); return; }
+  let body = ''; for await (const c of req) body += c;
+  const seat = sandboxSeat(req.headers, SANDBOX_SECRET, workersOf()) || `unverified sandbox ${req.headers['x-sandbox'] || '?'}`;
+  try {
+    const out = await createMcp({ config, seatOf: async () => seat, api: mcpApi })(JSON.parse(body));
+    if (out == null) { res.writeHead(202).end(); return; }
+    res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(out));
+  } catch (e) { res.writeHead(400, { 'content-type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: e.message } })); }
+}).listen(SANDBOX_PORT, '127.0.0.1', () => log(`sandbox MCP on http://127.0.0.1:${SANDBOX_PORT}/mcp`));
 
 // Read each worker's disk, drain full ones, and cycle a drained worker once it is between tasks.
 async function recycleTick() {

@@ -126,3 +126,17 @@ test('a started assignment whose owner has no pane is flagged to the board lead 
   delete state.messages['M-1']; work.phase = 'done';
   assert.equal(inboxCommands(state, cfg, fleet).cmds.filter(c => c.payload.about?.ghost).length, 0, 'a finished record is never flagged: it takes no events');
 });
+
+test("a worker's own board note reaches its supervisor once, so nobody has to read the worker's pane", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const work = { id: 'W-5', title: 'Fix it', phase: 'implementation', stream: 'sup: s1', requests: [], assignments: [],
+    updates: [{ at: 't0', by: 'sup: s1', text: 'Briefed.' }, { at: 't1', by: 'sbx: s1', text: 'Done: PR #9 pushed at abc1234, internal review clean.' }] };
+  const state = { work: { 'W-5': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: ['sup: s1'], seats: [], workers: { 'sbx: s1': 'sup: s1' } };
+  const notes = r => r.cmds.filter(c => c.payload.about?.workerNote);
+  const first = notes(inboxCommands(state, cfg));
+  assert.deepEqual(first.map(c => [c.payload.to, c.payload.work, c.payload.about.workerNote]), [['sup: s1', 'W-5', 'W-5/1']]);
+  assert.match(first[0].payload.text, /PR #9 pushed at abc1234/);
+  state.messages['M-1'] = { id: 'M-1', to: 'sup: s1', about: { workerNote: 'W-5/1' } };
+  assert.equal(notes(inboxCommands(state, cfg)).length, 0, 'once');
+});

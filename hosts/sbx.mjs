@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { sandboxToken } from '../core/sandbox-seat.mjs';
 
 const run = promisify(execFile);
 // The herdr sbx plugin owns the pane ↔ sandbox mapping; its bridge's start mode recreates a missing sandbox from it.
@@ -115,6 +116,16 @@ export async function restoreBaseline(sandbox) {
   await put(HOOK_PATH, readFileSync(join(homedir(), '.claude/hooks/require-robot-wrapper.sh'), 'utf8'));
   const cur = await run('sbx', ['exec', sandbox, 'cat', '/home/agent/.claude/settings.json'], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
   await put('/home/agent/.claude/settings.json', JSON.stringify(withBaseline(cur), null, 2) + '\n');
+  await installBoardMcp(sandbox);
+}
+
+/** The worker's way onto the board: the factory's sandbox port, with this sandbox's name and token (sbx-workers-on-the-board). */
+export async function installBoardMcp(sandbox, { port = 4849 } = {}) {
+  const secret = readFileSync(join(homedir(), 'Code/software-factory/data/sandbox-secret'), 'utf8').trim();
+  const add = ['claude', 'mcp', 'add', '-s', 'user', '--transport', 'http', 'software-factory', `http://host.docker.internal:${port}/mcp`,
+    '-H', `x-sandbox: ${sandbox}`, '-H', `x-sandbox-token: ${sandboxToken(secret, sandbox)}`];
+  const sh = a => a.map(x => `'${x.replace(/'/g, `'\\''`)}'`).join(' ');
+  await run('sbx', ['exec', sandbox, 'bash', '-lc', `claude mcp remove -s user software-factory >/dev/null 2>&1; ${sh(add)}`], { timeout: 60000 });
 }
 
 /** Exit the agent, remove the sandbox, then the plugin's bridge recreates it (same name, template and kit) in the same pane. */

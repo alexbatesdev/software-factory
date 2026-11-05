@@ -10,7 +10,8 @@ import { reachesAlex } from './derive.mjs';
 const PAGE = new URL('../views/index.html', import.meta.url);
 
 /** The role a seat label holds; every stream supervisor label is a stream-supervisor. */
-export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config.routing?.supervisors || {}) ? 'stream-supervisor' : isTrustedReviewSeat(seat) ? 'trusted-reviewer' : null);
+export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config.routing?.supervisors || {}) ? 'stream-supervisor'
+  : Object.values(config.routing?.supervisors || {}).some(s => s.worker === seat) ? 'sbx-worker' : isTrustedReviewSeat(seat) ? 'trusted-reviewer' : null);
 
 /**
  * @param readOnly the shadow runner serves the page and reads only; every write is refused
@@ -55,6 +56,7 @@ export function createApi({ store, config, readPr = async () => null, now = () =
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }) });
       }
+      if (req.method === 'GET' && url.pathname === '/api/whoami') return send(res, 200, { ip: req.socket.remoteAddress, headers: req.headers });
       if (req.method === 'GET' && url.pathname === '/api/inbox') return send(res, 200, { seat, messages: Object.values(store.state.messages).filter(m => m.to === seat && !m.ackedAt) });
       if (req.method === 'POST' && url.pathname === '/api/actions') {
         // A custom header a web page can't send cross-origin without a preflight this server never answers.
