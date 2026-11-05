@@ -23,11 +23,11 @@ const taskOfBranch = branch => { const m = String(branch || '').match(/\/(\d{6,}
 export const BRANCH_IN_NOTES_FROM = '2026-11-05T20:00:00.000Z';
 const LIVE = ['queued', 'started', 'blocked'];
 
-/** The one live, PR-less record with a live assignment whose notes or assignment text name this exact branch. */
+/** The one live, PR-less record with a live assignment whose branch link, notes or assignment text name this exact branch. */
 function namedBranchOwner(state, branch) {
   if (!branch || branch.length < 8) return null;
   const hits = Object.values(state.work).filter(w => !TERMINAL.includes(w.phase) && !w.links?.pr && (w.assignments || []).some(a => LIVE.includes(a.status))
-    && JSON.stringify([w.updates.map(u => u.text), w.assignments.map(a => [a.brief, a.evidence])]).includes(branch));
+    && (w.links?.branch === branch || JSON.stringify([w.updates.map(u => u.text), w.assignments.map(a => [a.brief, a.evidence])]).includes(branch)));
   return hits.length === 1 ? hits[0].id : null;
 }
 

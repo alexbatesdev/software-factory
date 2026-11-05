@@ -110,3 +110,14 @@ test('a worker PR joins the one live record whose notes name its branch, even be
   assert.equal(s.state.work[id].links.pr, PR(8535));
   assert.equal(Object.keys(run('2026-11-04T18:48:00.000Z').s.state.work).length, 2, 'rows from before the rule replay as they were decided');
 });
+
+test('a worker PR joins the live record its supervisor named the branch on (W-180 repeat: #8570 into W-137)', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const at = { now: '2026-11-06T00:00:00.000Z', by: 'sup: stream-1' };
+  const s = open();
+  const id = s.append({ kind: 'create', payload: { title: 'Granted employees read custom fields', kind: 'build', criteria: ['readable'] } }, at).id;
+  s.appendAll(commandsFor('assign', { work: id, assignmentId: 'R1', kind: 'implementation', status: 'started', owner: 'sbx: stream-1', evidence: 'brief file', branch: 'alex/confidential/granted-employee-custom-fields' }), at);
+  for (const c of sourceCommands(s.state, new Map([['built-rails-8570', pr(8570, 'alex/confidential/granted-employee-custom-fields')]]), 'pr', parseAcs)) s.append(c, { ...at, by: 'poller' });
+  assert.deepEqual(Object.keys(s.state.work), [id], 'no duplicate record');
+  assert.equal(s.state.work[id].links.pr, PR(8570));
+});

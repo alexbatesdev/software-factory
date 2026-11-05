@@ -12,8 +12,9 @@ const BUILD = {
     const [w, r] = a.ref.split('/');
     return [ev(w, { type: 'ack', requestId: r, outcome: a.outcome || 'received', note: a.note, by: a.by })];
   },
-  assign: ({ work, ...a }) => { need({ work, ...a }, 'work', 'assignmentId', 'kind', 'status'); return [ev(work, { ...a, type: 'assign' })]; },
-  progress: a => { need(a, 'work'); return [ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text } : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn } : { type: 'note', text: a.text })]; },
+  // A named branch is kept on the record, so the worker's PR joins it instead of becoming a record (W-180).
+  assign: ({ work, branch, ...a }) => { need({ work, ...a }, 'work', 'assignmentId', 'kind', 'status'); return [...branchLink(work, branch), ev(work, { ...a, type: 'assign' })]; },
+  progress: a => { need(a, 'work'); return [...branchLink(a.work, a.branch), ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text } : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn } : { type: 'note', text: a.text })]; },
   done: a => {
     need(a, 'work');
     const link = a.pr ? [{ kind: 'update', target: a.work, payload: { links: { pr: a.pr } } }] : [];
@@ -52,6 +53,7 @@ const BUILD = {
   verify: a => { need(a, 'id', 'note'); return [{ kind: 'question_verify', target: a.id, payload: { keep: a.keep !== false, note: a.note } }]; },
   message: a => { need(a, 'to', 'text'); return [{ kind: 'message', payload: { to: a.to, work: a.work, about: a.about, text: a.text } }]; },
 };
+const branchLink = (work, branch) => branch ? [{ kind: 'update', target: work, payload: { links: { branch: String(branch).trim() } } }] : [];
 // Owner and stream move together, so routing never sees one without the other.
 function setOwner(a) { return { kind: 'update', target: a.work, payload: { owner: a.owner, stream: a.owner, ...(a.pin ? { streamPin: { by: a.pin } } : {}) } }; }
 
