@@ -52,3 +52,7 @@ test('the board lead acks the messages addressed to it', () => {
   assert.equal(refusal('board-lead', 'ack', { ref: 'M-1' }), null);
   assert.match(refusal('board-lead', 'ack', { ref: 'W-1/R1' }), /only messages/);
 });
+
+test('every seat can ack the messages in its own inbox', () => {
+  for (const role of Object.keys(ROLES)) assert.equal(refusal(role, 'ack', { ref: 'M-1' }), null, role);
+});

@@ -3,7 +3,7 @@ export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', '
 
 export const ROLES = {
   'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner'],
-  'questions-router': ['read', 'route', 'create', 'set_owner'],
+  'questions-router': ['read', 'ack', 'route', 'create', 'set_owner'],
   'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask'],
   'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify'],
   'board-developer': ACTIONS,
@@ -16,7 +16,7 @@ const LIMITS = {
   'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
     progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',
     ack: a => /^M-\d+$/.test(a.ref || '') || 'the board lead acks only messages addressed to it' },
-  'questions-router': { set_owner: noPin },
+  'questions-router': { set_owner: noPin, ack: a => /^M-\d+$/.test(a.ref || '') || 'the questions router acks only messages addressed to it' },
 };
 
 /** Why `role` may not take `action` with these arguments; null when it may. */
