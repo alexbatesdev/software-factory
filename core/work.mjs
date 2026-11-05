@@ -592,6 +592,19 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Correction: ${e.to} is the same commit as ${e.from}, not a new one; back to ${e.phase}. Evidence: ${e.evidence}.`);
       break;
     }
+    case 'heal': {
+      // The factory's repair for a stranded record: settle stale findings, then queue the one thing that moves it.
+      if (!stranded(w)) fail(`${w.id} isn't stranded.`);
+      for (const f of w.findings) if (f.status === 'open' && ['ci', 'conflict'].includes(f.source?.type) && !sameSha(f.source.head, w.head))
+        Object.assign(f, { status: 'resolved', note: `Superseded: the head is now ${w.head.slice(0, 7)}.`, at: ctx.now });
+      const open = w.findings.some(f => f.status === 'open');
+      const clean = w.reviews.some(r => sameSha(r.head, w.head) && r.result === 'clean');
+      if (open) { w.phase = 'fixes'; w.approvalWait = null; requestFixes(w, ctx); note(w, ctx, `Stranded (nothing live or pending): fixes requested for the open findings.`); }
+      else if (clean && gate(w, ctx).ok && e.isDraft === false) enterApprovalWait(w, ctx, `healed: clean review at ${w.head}, PR marked ready`);
+      else if (clean && gate(w, ctx).ok) { w.phase = 'ready_for_human'; note(w, ctx, `Stranded: back to ready for human, clean review at ${w.head}.`); }
+      else { w.phase = 'rereview'; w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head }); note(w, ctx, `Stranded (nothing live or pending): review requested at ${w.head}.`); }
+      break;
+    }
     case 'request_review': {
       // Refreshes the review request at the current head when work finished without one; never a review itself.
       if (!REVIEWING.includes(w.phase) || !w.head) fail(`${w.id} isn't waiting for review at a known head.`);
@@ -710,6 +723,13 @@ export function unverifyHead(work, ctx) {
 }
 
 /** Only the request for this commit and work round may describe the current phase. */
+/** PR work in fixes or review with nothing live and nothing pending: no seat will ever move it (W-149, W-160, W-138). */
+export function stranded(w) {
+  if (!['fixes', ...REVIEWING].includes(w.phase) || !prLinked(w) || liveAssignment(w)) return false;
+  const r = phaseRequest(w);
+  return !r || !!r.ack;
+}
+
 export function phaseRequest(w) {
   const type = { review: 'review', rereview: 'review', fixes: 'fixes' }[w.phase];
   if (!type || !w.head) return null;
@@ -729,6 +749,8 @@ function enterApprovalWait(w, ctx, evidence) {
 const NO_CHANGE_MOVES_ON = '2026-11-04T23:10:00.000Z';
 // W-208: stale CI/conflict findings close on a head move, and a no-change round left in fixes queues its request.
 const FINDINGS_FOLLOW_HEAD_FROM = '2026-11-05T22:00:00.000Z';
+// W-149: a no-change round answers review threads and change requests too (the worker replied instead of changing code).
+const FEEDBACK_NO_CHANGE_FROM = '2026-11-05T22:30:00.000Z';
 /** Fixes with nothing pending strands a record: queue the request unless one is already open for this head. */
 function requestFixes(w, ctx) {
   if (w.requests.some(r => r.type === 'fixes' && !r.ack && sameSha(r.head, w.head))) return;
@@ -756,7 +778,8 @@ function finishNoChangeProbe(w, a, ctx) {
   // Finishing this check doesn't finish the PR or dispose of another assignment's work.
   if (!(ctx.now >= NO_CHANGE_MOVES_ON)) return legacyNoChangePhase(w, a, ctx, baseline, remote);
   // A red-CI round that changes nothing is the verdict the CI finding asks for (flake / red on main): accept it.
-  if (a.kind === 'fixes') for (const f of w.findings.filter(f => f.status === 'open' && f.source?.type === 'ci' && sameSha(f.source.head, w.head)))
+  const settles = ['ci', ...(ctx.now >= FEEDBACK_NO_CHANGE_FROM ? ['threads', 'changes_requested'] : [])];
+  if (a.kind === 'fixes') for (const f of w.findings.filter(f => f.status === 'open' && settles.includes(f.source?.type) && sameSha(f.source.head, w.head)))
     Object.assign(f, { status: 'accepted', note: `No change (${a.id}): ${a.noChange.evidence}`, at: ctx.now });
   if (!liveAssignment(w)) {
     const open = w.findings.some(f => f.status === 'open');

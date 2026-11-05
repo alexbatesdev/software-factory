@@ -81,3 +81,32 @@ test('a CI finding accepted as "red on main" asks for a merge of main once main 
  assert.equal(W.observeHealth(m, { ...still, mainGreen: 'main0001' }, later), m, 'once per green main commit');
  assert.equal(W.observeHealth(x, { ...still, failing: [], mainGreen: 'main0001' }, later), x, 'green at the head: nothing to do');
 });
+
+test('a stranded PR record (nothing live, nothing pending) is healed: fixes when findings are open, else back to approval wait on a clean review (W-149, W-160, W-138)', () => {
+ const later = { ...ctx, now: '2026-11-06T00:00:00Z' };
+ // W-160 shape: fixes, open review findings, no assignment, no request.
+ let w = ready(); w.phase = 'fixes'; w.approvalWait = null;
+ w.findings.push({ id: 'F2', text: 'x', status: 'open', severity: null, reviewHead: head, note: null });
+ assert.ok(W.stranded(w));
+ let h = ev(w, { type: 'heal', isDraft: false }, later);
+ assert.equal(h.requests.at(-1).type, 'fixes'); assert.ok(!W.stranded(h));
+ // W-149 shape: a CI finding from an old head is closed by the heal.
+ w = ready(); w.phase = 'fixes'; w.approvalWait = null;
+ w.findings.push({ id: 'F2', text: 'ci', status: 'open', severity: null, reviewHead: null, note: null, source: { type: 'ci', head: 'old0000' } });
+ h = ev(w, { type: 'heal', isDraft: false }, later);
+ assert.equal(h.findings[0].status, 'resolved');
+ // W-138 shape: rereview with a clean review at the head and a ready PR goes back to approval wait, with no new review.
+ w = ready(); w.phase = 'rereview'; w.approvalWait = null; w.reviews.push({ head, by: 'sbx: s internal-review', result: 'clean', at: ctx.now });
+ h = ev(w, { type: 'heal', isDraft: false }, later);
+ assert.equal(h.phase, 'awaiting_human_approval');
+ assert.ok(!W.stranded(ready()), 'approval wait is not stranded');
+});
+
+test('a no-change fixes round also settles review-thread feedback at the head, with its evidence (W-149)', () => {
+ const later = { ...ctx, now: '2026-11-06T00:00:00Z' };
+ const fb = W.observeHealth(ready(), { head, conflict: false, failing: [], threads: [{ id: 'T1', by: 'bot', url: 'u' }] }, later);
+ assert.equal(fb.phase, 'fixes');
+ const x = ev(ev(fb, { type: 'assign', assignmentId: 'R6', kind: 'fixes', status: 'started', owner: 'worker', evidence: 'probe' }, later),
+   { type: 'assignment_done', assignmentId: 'R6', expectedVersion: 1, noChange: { verifiedOn: head, evidence: 'replied on T1: the claim is wrong, see the spec' } }, later);
+ assert.deepEqual([x.findings.at(-1).status, x.phase], ['accepted', 'awaiting_human_approval']);
+});

@@ -19,7 +19,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { mergeCloses } from '../core/units.mjs';
-import { TERMINAL, trackOf } from '../core/work.mjs';
+import { TERMINAL, trackOf, stranded } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen } from '../sources/github.mjs';
 import { readTasks, readTopParents } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
@@ -128,6 +128,22 @@ async function inboxTick() {
 // Marking PRs ready waits on GitHub; on its own loop so a slow GitHub never holds up messages and wakes (W-199).
 const readyTick = () => autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'mutation', now, log: once });
 
+// A stranded record (fixes/review with nothing live or pending) gets one heal after a grace period, so a seat mid-way
+// through recording a step isn't overtaken (W-208 follow-up).
+const strandedSince = {};
+function healTick() {
+  const t = Date.now();
+  for (const w of Object.values(store.state.work)) {
+    // Only open PRs on a stream: a closed PR's record is the merge/close path's, a trusted review is Alex's to rerun.
+    if (!stranded(w) || trackOf(w, config) !== 'stream' || openPrs.get(w.links?.pr)?.state !== 'OPEN'
+      || derivedCtx(store.state, w.id).openQuestions) { delete strandedSince[w.id]; continue; } // an open question: it waits on the answer
+    strandedSince[w.id] ??= t;
+    if (t - strandedSince[w.id] < (config.notify?.strandedGraceMs ?? 600000)) continue;
+    apply([{ kind: 'event', target: w.id, payload: { type: 'heal', isDraft: openPrs.get(w.links?.pr)?.isDraft ?? null } }], 'board (heal)');
+    log(`healed ${w.id} (${w.phase})`); delete strandedSince[w.id];
+  }
+}
+
 async function githubTick() {
   try {
     const owner = config.githubOwner, s = store.state;
@@ -141,6 +157,7 @@ async function githubTick() {
     // PR states for the page and merge close: every PR a live record links.
     const links = [...new Set(Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean))];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
+    healTick();
     await mergeTick();
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
