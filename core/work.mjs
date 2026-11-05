@@ -163,6 +163,9 @@ function setHead(w, sha, ctx, via = 'report') {
   if (sameSha(sha, w.head)) { if (sha.length > w.head.length) expandHead(w, w.head, sha); return; }
   const had = w.head;
   w.head = sha;
+  // W-208: CI and conflict findings describe one commit; a new head supersedes them (it gets its own health read).
+  if (ctx.now >= FINDINGS_FOLLOW_HEAD_FROM) for (const f of w.findings || []) if (f.status === 'open' && ['ci', 'conflict'].includes(f.source?.type) && !sameSha(f.source.head, sha))
+    Object.assign(f, { status: 'resolved', note: `Superseded: the head moved from ${String(f.source.head).slice(0, 7)} to ${sha.slice(0, 7)}.`, at: ctx.now });
   if (w.approvalWait) w.approvalWait = null;
   if (w.prReadyAuth && w.prReadyAuth.head !== sha) {
     w.prReadyAuth = null;
@@ -720,6 +723,13 @@ function enterApprovalWait(w, ctx, evidence) {
 }
 // ponytail: one rule date, so rows decided before W-184 replay as decided; snapshots or reducer versions if these pile up.
 const NO_CHANGE_MOVES_ON = '2026-11-04T23:10:00.000Z';
+// W-208: stale CI/conflict findings close on a head move, and a no-change round left in fixes queues its request.
+const FINDINGS_FOLLOW_HEAD_FROM = '2026-11-05T22:00:00.000Z';
+/** Fixes with nothing pending strands a record: queue the request unless one is already open for this head. */
+function requestFixes(w, ctx) {
+  if (w.requests.some(r => r.type === 'fixes' && !r.ack && sameSha(r.head, w.head))) return;
+  w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
+}
 function legacyNoChangePhase(w, a, ctx, baseline, remote) {
   if (!liveAssignment(w)) {
     if (baseline.phase === 'awaiting_human_approval') {
@@ -749,7 +759,7 @@ function finishNoChangeProbe(w, a, ctx) {
     const waived = (w.internalReviewWaivers || []).some(x => sameSha(x.head, w.head) && x.prUrl === w.links?.pr);
     if (baseline.phase === 'awaiting_human_approval' && normalize({ ...w, phase: 'awaiting_human_approval' }, ctx).phase === 'awaiting_human_approval' && remote.isDraft === false && !open) w.phase = 'awaiting_human_approval';
     else if (!open && remote.isDraft === false && (waived || gate(w, ctx).ok)) enterApprovalWait(w, ctx, `no-change ${a.id} at ${remote.head}`);
-    else if (open) { w.phase = 'fixes'; w.approvalWait = null; }
+    else if (open) { w.phase = 'fixes'; w.approvalWait = null; if (ctx.now >= FINDINGS_FOLLOW_HEAD_FROM) requestFixes(w, ctx); }
     else { w.approvalWait = null; w.phase = baseline.phase === 'ready_for_human' && gate(w, ctx).ok ? 'ready_for_human' : ['review', 'rereview'].includes(baseline.phase) ? baseline.phase : 'rereview'; if (w.phase !== 'ready_for_human') requestRereview(w, ctx); }
   }
   note(w, ctx, `No-change assignment ${a.id} finished at unchanged ${remote.head}; PR work is now ${w.phase}.`);

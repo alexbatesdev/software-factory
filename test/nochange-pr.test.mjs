@@ -52,3 +52,17 @@ test('a no-change fixes round on red CI accepts the CI finding with its verdict 
  assert.deepEqual(x.findings.map(f=>[f.status,f.note]),[['accepted','No change (R6): flake: import_spec:118; red on main: participant_spec:454']]);
  assert.deepEqual([x.phase,x.approvalWait?.head],['awaiting_human_approval',head]);
 });
+
+test('W-80 shape: a CI finding from an old head closes when the head moves, and a round left in fixes always has a request (W-208)', () => {
+ const later = { ...ctx, now: '2026-11-06T00:00:00Z' };
+ const B = 'b'.repeat(40), atB = { ...later, prHead: B, prState: { ...ctx.prState, head: B }, verifiedPrs: [{ url, head: B, state: 'OPEN', isDraft: false }] };
+ let w = W.observeHealth(ready(), { head, conflict: false, failing: ['ci/circleci: test'] }, later);
+ w = W.observeHead(w, { sha: B, via: 'github' }, atB);
+ assert.deepEqual(w.findings.map(f => f.status), ['resolved'], 'the old head\'s CI finding is superseded');
+ w = W.observeHealth(w, { head: B, conflict: false, failing: ['ci/circleci: test'] }, atB);
+ w.findings.push({ id: 'F9', text: 'a reviewer finding still open', status: 'open', severity: null, reviewHead: B, note: null });
+ w = ev(w, { type: 'assign', assignmentId: 'R6', kind: 'fixes', status: 'started', owner: 'worker', evidence: 'No-change probe brief' }, atB);
+ const x = ev(w, { type: 'assignment_done', assignmentId: 'R6', expectedVersion: 1, noChange: { verifiedOn: B, evidence: 'red on main: participant_spec:454' } }, atB);
+ assert.equal(x.phase, 'fixes');
+ assert.ok(x.requests.some(r => r.type === 'fixes' && !r.ack && r.head === B), 'fixes with nothing pending would strand the record');
+});
