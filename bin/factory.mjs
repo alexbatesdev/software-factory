@@ -10,7 +10,7 @@ import path from 'node:path';
 import readline from 'node:readline/promises';
 import { herdrRaw as herdr } from '../fleet/herdr.mjs';
 import { seatsOf, planFactory, planStop, slotFor } from '../fleet/factory.mjs';
-import { bridgeLine, adoptSandbox, sandboxOf } from '../hosts/sbx.mjs';
+import { bridgeLine, adoptSandbox, sandboxOf, restoreBaseline } from '../hosts/sbx.mjs';
 import { openStore } from '../core/store.mjs';
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
@@ -70,6 +70,7 @@ async function up(apply) {
       if (s.action === 'adopt') {
         const { panes } = await herdr('pane', 'list');
         await adoptSandbox(s.seat.sandbox, pane, panes.find(p => p.pane_id === pane).workspace_id, { livePanes: panes.map(p => p.pane_id) });
+        await restoreBaseline(s.seat.sandbox);
       }
       if (['reconnect', 'adopt'].includes(s.action)) await attach(pane); else await start(s.seat, pane);
       console.log(`  done: ${pane}`);

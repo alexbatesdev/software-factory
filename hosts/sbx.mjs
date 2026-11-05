@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 const run = promisify(execFile);
 // The herdr sbx plugin owns the pane ↔ sandbox mapping; its bridge's start mode recreates a missing sandbox from it.
@@ -89,6 +90,30 @@ export async function adoptSandbox(sandboxName, paneId, workspaceId, { stateDir 
   deletePaneEntry(stateDir, entry.paneId);
 }
 
+// Alex's comment hook (every GitHub comment posted as him is 🤖-wrapped). A sandbox's ~/.claude lives in the VM, so
+// recreating it (recycle, replace) drops the hook; the factory puts it back. Same matcher as the original sandboxes.
+const HOOK_PATH = '/home/agent/.claude/hooks/require-robot-wrapper.sh';
+export const ROBOT_HOOK = { matcher: 'Bash|mcp__.*(add_issue_comment|update_issue_comment|add_comment_to_pending_review|pull_request_review_write|create_pull_request_review|add_reply_to_pull_request_comment)',
+  hooks: [{ type: 'command', command: `bash ${HOOK_PATH}`, timeout: 10, onFailure: 'block' }] };
+
+/** The sandbox's settings with the comment hook present once; everything else kept. Pure. */
+export function withBaseline(settings = {}) {
+  const pre = settings.hooks?.PreToolUse || [];
+  if (pre.some(h => (h.hooks || []).some(x => x.command === ROBOT_HOOK.hooks[0].command))) return settings;
+  return { ...settings, hooks: { ...settings.hooks, PreToolUse: [...pre, ROBOT_HOOK] } };
+}
+
+/** Put the comment hook script and its settings entry back in a sandbox. */
+export async function restoreBaseline(sandbox) {
+  const put = (path, text) => new Promise((resolve, reject) => {
+    const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `mkdir -p "$(dirname ${path})" && cat > ${path}`], { timeout: 60000 }, e => e ? reject(e) : resolve());
+    p.stdin.end(text);
+  });
+  await put(HOOK_PATH, readFileSync(join(homedir(), '.claude/hooks/require-robot-wrapper.sh'), 'utf8'));
+  const cur = await run('sbx', ['exec', sandbox, 'cat', '/home/agent/.claude/settings.json'], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
+  await put('/home/agent/.claude/settings.json', JSON.stringify(withBaseline(cur), null, 2) + '\n');
+}
+
 /** Exit the agent, remove the sandbox, then the plugin's bridge recreates it (same name, template and kit) in the same pane. */
 export async function recycle(worker, log = () => {}) {
   const herdr = (...a) => run('herdr', a, { timeout: 30000 });
@@ -105,7 +130,11 @@ export async function recycle(worker, log = () => {}) {
   for (let i = 0; i < 120; i++) {
     await pause(10000);
     const { stdout } = await run('sbx', ['ls'], { timeout: 20000 }).catch(() => ({ stdout: '' }));
-    if (new RegExp(`^${worker.sandbox}\\s+\\S+\\s+running`, 'm').test(stdout) && !(await atShell())) return { ok: true, detail: `${worker.sandbox} recreated and its agent started` };
+    if (new RegExp(`^${worker.sandbox}\\s+\\S+\\s+running`, 'm').test(stdout) && !(await atShell())) {
+      // The fresh VM has no ~/.claude of Alex's; the running session picks the hook up from its settings file.
+      const hook = await restoreBaseline(worker.sandbox).then(() => 'comment hook restored', e => `comment hook NOT restored: ${e.message}`);
+      return { ok: true, detail: `${worker.sandbox} recreated and its agent started; ${hook}` };
+    }
   }
   return { ok: false, detail: `${worker.sandbox} not running with an agent after 20 minutes` };
 }
