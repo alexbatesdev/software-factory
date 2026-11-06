@@ -41,14 +41,17 @@ export function groupIndex(works, bySource) {
  */
 export function mergeCloses(works, bySource, { prState, openQuestions, track }) {
   const g = groupIndex(works, bySource), out = [];
-  // Partial or unknown coverage means work is left beyond the PR, so a merge doesn't finish it.
-  const live = w => w && !TERMINAL.includes(w.phase) && !w.waitingOn && !openQuestions(w.id) && track(w) !== 'mutation' && !['partial', 'unknown', 'none'].includes(w.coverage?.state);
+  // Alex's merge is his decision, so a wait or open question doesn't hold the record open (W-248); it is named in the close.
+  const live = w => w && !TERMINAL.includes(w.phase) && track(w) !== 'mutation';
   const merged = id => prState(works[id].links?.pr) === 'MERGED';
   for (const w of Object.values(works)) {
     if (!live(w)) continue;
-    if (isPrUnit(w, bySource) && merged(w.id)) out.push({ id: w.id, prs: [w.links.pr] });
+    const n = openQuestions(w.id), outstanding = [w.waitingOn && `waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`, n && `${n} open question(s)`].filter(Boolean);
+    // Partial or unknown coverage means work is left beyond the PR: raised to Alex, not closed.
+    const c = { id: w.id, outstanding, ...(['partial', 'unknown', 'none'].includes(w.coverage?.state) && { raise: true }) };
+    if (isPrUnit(w, bySource) && merged(w.id)) out.push({ ...c, prs: [w.links.pr] });
     const us = g.unitsOf[w.id] || [];
-    if (us.length && us.every(merged)) out.push({ id: w.id, prs: us.map(u => works[u].links.pr) });
+    if (us.length && us.every(merged)) out.push({ ...c, prs: us.map(u => works[u].links.pr) });
   }
   return out;
 }

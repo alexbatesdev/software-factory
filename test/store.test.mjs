@@ -109,6 +109,15 @@ test('a question asked on ready work sends it back to re-review', () => {
   assert.equal(s.state.work[a].phase, 'rereview');
 });
 
+test("a question closed because Alex merged past it leaves Alex's queue with the reason (W-248)", () => {
+  const s = openStore();
+  const a = s.append(build, ctx()).id;
+  s.append({ kind: 'ask', payload: { title: 'Which way?', work: a } }, ctx({ by: 'sup: stream-1' }));
+  s.append({ kind: 'question_close', target: 'TB-1', payload: { note: 'Alex merged #1' } }, ctx({ by: 'poller (merged)' }));
+  assert.deepEqual([s.state.questions['TB-1'].status, s.state.questions['TB-1'].verificationNote], ['superseded', 'Alex merged #1']);
+  assert.throws(() => s.append({ kind: 'question_close', target: 'TB-1', payload: { note: 'again' } }, ctx()), /not open/);
+});
+
 test('a replay gives records the streams they were decided with, whatever the config says now', () => {
   const path = join(mkdtempSync(join(tmpdir(), 'sf-store-')), 'factory.db');
   const s = openStore(path, { supervisors: ['sup: old'] });

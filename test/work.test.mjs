@@ -545,6 +545,9 @@ test('a merged PR closes the work as merged, only on a verified merge', () => {
   assert.throws(() => applyEvent(w, { type: 'merged', prs: [{ url: 'u', state: 'OPEN' }] }, ctx()), /merged/);
   const d = applyEvent(w, { type: 'merged', prs: [{ url: 'u', state: 'MERGED', mergedAt: '2026-10-28T20:00:00Z' }] }, ctx()).work;
   assert.deepEqual([d.phase, d.completion.kind, d.completion.prs[0].url], ['done', 'merged', 'u']);
+  const waited = applyEvent({ ...w, waitingOn: { who: 'QA', what: 'x' } }, { type: 'merged', prs: [{ url: 'u', state: 'MERGED' }], outstanding: ['waiting on QA: x'] }, ctx()).work;
+  assert.deepEqual([waited.phase, waited.waitingOn], ['done', null]);
+  assert.match(waited.updates.at(-1).text, /merged past: waiting on QA: x/);
 });
 
 test('a new commit on a PR already marked ready stays in approval wait under the standing waiver; no internal review', () => {

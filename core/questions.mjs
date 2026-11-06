@@ -32,6 +32,10 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
     if (q.status !== 'open' || q.verification !== 'unverified') fail(`${target} is already verified or settled.`);
     if (!p.note) fail('Verifying a question needs a note saying why.');
     Object.assign(next, p.keep ? { verification: 'verified' } : { status: 'superseded' }, { verificationNote: String(p.note).slice(0, 500), verificationSource: `verified by ${ctx.by}` });
+  } else if (kind === 'question_close') {
+    // Settled without an answer, e.g. Alex merged the record's PR past it (W-248).
+    if (q.status !== 'open') fail(`${target} is not open.`);
+    Object.assign(next, { status: 'superseded', verificationNote: String(p.note || '').slice(0, 500), verificationSource: `closed by ${ctx.by}` });
   } else fail(`Unknown question command "${kind}".`);
   state.questions[target] = next;
   return target;

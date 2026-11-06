@@ -37,14 +37,21 @@ test('the group index lists each unit\'s members and children once', () => {
 });
 
 import { mergeCloses } from '../core/units.mjs';
-test('a merged PR closes its unit; a task closes only when every PR it is in has merged, and never past a wait or open question', () => {
+test('a merged PR closes its unit; a task closes only when every PR it is in has merged', () => {
   const pr = { [PR(8244)]: 'MERGED', [PR(8355)]: 'OPEN' };
   const close = (ws, extra = {}) => mergeCloses(ws, bySource, { prState: u => pr[u] || null, openQuestions: id => extra.q?.[id] || 0, track: w => /mutation/.test(w.links?.branch || '') ? 'mutation' : 'stream' }).map(c => c.id).sort();
   assert.deepEqual(close(works), ['W-60', 'W-85', 'W-86'], 'W-44 is also in the still-open #8355');
   pr[PR(8355)] = 'MERGED';
   assert.ok(close(works).includes('W-44'));
-  assert.ok(!close({ ...works, 'W-60': { ...works['W-60'], waitingOn: { who: 'QA' } } }).includes('W-60'));
-  assert.ok(!close(works, { q: { 'W-85': 1 } }).includes('W-85'));
-  assert.ok(!close({ ...works, 'W-60': { ...works['W-60'], coverage: { state: 'partial' } } }).includes('W-60'), 'work left beyond the PR');
   assert.ok(!close({ ...works, 'W-86': { ...works['W-86'], phase: 'done' } }).includes('W-86'));
+});
+
+test("Alex merging past a wait or an open question closes the record and names what was outstanding; partial coverage is raised instead (W-248)", () => {
+  const pr = { [PR(8244)]: 'MERGED', [PR(8355)]: 'OPEN' };
+  const run = (ws, q = {}) => mergeCloses(ws, bySource, { prState: u => pr[u] || null, openQuestions: id => q[id] || 0, track: () => 'stream' });
+  const waited = run({ ...works, 'W-60': { ...works['W-60'], waitingOn: { who: 'QA', what: 'a test pass' } } }, { 'W-85': 1 });
+  assert.match(waited.find(c => c.id === 'W-60').outstanding.join(' '), /QA: a test pass/);
+  assert.match(waited.find(c => c.id === 'W-85').outstanding.join(' '), /1 open question/);
+  const partial = run({ ...works, 'W-60': { ...works['W-60'], coverage: { state: 'partial' } } }).find(c => c.id === 'W-60');
+  assert.equal(partial.raise, true, 'work left beyond the PR: Alex hears, the record stays open');
 });

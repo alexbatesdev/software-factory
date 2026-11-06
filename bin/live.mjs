@@ -181,9 +181,16 @@ async function mergeTick() {
   if (!config.mergeClose?.enabled) return;
   const s = store.state, bySource = Object.fromEntries(sourceIndex(s));
   for (const c of mergeCloses(s.work, bySource, { prState: u => openPrs.get(u)?.state || null, openQuestions: id => derivedCtx(s, id).openQuestions, track: w => trackOf(w, config) })) {
+    if (c.raise) {
+      if (!Object.values(s.messages).some(m => m.about?.mergedPartial === c.id))
+        apply([{ kind: 'message', payload: { to: 'local-head', work: c.id, about: { mergedPartial: c.id }, text: `[software factory] ${c.id}'s PR ${c.prs.join(', ')} merged, but the record covers work beyond it (coverage ${s.work[c.id].coverage?.state}), so it stays open. Ask Alex whether it's done.` } }], 'board');
+      continue;
+    }
     const prs = await readPrs(c.prs);
     if (prs.length !== c.prs.length || prs.some(p => p.state !== 'MERGED')) continue;
-    apply([{ kind: 'event', target: c.id, payload: { type: 'merged', prs } }], 'poller (merged)');
+    const open = Object.entries(s.questions).filter(([, q]) => q.status === 'open' && q.work === c.id).map(([id]) => id);
+    apply([{ kind: 'event', target: c.id, payload: { type: 'merged', prs, ...(c.outstanding.length && { outstanding: c.outstanding }) } },
+      ...open.map(id => ({ kind: 'question_close', target: id, payload: { note: `${c.id}'s PR merged, which settles it` } }))], 'poller (merged)');
   }
 }
 

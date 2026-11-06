@@ -61,7 +61,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   const { kind, target: id, payload, ctx: observed } = row;
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
-  if (['ask', 'answer', 'route', 'question_ack', 'question_verify'].includes(kind)) {
+  if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close'].includes(kind)) {
     const q = foldQuestion(state, row);
     // The last answer frees a record waiting in clarification, by the same rule as triage (V1 did this after every answer).
     const w = state.work[state.questions[q]?.work];

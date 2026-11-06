@@ -312,7 +312,8 @@ export function applyEvent(work, e, ctx) {
       if (!e.prs?.length || e.prs.some(p => p.state !== 'MERGED')) fail('Closing as merged needs every PR verified merged just now.');
       w.phase = 'done';
       w.completion = { kind: 'merged', prs: e.prs.map(p => ({ url: p.url, mergedAt: p.mergedAt || null })), at: ctx.now, by: ctx.by };
-      note(w, ctx, `Done: ${e.prs.map(p => `#${String(p.url).split('/pull/')[1]}`).join(', ')} merged. Not closed in Teamwork.`);
+      note(w, ctx, `Done: ${e.prs.map(p => `#${String(p.url).split('/pull/')[1]}`).join(', ')} merged. Not closed in Teamwork.${e.outstanding?.length ? ` Alex merged past: ${e.outstanding.join('; ')}.` : ''}`);
+      if (e.outstanding?.length) w.waitingOn = null;
       break;
     }
     case 'alex_review_seen': {
