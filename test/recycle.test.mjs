@@ -112,3 +112,11 @@ test("the sandbox baseline marks Claude's auto-mode default offer as seen, keepi
   assert.deepEqual(withSeenNudge({ numStartups: 4, hasSeenAutoDefaultNudge: false }), { numStartups: 4, hasSeenAutoDefaultNudge: true });
   assert.deepEqual(withSeenNudge({}), { hasSeenAutoDefaultNudge: true });
 });
+
+test("an exit held by Claude's background-work dialog picks the option that exits (W-239, Alex TB-158 a)", async () => {
+  const { exitChoice } = await import('../hosts/sbx.mjs');
+  const screen = 'Background work is running\n  1. Exit and stop tasks\n❯ 2. Stay\n';
+  assert.equal(exitChoice(screen), '1');
+  assert.equal(exitChoice(screen.replace('1. Exit', '3. Exit')), '3', 'the number shown, not a guess');
+  assert.equal(exitChoice('Do you want to proceed?\n 1. Yes\n 2. No'), null, 'any other dialog is left alone');
+});

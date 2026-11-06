@@ -147,10 +147,21 @@ export async function installBoardMcp(sandbox, { port = 4849 } = {}) {
 
 const herdr = (...a) => run('herdr', a, { timeout: 30000 });
 const atShell = async worker => !(await herdr('pane', 'process-info', '--pane', worker.ref)).stdout.includes('bridge.mjs');
+/** The key that answers Claude's "Background work is running" dialog with Exit, or null when that dialog isn't showing. */
+export function exitChoice(screen) {
+  const m = /Background work is running[\s\S]*?(\d)\.\s*Exit and stop tasks/.exec(String(screen));
+  return m ? m[1] : null;
+}
+
 /** /exit the worker's agent and wait for its pane's shell; false when it didn't exit within a minute. */
 async function exitAgent(worker) {
   await herdr('pane', 'send-text', worker.ref, '/exit'); await herdr('pane', 'send-keys', worker.ref, 'enter');
-  for (let i = 0; i < 20 && !(await atShell(worker)); i++) await pause(3000);
+  for (let i = 0; i < 20 && !(await atShell(worker)); i++) {
+    await pause(3000);
+    // Callers exit only between jobs, so the tasks it stops are a finished job's leftovers (Alex, TB-158 a).
+    const key = exitChoice((await herdr('pane', 'read', worker.ref, '--source', 'visible').catch(() => ({ stdout: '' }))).stdout);
+    if (key) await herdr('pane', 'send-keys', worker.ref, key);
+  }
   return atShell(worker);
 }
 
