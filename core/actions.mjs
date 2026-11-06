@@ -14,7 +14,7 @@ const BUILD = {
   },
   // A named branch is kept on the record, so the worker's PR joins it instead of becoming a record (W-180).
   assign: ({ work, branch, ...a }) => { need({ work, ...a }, 'work', 'assignmentId', 'kind', 'status'); return [...branchLink(work, branch), ev(work, { ...a, type: 'assign' })]; },
-  progress: a => { need(a, 'work'); return [...branchLink(a.work, a.branch), ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text } : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn } : { type: 'note', text: a.text })]; },
+  progress: a => { need(a, 'work'); return [...branchLink(a.work, a.branch), ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text } : a.discovery ? { type: 'discovery', text: a.discovery, objective: a.text } : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn } : { type: 'note', text: a.text })]; },
   done: a => {
     need(a, 'work');
     const link = a.pr ? [{ kind: 'update', target: a.work, payload: { links: { pr: a.pr } } }] : [];

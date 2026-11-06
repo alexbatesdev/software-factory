@@ -24,3 +24,8 @@ test('a blocked report carries what it waits on to the board', () => {
   const [c] = commandsFor('progress', { work: 'W-1', assignmentId: 'R1', expectedVersion: 2, stage: 'blocked', waitingOn: 'TB-9', text: 'x' });
   assert.equal(c.payload.waitingOn, 'TB-9');
 });
+
+test('a progress note naming a discovery proposes it as its own record', () => {
+  const [c] = commandsFor('progress', { work: 'W-1', discovery: 'Export URL breaks on a query string', text: 'ExportForm appends ?full_data=1' });
+  assert.deepEqual(c.payload, { type: 'discovery', text: 'Export URL breaks on a query string', objective: 'ExportForm appends ?full_data=1' });
+});
