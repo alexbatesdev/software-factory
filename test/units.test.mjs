@@ -55,3 +55,10 @@ test("Alex merging past a wait or an open question closes the record and names w
   const partial = run({ ...works, 'W-60': { ...works['W-60'], coverage: { state: 'partial' } } }).find(c => c.id === 'W-60');
   assert.equal(partial.raise, true, 'work left beyond the PR: Alex hears, the record stays open');
 });
+
+test('a task record that holds its own PR, with no PR record of its own, closes when that PR merges (W-149 #8487)', () => {
+  const ws = { 'W-149': { id: 'W-149', phase: 'fixes', source: { type: 'teamwork', key: 'tw-1' }, links: { pr: PR(8487) } } };
+  const run = state => mergeCloses(ws, { 'tw-1': 'W-149', 'built-rails-8487': 'W-149' }, { prState: u => state, openQuestions: () => 0, track: () => 'stream' });
+  assert.deepEqual(run('MERGED').map(c => [c.id, c.prs]), [['W-149', [PR(8487)]]]);
+  assert.deepEqual(run('OPEN'), []);
+});

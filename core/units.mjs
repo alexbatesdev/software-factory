@@ -49,8 +49,10 @@ export function mergeCloses(works, bySource, { prState, openQuestions, track }) 
     const n = openQuestions(w.id), outstanding = [w.waitingOn && `waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`, n && `${n} open question(s)`].filter(Boolean);
     // Partial or unknown coverage means work is left beyond the PR: raised to Alex, not closed.
     const c = { id: w.id, outstanding, ...(['partial', 'unknown', 'none'].includes(w.coverage?.state) && { raise: true }) };
-    if (isPrUnit(w, bySource) && merged(w.id)) out.push({ ...c, prs: [w.links.pr] });
     const us = g.unitsOf[w.id] || [];
+    // A task that holds its own PR's key and has no separate PR record is its own unit (W-149).
+    const ownUnit = isPrUnit(w, bySource) || (!us.length && !!w.links?.pr && bySource[prKey(w.links.pr)] === w.id);
+    if (ownUnit && merged(w.id)) out.push({ ...c, prs: [w.links.pr] });
     if (us.length && us.every(merged)) out.push({ ...c, prs: us.map(u => works[u].links.pr) });
   }
   return out;
