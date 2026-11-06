@@ -149,3 +149,11 @@ test('a verify on a record whose PR already merged closes no-change against main
  const x=ev(w,verify,{...ctx,prState:{url,head,state:'MERGED',isDraft:false}});
  assert.deepEqual([x.phase,x.completion.kind,x.completion.verifiedOn],['done','no-change',main]);
 });
+test('heal returns a ready PR with a waiver at its head and nothing open to approval wait, not to a review (W-86/W-192 at 21:14Z)',()=>{
+ let w=ready();w.phase='fixes';w.approvalWait=null;w.requests=[...w.requests,{id:'R9',type:'fixes',head,at:'2026-11-06T21:00:00Z',ack:{by:'sup',outcome:'declined',at:'2026-11-06T21:01:00Z'}}];
+ assert.ok(W.stranded(w,'2026-11-06T21:30:00Z'));
+ assert.equal(ev(w,{type:'heal',isDraft:false},{...ctx,now:'2026-11-06T21:00:00Z'}).phase,'rereview','replayed as recorded before the rule');
+ const x=ev(w,{type:'heal',isDraft:false},{...ctx,now:'2026-11-06T21:30:00Z'});
+ assert.equal(x.phase,'awaiting_human_approval');assert.equal(x.requests.length,w.requests.length,'no review request');
+ assert.equal(ev(w,{type:'heal',isDraft:true},{...ctx,now:'2026-11-06T21:30:00Z'}).phase,'rereview','a draft PR still gets its review');
+});

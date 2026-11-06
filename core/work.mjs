@@ -609,6 +609,8 @@ export function applyEvent(work, e, ctx) {
       const clean = w.reviews.some(r => sameSha(r.head, w.head) && r.result === 'clean');
       if (open) { w.phase = 'fixes'; w.approvalWait = null; requestFixes(w, ctx); note(w, ctx, `Stranded (nothing live or pending): fixes requested for the open findings.`); }
       else if (clean && gate(w, ctx).ok && e.isDraft === false) enterApprovalWait(w, ctx, `healed: clean review at ${w.head}, PR marked ready`);
+      // A ready PR is waived from internal review (Alex's standing waiver), so heal doesn't ask for one.
+      else if (e.isDraft === false && ctx.now >= HEAL_WAIVER_FROM && (w.internalReviewWaivers || []).some(x => sameSha(x.head, w.head) && x.prUrl === w.links?.pr)) enterApprovalWait(w, ctx, `healed: PR marked ready, review waived at ${w.head}`);
       else if (clean && gate(w, ctx).ok) { w.phase = 'ready_for_human'; note(w, ctx, `Stranded: back to ready for human, clean review at ${w.head}.`); }
       else { w.phase = 'rereview'; w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head }); note(w, ctx, `Stranded (nothing live or pending): review requested at ${w.head}.`); }
       break;
@@ -790,6 +792,7 @@ const FINDINGS_FOLLOW_HEAD_FROM = '2026-11-05T22:00:00.000Z';
 const FEEDBACK_NO_CHANGE_FROM = '2026-11-05T22:30:00.000Z';
 // W-210: a clean review settles open review findings recorded at its own head as well as earlier ones.
 const SAME_HEAD_CLEAN_FROM = '2026-11-05T22:45:00.000Z';
+const HEAL_WAIVER_FROM = '2026-11-06T21:18:00.000Z';
 const DECLINE_SETTLES_FROM = '2026-11-06T20:38:00.000Z';
 /** Fixes with nothing pending strands a record: queue the request unless one is already open for this head. */
 function requestFixes(w, ctx) {
