@@ -185,3 +185,16 @@ test("a review at a head GitHub already shows but the board hasn't polled yet re
     assert.deepEqual([w.head, w.reviews.at(-1).head], ['bbb2222', 'bbb2222']);
   } finally { f.close(); }
 });
+
+test('a record whose PR Alex closed resolves only once GitHub shows the PR closed (W-124: TB-126 a)', async () => {
+  const remote = { url: PRURL, head: 'aaa1111', state: 'OPEN', isDraft: true };
+  const f = await serveWith({ readPr: async () => remote });
+  try {
+    started(f);
+    const [bad, err] = await f.act('triage board worker', 'resolve', { work: 'W-1', note: 'Alex closed the PR (TB-126 a)' });
+    assert.equal(bad, 400); assert.match(err.error, /ready gate/);
+    remote.state = 'CLOSED';
+    assert.equal((await f.act('triage board worker', 'resolve', { work: 'W-1', note: 'Alex closed the PR (TB-126 a)' }))[0], 200);
+    assert.equal(f.store.state.work['W-1'].phase, 'done');
+  } finally { f.close(); }
+});

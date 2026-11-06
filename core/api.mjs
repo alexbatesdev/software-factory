@@ -46,6 +46,9 @@ export function createApi({ store, config, readPr = async () => null, now = () =
       const live = await readPr(rec.links.pr);
       if (live?.head && (live.head.startsWith(args.head) || args.head.startsWith(live.head))) cmds = [{ kind: 'observe_head', target: rec.id, payload: { sha: live.head, via: 'github', isDraft: live.isDraft } }, ...cmds.map(c => c.payload?.type === 'review' ? { ...c, payload: { ...c.payload, head: live.head } } : c)];
     }
+    // PR work whose PR was closed unmerged (Alex's call, e.g. TB-126 a) resolves once GitHub confirms it closed.
+    if (action === 'resolve' && rec?.links?.pr && (await readPr(rec.links.pr))?.state === 'CLOSED')
+      cmds = cmds.map(c => c.payload?.type === 'resolve' ? { ...c, payload: { ...c.payload, prClosed: rec.links.pr } } : c);
     return [200, { ok: true, results: store.appendAll(cmds, ctx) }];
   }
 
