@@ -78,3 +78,24 @@ test("a recreated sandbox gets back Alex's comment hook without losing its other
   assert.equal(once.hooks.PreToolUse.filter(h => h.hooks.some(x => x.command === ROBOT_HOOK.hooks[0].command)).length, 1);
   assert.deepEqual(withBaseline(once), once, 'applying it twice changes nothing');
 });
+
+test('a worker whose session finished a job restarts fresh at the boundary, after a quiet spell, and only when switched on', () => {
+  const t = Date.parse('2026-11-06T18:00:00Z'), iso = ms => new Date(ms).toISOString();
+  const works = { 'W-1': { id: 'W-1', stream: S, updates: [{ at: iso(t - 600000), by: 'sbx: s' }], assignments: [{ id: 'R1', kind: 'implementation', status: 'done', history: [{ status: 'done', at: iso(t - 600000) }] }] } };
+  const base = { units: [unit('idle')], health: {}, works, supervisors: [S], now: t, restartStale: true };
+  assert.deepEqual(planRecycles({ ...base, sessions: { u: t - 3600000 } }).due.map(d => [d.unit, d.restart]), [['u', true]]);
+  assert.deepEqual(planRecycles({ ...base, sessions: { u: t - 300000 } }).due, [], 'a session started after the last job is fresh');
+  const parkedJob = { 'W-2': { id: 'W-2', stream: S, assignments: [{ id: 'R1', kind: 'implementation', status: 'blocked', waitingOn: 'TB-9' }] } };
+  assert.equal(planRecycles({ ...base, works: { ...works, ...parkedJob }, sessions: { u: t - 3600000 } }).due.length, 1, 'a parked job does not hold the worker');
+  assert.deepEqual(planRecycles({ ...base, restartStale: false, sessions: { u: t - 3600000 } }).due, [], 'off by default');
+  assert.deepEqual(planRecycles({ ...base, units: [unit('working')], sessions: { u: t - 3600000 } }).due, [], 'never while the worker is working');
+  const fresh = { 'W-1': { ...works['W-1'], updates: [{ at: iso(t - 60000), by: S }] } };
+  assert.deepEqual(planRecycles({ ...base, works: fresh, sessions: { u: t - 3600000 } }).due, [], 'not while the supervisor may be briefing');
+});
+
+test("a worker's health reading carries its disk use and when its agent session started", async () => {
+  const { parseHealth } = await import('../hosts/sbx.mjs');
+  const out = 'Filesystem 1024-blocks Used Available Capacity Mounted on\noverlay 20466256 7206360 12194936 38% /\n--\n  85676\n';
+  assert.deepEqual(parseHealth(out, 100000000), { diskPct: 0.38, agentSince: 100000000 - 85676000 });
+  assert.deepEqual(parseHealth(out.replace('  85676\n', ''), 1), { diskPct: 0.38, agentSince: null }, 'no agent running');
+});

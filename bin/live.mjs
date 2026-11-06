@@ -254,10 +254,20 @@ async function recycleTick() {
   for (const u of fleet.units.filter(u => supervisors.includes(u.supervisor?.label) && (u.worker?.sandbox || RC.host !== 'sbx'))) {
     try { health[u.id] = await host.health(u.worker); } catch (e) { once(`health ${u.worker?.label}: ${e.message}`); }
   }
-  const plan = planRecycles({ units: fleet.units, health, works: store.state.work, threshold: RC.threshold, recycling, supervisors });
+  // When each worker's agent session started, read inside its sandbox with the disk check.
+  const sessions = Object.fromEntries(Object.entries(health).filter(([, h]) => h?.agentSince).map(([k, h]) => [k, h.agentSince]));
+  const plan = planRecycles({ units: fleet.units, health, works: store.state.work, threshold: RC.threshold, recycling, supervisors, sessions, restartStale: !!RC.restartStale });
   drain = plan.drain;
   for (const d of plan.due) {
     const tell = (to, about, text) => apply([{ kind: 'message', payload: { to, about, text: `[software factory] ${text}` } }], 'board');
+    if (d.restart) {
+      if (DRY) { once(`dry run: would restart ${d.worker.label}`); continue; }
+      const r = await host.restart(d.worker).catch(e => ({ ok: false, detail: e.message }));
+      log(`restart ${d.worker.label}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
+      if (r.ok) { delete health[d.unit]; tell(d.to, { restarted: `${d.worker.label}/${now()}` }, `${d.worker.label} was restarted between jobs (a fresh session in the same sandbox: repo and disk kept, context gone). Brief it cold. If its pane parks on a startup dialog, send it to local-head.`); }
+      else tell(config.boardLead?.seat || 'board lead', { restartFailed: `${d.worker.label}/${now()}` }, `Restarting ${d.worker.label} between jobs failed: ${r.detail}. File it as a factory record if it repeats.`);
+      continue;
+    }
     const found = await host.preflight(d.worker).catch(e => [{ path: '(preflight)', problem: e.message, blocking: true }]);
     const problems = found.filter(p => p.blocking), dropped = found.filter(p => !p.blocking).map(p => `${p.path}: ${p.problem}`).join('; ');
     if (problems.length) {

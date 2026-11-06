@@ -50,9 +50,15 @@ git worktree list --porcelain | sed -n 's/^worktree //p' | while read -r d; do
   printf '%s\\t%s\\t%s\\t%s\\n' "$d" "$dirty" "$state" "$age"
 done`;
 
+/** `df -P /`, then `--`, then the agent's elapsed seconds (none when no agent runs), as {diskPct, agentSince (epoch ms)}. */
+export function parseHealth(out, nowMs = Date.now()) {
+  const [df, agent = ''] = String(out).split('\n--\n'), secs = Number(agent.trim());
+  return { diskPct: parseDf(df), agentSince: agent.trim() && Number.isFinite(secs) ? nowMs - secs * 1000 : null };
+}
+
 export async function health(worker) {
-  const { stdout } = await run('sbx', ['exec', worker.sandbox, 'df', '-P', '/'], { timeout: 20000 });
-  return { diskPct: parseDf(stdout) };
+  const { stdout } = await run('sbx', ['exec', worker.sandbox, 'sh', '-c', 'df -P /; echo --; p=$(pgrep -o -x claude) && ps -o etimes= -p "$p"; true'], { timeout: 20000 });
+  return parseHealth(stdout);
 }
 
 export async function preflight(worker) {
@@ -128,14 +134,28 @@ export async function installBoardMcp(sandbox, { port = 4849 } = {}) {
   await run('sbx', ['exec', sandbox, 'bash', '-lc', `claude mcp remove -s user software-factory >/dev/null 2>&1; ${sh(add)}`], { timeout: 60000 });
 }
 
+const herdr = (...a) => run('herdr', a, { timeout: 30000 });
+const atShell = async worker => !(await herdr('pane', 'process-info', '--pane', worker.ref)).stdout.includes('bridge.mjs');
+/** /exit the worker's agent and wait for its pane's shell; false when it didn't exit within a minute. */
+async function exitAgent(worker) {
+  await herdr('pane', 'send-text', worker.ref, '/exit'); await herdr('pane', 'send-keys', worker.ref, 'enter');
+  for (let i = 0; i < 20 && !(await atShell(worker)); i++) await pause(3000);
+  return atShell(worker);
+}
+
+/** A fresh agent session in the same sandbox: its disk, repo and installed board MCP stay; its context doesn't. */
+export async function restart(worker) {
+  const line = await bridgeLine(worker);
+  if (!(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit' };
+  await herdr('pane', 'run', worker.ref, line);
+  for (let i = 0; i < 20; i++) { await pause(3000); if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}` }; }
+  return { ok: false, detail: `no agent running in ${worker.sandbox} a minute after the restart` };
+}
+
 /** Exit the agent, remove the sandbox, then the plugin's bridge recreates it (same name, template and kit) in the same pane. */
 export async function recycle(worker, log = () => {}) {
-  const herdr = (...a) => run('herdr', a, { timeout: 30000 });
   const line = await bridgeLine(worker);
-  const atShell = async () => !(await herdr('pane', 'process-info', '--pane', worker.ref)).stdout.includes('bridge.mjs');
-  await herdr('pane', 'send-text', worker.ref, '/exit'); await herdr('pane', 'send-keys', worker.ref, 'enter');
-  for (let i = 0; i < 20 && !(await atShell()); i++) await pause(3000);
-  if (!(await atShell())) return { ok: false, detail: 'the agent did not exit; nothing removed' };
+  if (!(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit; nothing removed' };
   log(`recycle ${worker.label}: agent exited; removing ${worker.sandbox}`);
   await run('sbx', ['rm', '--force', worker.sandbox], { timeout: 300000 });
   await herdr('pane', 'run', worker.ref, line);
@@ -144,7 +164,7 @@ export async function recycle(worker, log = () => {}) {
   for (let i = 0; i < 120; i++) {
     await pause(10000);
     const { stdout } = await run('sbx', ['ls'], { timeout: 20000 }).catch(() => ({ stdout: '' }));
-    if (new RegExp(`^${worker.sandbox}\\s+\\S+\\s+running`, 'm').test(stdout) && !(await atShell())) {
+    if (new RegExp(`^${worker.sandbox}\\s+\\S+\\s+running`, 'm').test(stdout) && !(await atShell(worker))) {
       // The fresh VM has no ~/.claude of Alex's; the running session picks the hook up from its settings file.
       const hook = await restoreBaseline(worker.sandbox).then(() => 'comment hook restored', e => `comment hook NOT restored: ${e.message}`);
       return { ok: true, detail: `${worker.sandbox} recreated and its agent started; ${hook}` };
