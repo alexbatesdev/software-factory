@@ -70,3 +70,9 @@ test('a trusted-review pane, under either label form, is a trusted reviewer with
   for (const a of ['read', 'progress', 'ack']) assert.match(refusal('trusted-reviewer', a, { work: 'W-1', text: 'started' }), /may not/, a);
   assert.match(refusal('trusted-reviewer', 'done'), /may not done/);
 });
+
+test('the board lead acks the answer to a question it asked, not anyone else\'s (W-260: TB-156, TB-163)', () => {
+  const ctx = { seat: 'board lead', questions: { 'TB-156': { from: 'board lead' }, 'TB-9': { from: 'sup: stream-1' } } };
+  assert.equal(refusal('board-lead', 'ack', { ref: 'TB-156' }, ctx), null);
+  assert.match(refusal('board-lead', 'ack', { ref: 'TB-9' }, ctx), /only messages/);
+});

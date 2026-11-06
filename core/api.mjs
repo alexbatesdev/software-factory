@@ -24,7 +24,7 @@ export function createApi({ store, config, readPr = async () => null, now = () =
 
   async function act(seat, action, args) {
     const role = roleOf(config, seat);
-    const why = role ? refusal(role, action, args) : `"${seat || '(no seat)'}" is not a factory seat.`;
+    const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state;
     if (action === 'route' && args.setOwner) args = { ...args, setOwnerOf: s.questions[args.id]?.work || undefined };
