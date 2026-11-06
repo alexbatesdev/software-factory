@@ -39,3 +39,8 @@ test('a record nobody started can be withdrawn with a reason; started work canno
   const started = { ...createWork({ id: 'W-2', title: 'x' }, ctx), assignments: [{ id: 'R1', status: 'started' }] };
   assert.throws(() => applyEvent(started, c.payload, ctx), /started/);
 });
+
+test('triage can set the repo a record works in, so a host-repo record reaches its host stream (W-233)', () => {
+  const cmds = commandsFor('triage', { work: 'W-1', bucket: 'ready', repo: 'teamwork-mini-mcp' });
+  assert.deepEqual(cmds[0], { kind: 'update', target: 'W-1', payload: { repo: 'teamwork-mini-mcp' } });
+});

@@ -44,7 +44,7 @@ const BUILD = {
   triage: a => {
     need(a, 'work', 'bucket');
     if (!['ready', 'clarify', 'intake'].includes(a.bucket)) fail('Triage a record ready, clarify or intake.');
-    return [{ kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }];
+    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }];
   },
   // Repair (board developer): a poller's duplicate record folds into the record that carries the work.
   absorb: a => { need(a, 'work', 'into'); return [ev(a.work, { type: 'absorb', into: a.into })]; },
