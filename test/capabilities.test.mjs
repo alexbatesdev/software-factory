@@ -23,7 +23,8 @@ test('every role file lists exactly the actions this table grants it', () => {
   for (const [role, actions] of Object.entries(ROLES)) {
     if (actions === ACTIONS || role === 'sbx-worker') continue; // sbx workers get their instructions in the brief, not a role file
     const text = readFileSync(join(homedir(), 'Code/.claude/agents', `${role}.md`), 'utf8');
-    const line = text.match(/\*\*Board actions:\*\* (.*)/)[1];
+    const line = text.match(/\*\*Board actions:\*\* (.*)/)?.[1];
+    if (!actions.length) { assert.equal(line, undefined, `${role} has no board actions, so its file names none`); continue; }
     const named = line.replace(/\(.*?\)/g, '').replace(/\.$/, '').split(',').map(s => s.trim());
     assert.deepEqual(named.sort(), [...actions].sort(), role);
   }
@@ -58,7 +59,7 @@ test('every seat can ack the messages in its own inbox', () => {
   for (const role of Object.keys(ROLES).filter(r => r !== 'trusted-reviewer')) assert.equal(refusal(role, 'ack', { ref: 'M-1' }), null, role);
 });
 
-test('a trusted-review pane, under either label form, is a trusted reviewer that only reads and adds notes; its record is trusted-review work', async () => {
+test('a trusted-review pane, under either label form, is a trusted reviewer with no board actions (PR review carve-out, Alex 11-06); its record is trusted-review work', async () => {
   const { roleOf } = await import('../core/api.mjs');
   const { trackOf } = await import('../core/work.mjs');
   for (const seat of ['pr-8434-trusted', 'trusted-review-8434']) {
@@ -66,7 +67,6 @@ test('a trusted-review pane, under either label form, is a trusted reviewer that
     assert.equal(trackOf({ id: 'W-1', owner: seat }), 'trusted-review', seat);
   }
   assert.equal(roleOf({}, 'pr-8434'), null);
-  assert.equal(refusal('trusted-reviewer', 'progress', { work: 'W-1', text: 'started' }), null);
-  assert.match(refusal('trusted-reviewer', 'progress', { work: 'W-1', assignmentId: 'R1' }), /notes/);
+  for (const a of ['read', 'progress', 'ack']) assert.match(refusal('trusted-reviewer', a, { work: 'W-1', text: 'started' }), /may not/, a);
   assert.match(refusal('trusted-reviewer', 'done'), /may not done/);
 });

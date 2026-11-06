@@ -7,7 +7,7 @@ export const ROLES = {
   'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask'],
   'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify'],
   'board-developer': ACTIONS,
-  'trusted-reviewer': ['read', 'progress'],
+  'trusted-reviewer': [], // PR review carve-out (Alex, 11-06): trusted reviews run off the board
   // A stream's sbx worker, on the sandbox port only. Its instructions come in its brief, not a role file.
   'sbx-worker': ['read', 'ack', 'progress'],
 };
@@ -24,7 +24,6 @@ const LIMITS = {
     ack: a => /^M-\d+$/.test(a.ref || '') || 'the board lead acks only messages addressed to it' },
   'sbx-worker': { progress: a => !a.assignmentId || 'a worker adds notes (and its branch); its supervisor records the assignment\'s stages',
     ack: a => /^M-\d+$/.test(a.ref || '') || 'a worker acks only messages addressed to it' },
-  'trusted-reviewer': { progress: a => !a.assignmentId || 'a trusted reviewer adds notes only; its dispatcher records the assignment' },
   'questions-router': { set_owner: noPin, ack: a => /^M-\d+$/.test(a.ref || '') || 'the questions router acks only messages addressed to it' },
 };
 
