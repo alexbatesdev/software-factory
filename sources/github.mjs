@@ -40,7 +40,7 @@ const RED = ['FAILURE', 'ERROR', 'TIMED_OUT', 'STARTUP_FAILURE'];
 // A bot (a GitHub app, or a 🤖-signed account like Hermes) counts only when it reports a finding.
 const isBot = c => c.author?.__typename === 'Bot' || c.body.trimStart().startsWith('🤖');
 const isFinding = body => body.includes('codex-code-review-finding') || /hermes-verdict \w+ \([^)]*found=[1-9]/.test(body);
-const ISSUE = 'id number url state createdAt author{login}';
+const ISSUE = 'id number url state createdAt author{login __typename} comments(last:1){nodes{author{login}}}';
 export async function readPrHealth(specs, owner, run = exec, me = null, since = '') {
   const out = new Map();
   for (let i = 0; i < specs.length; i += 30) {
@@ -66,7 +66,7 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(c => ({ id: c.id, by: by(c), url: c.url }));
       // QA files findings as sub-issues of an issue that references the PR (#8244): each open one is feedback until QA closes it.
       const issues = [...new Map((p.refs?.nodes || []).map(r => r.source).filter(x => x?.id).flatMap(x => x.subIssues?.nodes?.length ? x.subIssues.nodes : [x])
-        .filter(x => x.state === 'OPEN' && by(x) !== me && x.createdAt > since).map(x => [x.id, { id: x.id, by: by(x), url: x.url }])).values()];
+        .filter(x => x.state === 'OPEN' && by(x) !== me && x.author?.__typename !== 'Bot' && by(x.comments?.nodes?.[0]) !== me && x.createdAt > since).map(x => [x.id, { id: x.id, by: by(x), url: x.url }])).values()];
       out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads, comments: [...said, ...issues] });
     });
   }

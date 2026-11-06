@@ -122,6 +122,18 @@ test("QA's sub-issues on an issue that references the PR count as feedback, open
   assert.deepEqual(h.comments.map(c => [c.id, c.by, c.url]), [['I81', 'chelsieminor', 'https://github.com/o/r/issues/8581']], 'once each; closed and pre-cutoff ones skipped');
 });
 
+test("an issue whose last word is Alex's, or one a bot opened with nothing under it, isn't feedback (W-86 R3 #8581, W-192 R6 #8584)", async () => {
+  const { readPrHealth } = await import('../sources/github.mjs');
+  const iss = (id, n, extra = {}) => ({ id, number: n, url: `u/${n}`, state: 'OPEN', createdAt: '2026-11-06T00:00:00Z', author: { login: 'chelsieminor', __typename: 'User' }, subIssues: { nodes: [] }, comments: { nodes: [] }, ...extra });
+  const answered = iss('I81', 8581, { comments: { nodes: [{ author: { login: 'alexbatesdev' } }] } });
+  const auto = iss('I84', 8584, { author: { login: 'github-actions', __typename: 'Bot' } });
+  const fresh = iss('I85', 8585, { comments: { nodes: [{ author: { login: 'chelsieminor' } }] } });
+  const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'a1', commits: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, summaries: { nodes: [] },
+    refs: { nodes: [{ source: iss('I80', 8580, { subIssues: { nodes: [answered, fresh] } }) }, { source: auto }] } } } };
+  const h = (await readPrHealth(['built-rails:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-05T00:00:00Z')).get('built-rails:1');
+  assert.deepEqual(h.comments.map(c => c.id), ['I85']);
+});
+
 test("a Teamwork task's feedback: others' comments after Alex last spoke and after the cutoff, never Teamwork Sync's PR notices", async () => {
   const { taskFeedback } = await import('../sources/teamwork.mjs');
   const c = (id, by, at, body = 'Can we also hide it here?') => ({ id, postedByUserId: by, postedDateTime: at, body });
