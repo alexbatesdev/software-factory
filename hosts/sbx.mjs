@@ -113,6 +113,16 @@ export function withBaseline(settings = {}) {
   return { ...settings, ...QUIET, hooks: { ...settings.hooks, PreToolUse: hooked ? pre : [...pre, ROBOT_HOOK] } };
 }
 
+// "Make auto mode your default permission mode?" shows at agent start until this is set in ~/.claude.json (W-198).
+export const withSeenNudge = state => ({ ...state, hasSeenAutoDefaultNudge: true });
+const CLAUDE_STATE = '/home/agent/.claude.json';
+/** Mark the auto-mode offer seen. Write it while the agent is stopped: a running Claude rewrites this file from memory. */
+export async function markNudgeSeen(sandbox) {
+  const cur = await run('sbx', ['exec', sandbox, 'cat', CLAUDE_STATE], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
+  if (cur.hasSeenAutoDefaultNudge) return;
+  await new Promise((resolve, reject) => { const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `cat > ${CLAUDE_STATE}`], { timeout: 60000 }, e => e ? reject(e) : resolve()); p.stdin.end(JSON.stringify(withSeenNudge(cur), null, 2)); });
+}
+
 /** Put the comment hook script and its settings entry back in a sandbox. */
 export async function restoreBaseline(sandbox) {
   const put = (path, text) => new Promise((resolve, reject) => {
@@ -123,6 +133,7 @@ export async function restoreBaseline(sandbox) {
   const cur = await run('sbx', ['exec', sandbox, 'cat', '/home/agent/.claude/settings.json'], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
   await put('/home/agent/.claude/settings.json', JSON.stringify(withBaseline(cur), null, 2) + '\n');
   await installBoardMcp(sandbox);
+  await markNudgeSeen(sandbox);
 }
 
 /** The worker's way onto the board: the factory's sandbox port, with this sandbox's name and token (sbx-workers-on-the-board). */
@@ -147,6 +158,7 @@ async function exitAgent(worker) {
 export async function restart(worker) {
   const line = await bridgeLine(worker);
   if (!(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit' };
+  await markNudgeSeen(worker.sandbox).catch(() => {}); // the unblocker rule still covers the dialog if this fails
   await herdr('pane', 'run', worker.ref, line);
   for (let i = 0; i < 20; i++) { await pause(3000); if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}` }; }
   return { ok: false, detail: `no agent running in ${worker.sandbox} a minute after the restart` };

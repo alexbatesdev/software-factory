@@ -99,3 +99,9 @@ test("a worker's health reading carries its disk use and when its agent session 
   assert.deepEqual(parseHealth(out, 100000000), { diskPct: 0.38, agentSince: 100000000 - 85676000 });
   assert.deepEqual(parseHealth(out.replace('  85676\n', ''), 1), { diskPct: 0.38, agentSince: null }, 'no agent running');
 });
+
+test("the sandbox baseline marks Claude's auto-mode default offer as seen, keeping the rest of its state (W-198)", async () => {
+  const { withSeenNudge } = await import('../hosts/sbx.mjs');
+  assert.deepEqual(withSeenNudge({ numStartups: 4, hasSeenAutoDefaultNudge: false }), { numStartups: 4, hasSeenAutoDefaultNudge: true });
+  assert.deepEqual(withSeenNudge({}), { hasSeenAutoDefaultNudge: true });
+});

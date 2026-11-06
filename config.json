@@ -179,7 +179,7 @@
     "threshold": 0.75,
     "host": "sbx",
     "healthMs": 300000,
-    "restartStale": false,
-    "_restartStale": "Restart a worker fresh between jobs (same sandbox). Off until W-198 (auto-mode startup dialog) is decided: a fresh start can park on it."
+    "restartStale": true,
+    "_restartStale": "Restart a worker fresh between jobs (same sandbox). W-198: the sandbox marks the auto-mode offer seen, and the unblocker declines it if it still shows (Alex, 11-06)."
   }
 }
