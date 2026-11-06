@@ -63,7 +63,7 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
       const said = [...(p.comments?.nodes || []), ...(p.summaries?.nodes || []).map(r => ({ ...r, createdAt: r.submittedAt }))]
         .filter(c => by(c) !== me && c.body?.trim() && (!isBot(c) || isFinding(c.body)) && c.createdAt > lastMine)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(c => ({ id: c.id, by: by(c), url: c.url }));
-      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads: [...threads, ...said] });
+      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads, comments: said });
     });
   }
   return out;

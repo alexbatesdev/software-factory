@@ -121,3 +121,11 @@ test('a fixes request acked received (queued behind other work) is pending, so t
  r.ack.outcome = 'declined';
  assert.ok(W.stranded(w, later.now), 'a declined request leaves it stranded');
 });
+
+test('a new comment (PR conversation or Teamwork task) reopens approval-wait work once, as comment feedback, not a review thread', () => {
+ const later = { ...ctx, now: '2026-11-06T05:00:00Z' };
+ const fb = W.observeHealth(ready(), { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-3', by: 'teamwork user 7', url: 'u' }] }, later);
+ assert.deepEqual([fb.phase, fb.findings.at(-1).source.type], ['fixes', 'comments']);
+ assert.doesNotMatch(fb.findings.at(-1).text, /review thread/);
+ assert.equal(W.observeHealth(fb, { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-3', by: 'x', url: 'u' }] }, later), fb, 'told once');
+});

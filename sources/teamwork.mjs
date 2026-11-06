@@ -39,3 +39,26 @@ export async function readTasks() {
   const { tasks, users } = await tw.listTasksAssignedTo(me.id);
   return tasks.map(t => projectTask(t, users));
 }
+
+// Teamwork Sync's mirror of a GitHub event ("**login** submitted a review to the PR: ... github.com/.../pull/n"): GitHub is read directly.
+const SYNC_NOTICE = /^\s*\*\*[\w-]+\*\* [\s\S]*?github\.com\/[^\s)]+\/pull\/\d+/;
+/**
+ * A task's feedback, newest last: comments from anyone but Alex, after his last comment on the task and after `since`.
+ * Pure; ids are namespaced so they can't collide with GitHub ids in a finding's source.
+ */
+export function taskFeedback(taskId, comments, { me, since = '', site }) {
+  const mine = comments.filter(c => c.postedByUserId === me).map(c => c.postedDateTime);
+  const after = [since, ...mine].sort().at(-1) || '';
+  return comments.filter(c => c.postedByUserId !== me && !c.deleted && c.postedDateTime > after && !SYNC_NOTICE.test(c.body || ''))
+    .sort((a, b) => a.postedDateTime.localeCompare(b.postedDateTime))
+    .map(c => ({ id: `tw-comment-${c.id}`, by: `teamwork user ${c.postedByUserId}`, url: `https://${site}/app/tasks/${taskId}?c=${c.id}` }));
+}
+
+/** taskId → its feedback (taskFeedback), for each of these tasks. An unreadable task is left out. */
+export async function readTaskFeedback(ids, since) {
+  const tw = await client(), me = (await tw.getCurrentUser()).id, out = new Map();
+  for (const id of ids) {
+    try { out.set(id, taskFeedback(id, (await tw.getTaskComments(id, { limit: 30 })).comments, { me, since, site: process.env.TEAMWORK_SITE })); } catch {}
+  }
+  return out;
+}

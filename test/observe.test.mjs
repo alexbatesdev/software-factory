@@ -107,7 +107,17 @@ test('the health read counts conversation comments and review summaries from oth
       c('IC6', 'built-engineering-bot', '2026-11-06T11:03:10Z', '🤖 *Not a human. This is Hermes* <!-- hermes-verdict COMMENT (report-rows=14 found=0 proven=0) -->'), c('IC7', 'built-engineering-bot', '2026-11-06T11:03:20Z', '🤖 Hermes <!-- hermes-verdict REQUEST_CHANGES (report-rows=3 found=2 proven=1) -->')] },
     summaries: { nodes: [{ ...c('PRR_9', 'chelsieminor', null, 'one more thing'), submittedAt: '2026-11-06T11:04:00Z' }, { ...c('PRR_8', 'chelsieminor', null, ''), submittedAt: '2026-11-06T11:05:00Z' }] } } } };
   const h = (await readPrHealth(['built-rails:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-06T00:00:00Z')).get('built-rails:1');
-  assert.deepEqual(h.threads.map(t => t.id), ['IC3', 'IC5', 'IC7', 'PRR_9']);
+  assert.deepEqual(h.comments.map(t => t.id), ['IC3', 'IC5', 'IC7', 'PRR_9']); assert.deepEqual(h.threads, []);
   const old = (await readPrHealth(['built-rails:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-06T11:03:30Z')).get('built-rails:1');
-  assert.deepEqual(old.threads.map(t => t.id), ['PRR_9'], 'nothing from before the cutoff');
+  assert.deepEqual(old.comments.map(t => t.id), ['PRR_9'], 'nothing from before the cutoff');
+});
+
+test("a Teamwork task's feedback: others' comments after Alex last spoke and after the cutoff, never Teamwork Sync's PR notices", async () => {
+  const { taskFeedback } = await import('../sources/teamwork.mjs');
+  const c = (id, by, at, body = 'Can we also hide it here?') => ({ id, postedByUserId: by, postedDateTime: at, body });
+  const got = taskFeedback('41', [c(1, 7, '2026-11-05T09:00:00Z'), c(2, 99, '2026-11-05T10:00:00Z'), c(3, 7, '2026-11-05T11:00:00Z'),
+    c(4, 645330, '2026-11-05T12:00:00Z', '\n**alexbatesdev** merged a PR: **x**\n[https://github.com/o/r/pull/1](https://github.com/o/r/pull/1)\n'), c(5, 7, '2026-11-04T00:00:00Z'),
+    c(6, 645330, '2026-11-05T13:00:00Z', ' **chelsieminor** submitted a review to the PR: **x** [https://github.com/o/r/pull/8265](https://github.com/o/r/pull/8265) --- '), c(7, 645330, '2026-11-05T13:01:00Z', '**chelsieminor** added label **QA In Progress** on [PR](https://github.com/o/r/pull/8244)')], { me: 99, since: '2026-11-05T00:00:00Z', site: 'acme.teamwork.com' });
+  assert.deepEqual(got.map(x => [x.id, x.by]), [['tw-comment-3', 'teamwork user 7']]);
+  assert.match(got[0].url, /^https:\/\/acme\.teamwork\.com\/app\/tasks\/41/);
 });

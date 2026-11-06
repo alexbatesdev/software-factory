@@ -684,29 +684,33 @@ const HEALTH_TEXT = {
 const FEEDBACK_TEXT = {
   changes_requested: rs => `Changes requested by ${rs.map(r => `${r.by} (${r.url})`).join(', ')}. Work the review round (review-round skill): verify each thread at the head, fix what's real red-first, post factual replies; resolving threads waits for Alex.`,
   threads: ts => `${ts.length} new unresolved review thread(s): ${ts.map(t => `${t.by} ${t.url}`).join('; ')}. Work them as a review round (review-round skill); resolving waits for Alex.`,
+  comments: cs => `${cs.length} new comment(s) on the PR or its Teamwork task: ${cs.map(c => `${c.by} ${c.url}`).join('; ')}. Read each; fix what's real red-first, and answer factually where it asks something.`,
 };
+/** Feedback from people (and review bots) on a record's PR or task, as finding source types. */
+export const FEEDBACK_TYPES = ['changes_requested', 'threads', 'comments'];
 // Work waiting on review or on Alex goes back to fixes; work being built only gets the finding.
 export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, failing = [], changesRequested = [], threads = [], mainGreen = null }, ctx) {
+export function observeHealth(work, { head, conflict, failing = [], changesRequested = [], threads = [], comments = [], mainGreen = null }, ctx) {
   if (TERMINAL.includes(work.phase) || !head || !sameSha(head, work.head)) return work;
   const seen = type => (work.findings || []).some(f => f.source?.type === type && sameSha(f.source.head, head));
   const fresh = [conflict && 'conflict', failing.length && 'ci'].filter(t => t && !seen(t));
   // Reviewer feedback (W-207) is news once per review and per thread, whatever the head.
   const told = new Set((work.findings || []).flatMap(f => f.source?.ids || []));
-  const reviews = changesRequested.filter(r => !told.has(r.id)), newThreads = threads.filter(t => !told.has(t.id));
+  const reviews = changesRequested.filter(r => !told.has(r.id)), newThreads = threads.filter(t => !told.has(t.id)), newComments = comments.filter(c => !told.has(c.id));
   // W-208: CI still red at a head whose failure was judged "red on main", and main is green now: merging main reruns CI.
   const redOnMain = (work.findings || []).some(f => f.source?.type === 'ci' && sameSha(f.source.head, head) && f.status === 'accepted' && /red on main/i.test(f.note || ''));
   const mergeMain = !!(mainGreen && failing.length && redOnMain && !(work.findings || []).some(f => f.source?.type === 'merge_main' && f.source.main === mainGreen));
-  if (!fresh.length && !reviews.length && !newThreads.length && !mergeMain) return work;
+  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain) return work;
   const w = structuredClone(work);
   if (mergeMain) w.findings.push({ id: nextId(w.findings, 'F'), text: `main is green again at ${mainGreen.slice(0, 7)}, and CI at ${head.slice(0, 7)} failed only on what was red on main. Merge origin/main into the branch (merge, never rebase or force push) and push, so CI reruns.`, severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'merge_main', head, main: mainGreen } });
   for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
   if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id) } });
+  if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id) } });
   if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id) } });
   const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main'),
-    ...(mergeMain ? ['main is green again: merge it in'] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : [])];
+    ...(mergeMain ? ['main is green again: merge it in'] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : []), ...(newComments.length ? [`${newComments.length} new comment(s)`] : [])];
   note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${said.join('; ')}.`);
   if (HEALTH_REOPENS.includes(w.phase)) {
     w.phase = 'fixes'; w.approvalWait = null;
@@ -784,7 +788,7 @@ function finishNoChangeProbe(w, a, ctx) {
   // Finishing this check doesn't finish the PR or dispose of another assignment's work.
   if (!(ctx.now >= NO_CHANGE_MOVES_ON)) return legacyNoChangePhase(w, a, ctx, baseline, remote);
   // A red-CI round that changes nothing is the verdict the CI finding asks for (flake / red on main): accept it.
-  const settles = ['ci', ...(ctx.now >= FEEDBACK_NO_CHANGE_FROM ? ['threads', 'changes_requested'] : [])];
+  const settles = ['ci', ...(ctx.now >= FEEDBACK_NO_CHANGE_FROM ? FEEDBACK_TYPES : [])];
   if (a.kind === 'fixes') for (const f of w.findings.filter(f => f.status === 'open' && settles.includes(f.source?.type) && sameSha(f.source.head, w.head)))
     Object.assign(f, { status: 'accepted', note: `No change (${a.id}): ${a.noChange.evidence}`, at: ctx.now });
   if (!liveAssignment(w)) {

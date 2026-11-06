@@ -19,9 +19,9 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { mergeCloses } from '../core/units.mjs';
-import { TERMINAL, trackOf, stranded } from '../core/work.mjs';
+import { TERMINAL, trackOf, stranded, observeHealth } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen } from '../sources/github.mjs';
-import { readTasks, readTopParents } from '../sources/teamwork.mjs';
+import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -198,6 +198,15 @@ async function teamworkTick() {
     const ids = [...new Set(Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(taskIdOf).filter(Boolean))];
     apply(projectCommands(store.state, await readTopParents(ids, parents)), 'teamwork');
   } catch (e) { log(`projects: ${e.message}`); }
+  // Comments on a record's Teamwork task are feedback like a PR's. ponytail: records with no head yet aren't read.
+  try {
+    const live = Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase) && w.head && taskIdOf(w));
+    const said = await readTaskFeedback([...new Set(live.map(taskIdOf))], COMMENTS_FROM);
+    apply(live.filter(w => said.get(taskIdOf(w))?.length).flatMap(w => {
+      const payload = { head: w.head, conflict: false, failing: [], comments: said.get(taskIdOf(w)) };
+      return observeHealth(w, payload, { now: now(), by: 'teamwork' }) === w ? [] : [{ kind: 'observe_health', target: w.id, payload, ctx: { now: now(), by: 'teamwork' } }];
+    }), 'teamwork');
+  } catch (e) { log(`task comments: ${e.message}`); }
 }
 
 // A working worker's screen with digits and symbols stripped: spinners and timers change, a stuck screen doesn't.
