@@ -616,6 +616,15 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Review requested at ${w.head}. Evidence: ${e.evidence}.`);
       break;
     }
+    case 'withdraw': {
+      // Work that shouldn't be on the board at all (filed by mistake, or a rule moved it off), before anyone started it.
+      if (!e.note) fail('Withdrawing needs the reason.');
+      if (TERMINAL.includes(w.phase) || (w.assignments || []).length) fail(`${w.id} has started or finished; it can't be withdrawn.`);
+      w.phase = 'cancelled';
+      w.completion = { withdrawn: e.note, at: ctx.now, by: ctx.by };
+      note(w, ctx, `Withdrawn: ${e.note}`);
+      break;
+    }
     case 'absorb': {
       // A poller's placeholder for work another record already carries (its PR or task). Only before anyone started it.
       if (!e.into || e.into === w.id) fail('absorb needs the record that carries the work.');

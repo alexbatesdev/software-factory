@@ -29,3 +29,13 @@ test('a progress note naming a discovery proposes it as its own record', () => {
   const [c] = commandsFor('progress', { work: 'W-1', discovery: 'Export URL breaks on a query string', text: 'ExportForm appends ?full_data=1' });
   assert.deepEqual(c.payload, { type: 'discovery', text: 'Export URL breaks on a query string', objective: 'ExportForm appends ?full_data=1' });
 });
+
+test('a record nobody started can be withdrawn with a reason; started work cannot', async () => {
+  const { createWork, applyEvent } = await import('../core/work.mjs');
+  const ctx = { now: '2026-11-06T18:00:00Z', by: 'dev' };
+  const [c] = commandsFor('withdraw', { work: 'W-1', note: 'trusted reviews run off the board (CLAUDE.md:9)' });
+  const w = applyEvent(createWork({ id: 'W-1', title: 'Trusted review #8551' }, ctx), c.payload, ctx).work;
+  assert.deepEqual([w.phase, w.completion.withdrawn], ['cancelled', 'trusted reviews run off the board (CLAUDE.md:9)']);
+  const started = { ...createWork({ id: 'W-2', title: 'x' }, ctx), assignments: [{ id: 'R1', status: 'started' }] };
+  assert.throws(() => applyEvent(started, c.payload, ctx), /started/);
+});
