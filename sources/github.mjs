@@ -40,11 +40,12 @@ const RED = ['FAILURE', 'ERROR', 'TIMED_OUT', 'STARTUP_FAILURE'];
 // A bot (a GitHub app, or a 🤖-signed account like Hermes) counts only when it reports a finding.
 const isBot = c => c.author?.__typename === 'Bot' || c.body.trimStart().startsWith('🤖');
 const isFinding = body => body.includes('codex-code-review-finding') || /hermes-verdict \w+ \([^)]*found=[1-9]/.test(body);
+const ISSUE = 'id number url state createdAt author{login}';
 export async function readPrHealth(specs, owner, run = exec, me = null, since = '') {
   const out = new Map();
   for (let i = 0; i < specs.length; i += 30) {
     const chunk = specs.slice(i, i + 30).map(x => x.split(':'));
-    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}`).join(' ')}}`;
+    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} refs: timelineItems(last:50,itemTypes:[CROSS_REFERENCED_EVENT]){nodes{... on CrossReferencedEvent{source{... on Issue{${ISSUE} subIssues(first:50){nodes{${ISSUE}}}}}}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}`).join(' ')}}`;
     const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000, maxBuffer: 1 << 23 })).stdout);
     chunk.forEach(([repo, n], j) => {
       const p = data?.[`p${j}`]?.pullRequest; if (!p) return;
@@ -63,7 +64,10 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
       const said = [...(p.comments?.nodes || []), ...(p.summaries?.nodes || []).map(r => ({ ...r, createdAt: r.submittedAt }))]
         .filter(c => by(c) !== me && c.body?.trim() && (!isBot(c) || isFinding(c.body)) && c.createdAt > lastMine)
         .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(c => ({ id: c.id, by: by(c), url: c.url }));
-      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads, comments: said });
+      // QA files findings as sub-issues of an issue that references the PR (#8244): each open one is feedback until QA closes it.
+      const issues = [...new Map((p.refs?.nodes || []).map(r => r.source).filter(x => x?.id).flatMap(x => x.subIssues?.nodes?.length ? x.subIssues.nodes : [x])
+        .filter(x => x.state === 'OPEN' && by(x) !== me && x.createdAt > since).map(x => [x.id, { id: x.id, by: by(x), url: x.url }])).values()];
+      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads, comments: [...said, ...issues] });
     });
   }
   return out;

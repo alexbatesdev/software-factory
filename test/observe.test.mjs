@@ -112,6 +112,16 @@ test('the health read counts conversation comments and review summaries from oth
   assert.deepEqual(old.comments.map(t => t.id), ['PRR_9'], 'nothing from before the cutoff');
 });
 
+test("QA's sub-issues on an issue that references the PR count as feedback, open ones only, after the cutoff (#8244: #8580 > #8581)", async () => {
+  const { readPrHealth } = await import('../sources/github.mjs');
+  const iss = (id, n, createdAt, state = 'OPEN', login = 'chelsieminor', subs = []) => ({ id, number: n, url: `https://github.com/o/r/issues/${n}`, state, createdAt, author: { login }, subIssues: { nodes: subs } });
+  const parent = iss('I80', 8580, '2026-11-05T23:03:00Z', 'OPEN', 'chelsieminor', [iss('I81', 8581, '2026-11-05T23:03:53Z'), iss('I82', 8582, '2026-11-05T23:04:00Z', 'CLOSED'), iss('I79', 8579, '2026-11-01T00:00:00Z')]);
+  const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'a1', commits: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, summaries: { nodes: [] },
+    refs: { nodes: [{ source: parent }, { source: iss('I81', 8581, '2026-11-05T23:03:53Z') }, { source: {} }] } } } };
+  const h = (await readPrHealth(['built-rails:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-05T00:00:00Z')).get('built-rails:1');
+  assert.deepEqual(h.comments.map(c => [c.id, c.by, c.url]), [['I81', 'chelsieminor', 'https://github.com/o/r/issues/8581']], 'once each; closed and pre-cutoff ones skipped');
+});
+
 test("a Teamwork task's feedback: others' comments after Alex last spoke and after the cutoff, never Teamwork Sync's PR notices", async () => {
   const { taskFeedback } = await import('../sources/teamwork.mjs');
   const c = (id, by, at, body = 'Can we also hide it here?') => ({ id, postedByUserId: by, postedDateTime: at, body });
