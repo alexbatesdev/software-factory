@@ -6,6 +6,7 @@ import { commandsFor } from './actions.mjs';
 import { readFileSync } from 'node:fs';
 import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
+import { escapes } from './work.mjs';
 
 const PAGE = new URL('../views/index.html', import.meta.url);
 
@@ -55,6 +56,10 @@ export function createApi({ store, config, readPr = async () => null, now = () =
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/escapes') {
+        const items = Object.values(store.state.work).flatMap(escapes), count = k => items.reduce((m, e) => ({ ...m, [e[k]]: (m[e[k]] || 0) + 1 }), {});
+        return send(res, 200, { total: items.length, byReview: count('review'), byPr: count('pr'), items });
       }
       if (req.method === 'GET' && url.pathname === '/api/whoami') return send(res, 200, { ip: req.socket.remoteAddress, headers: req.headers });
       if (req.method === 'GET' && url.pathname === '/api/inbox') return send(res, 200, { seat, messages: Object.values(store.state.messages).filter(m => m.to === seat && !m.ackedAt) });

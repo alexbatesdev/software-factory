@@ -129,3 +129,15 @@ test('a new comment (PR conversation or Teamwork task) reopens approval-wait wor
  assert.doesNotMatch(fb.findings.at(-1).text, /review thread/);
  assert.equal(W.observeHealth(fb, { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-3', by: 'x', url: 'u' }] }, later), fb, 'told once');
 });
+
+test('feedback raised while the latest internal review was clean is an escape, credited to that review (W-154, W-193)', () => {
+ const at = now => ({ ...ctx, now });
+ let w = ready(); w.reviews = [{ head: 'old0000', result: 'clean', by: 'sbx: s internal-review', at: '2026-11-06T01:00:00Z' }];
+ assert.deepEqual(W.escapes(w), []);
+ w = W.observeHealth(w, { head, conflict: false, failing: [], threads: [{ id: 'T1', by: 'codex', url: 'u1' }] }, at('2026-11-06T02:00:00Z'));
+ assert.deepEqual(W.escapes(w).map(e => [e.finding, e.type, e.review, e.reviewHead]), [[w.findings.at(-1).id, 'threads', 'sbx: s internal-review', 'old0000']]);
+ w.reviews.push({ head, result: 'findings', by: 'sbx: s internal-review', at: '2026-11-06T03:00:00Z' });
+ w.phase = 'awaiting_human_approval';
+ w = W.observeHealth(w, { head, conflict: false, failing: [], comments: [{ id: 'C1', by: 'sam', url: 'u2' }] }, at('2026-11-06T04:00:00Z'));
+ assert.equal(W.escapes(w).length, 1, 'feedback after a review that found things is not an escape');
+});

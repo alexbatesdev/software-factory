@@ -706,9 +706,9 @@ export function observeHealth(work, { head, conflict, failing = [], changesReque
   const w = structuredClone(work);
   if (mergeMain) w.findings.push({ id: nextId(w.findings, 'F'), text: `main is green again at ${mainGreen.slice(0, 7)}, and CI at ${head.slice(0, 7)} failed only on what was red on main. Merge origin/main into the branch (merge, never rebase or force push) and push, so CI reruns.`, severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'merge_main', head, main: mainGreen } });
   for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
-  if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id) } });
-  if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id) } });
-  if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id) } });
+  if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id), at: ctx.now } });
+  if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id), at: ctx.now } });
+  if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id), at: ctx.now } });
   const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main'),
     ...(mergeMain ? ['main is green again: merge it in'] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : []), ...(newComments.length ? [`${newComments.length} new comment(s)`] : [])];
   note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${said.join('; ')}.`);
@@ -732,6 +732,18 @@ export function unverifyHead(work, ctx) {
 /** PR work in fixes or review with nothing live and nothing pending: no seat will ever move it (W-149, W-160, W-138). */
 // From here a request acked "received" is queued with its seat, not settled (W-216: the heal re-filed W-192 every 15 min).
 const RECEIVED_PENDING_FROM = '2026-11-06T01:00:00.000Z';
+/**
+ * Feedback that got past our internal review: a feedback finding raised while the record's latest internal review (by
+ * time) was clean. Derived, never stored. ponytail: per reviewer, not per lens; reviews don't record a lens yet.
+ */
+export function escapes(w) {
+  const reviews = (w.reviews || []).filter(r => r.at && !r.forAlex);
+  return (w.findings || []).filter(f => FEEDBACK_TYPES.includes(f.source?.type) && f.source.at).flatMap(f => {
+    const last = reviews.filter(r => r.at <= f.source.at).sort((a, b) => a.at.localeCompare(b.at)).at(-1);
+    return last?.result === 'clean' ? [{ work: w.id, pr: w.links?.pr || null, finding: f.id, type: f.source.type, at: f.source.at, review: last.by, reviewHead: last.head }] : [];
+  });
+}
+
 export function stranded(w, now) {
   if (!['fixes', ...REVIEWING].includes(w.phase) || !prLinked(w) || liveAssignment(w)) return false;
   const r = phaseRequest(w);
