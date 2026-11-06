@@ -39,6 +39,13 @@ export function createApi({ store, config, readPr = async () => null, now = () =
     const remote = pr ? await readPr(pr) : null;
     if (action === 'done' && args.assignmentId) Object.assign(ctx, { prHead: remote?.head || null, prState: remote });
     if (action === 'await_approval') ctx.verifiedPrs = remote ? [remote] : [];
+    // A review can name a commit GitHub has but the poller hasn't read yet (W-231): read the PR, and if that commit is
+    // its head, record the head first so the review lands on it.
+    const rec = s.work[args.work];
+    if (action === 'review' && rec?.links?.pr && args.head && args.head !== rec.head) {
+      const live = await readPr(rec.links.pr);
+      if (live?.head && (live.head.startsWith(args.head) || args.head.startsWith(live.head))) cmds = [{ kind: 'observe_head', target: rec.id, payload: { sha: live.head, via: 'github', isDraft: live.isDraft } }, ...cmds.map(c => c.payload?.type === 'review' ? { ...c, payload: { ...c.payload, head: live.head } } : c)];
+    }
     return [200, { ok: true, results: store.appendAll(cmds, ctx) }];
   }
 

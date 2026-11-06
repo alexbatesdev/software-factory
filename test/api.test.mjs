@@ -169,3 +169,19 @@ test("prioritize marks a record as Alex's priority and clears it back to the def
     assert.match((await f.act('board lead', 'prioritize', { work: 'W-1' }))[1].error, /may not prioritize/);
   } finally { f.close(); }
 });
+
+test("a review at a head GitHub already shows but the board hasn't polled yet records that head first (W-231)", async () => {
+  const remote = { url: PRURL, head: 'aaa1111', state: 'OPEN', isDraft: true };
+  const f = await serveWith({ readPr: async () => remote });
+  try {
+    started(f);
+    const a = f.store.state.work['W-1'].assignments.find(x => x.status === 'started');
+    assert.equal((await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'aaa1111' }))[0], 200);
+    remote.head = 'bbb2222';
+    const [bad, err] = await f.act(S1, 'review', { work: 'W-1', head: 'ccc3333', result: 'clean', by: 'sbx: s1 internal-review' });
+    assert.equal(bad, 400); assert.match(err.error, /current head/);
+    assert.equal((await f.act(S1, 'review', { work: 'W-1', head: 'bbb2222', result: 'clean', by: 'sbx: s1 internal-review' }))[0], 200);
+    const w = f.store.state.work['W-1'];
+    assert.deepEqual([w.head, w.reviews.at(-1).head], ['bbb2222', 'bbb2222']);
+  } finally { f.close(); }
+});
