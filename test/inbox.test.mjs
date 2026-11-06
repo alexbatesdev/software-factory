@@ -152,3 +152,17 @@ test("a record owned by the board developer reaches its pane when it's filed, an
   state.work['W-1'].updates.push({ at: '2026-11-06T00:00:30Z', by: 'board lead', text: 'Updated owner, stream.' }, { at: '2026-11-06T00:05:00Z', by: 'board lead', text: 'Second instance.' }, { at: '2026-11-06T00:06:00Z', by: 'dev', text: 'mine' });
   assert.deepEqual(dev(inboxCommands(state, cfg)), ['W-1/2'], "someone else's note after the notice; not the record's setup, not the developer's own");
 });
+
+test("a worker job with no note from the worker 10 minutes after it started tells the supervisor once (W-218: no board tools in the session)", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const job = (id, extra = {}) => ({ id, title: id, phase: 'implementation', stream: 'sup: s1', requests: [], updates: [{ at: '2026-11-06T18:00:00Z', by: 'sup: s1', text: 'Briefed.' }],
+    assignments: [{ id: 'R1', kind: 'implementation', status: 'started', owner: 'sup: s1', history: [{ status: 'started', at: '2026-11-06T18:00:00Z' }] }], ...extra });
+  const state = { work: { 'W-1': job('W-1'), 'W-2': job('W-2') }, questions: {}, messages: {}, notifications: {} };
+  state.work['W-2'].updates.push({ at: '2026-11-06T18:03:00Z', by: 'sbx: s1', text: 'Started on branch b.' });
+  const cfg = { supervisors: ['sup: s1'], seats: [], workers: { 'sbx: s1': 'sup: s1' }, workerSilentSince: '2026-11-06T17:00:00Z' };
+  const silent = now => inboxCommands(state, { ...cfg, now }).cmds.filter(c => c.payload.about?.workerSilent).map(c => [c.payload.to, c.payload.about.workerSilent]);
+  assert.deepEqual(silent('2026-11-06T18:09:00Z'), [], 'inside the grace');
+  assert.deepEqual(silent('2026-11-06T18:11:00Z'), [['sup: s1', 'W-1/R1']]);
+  state.messages['M-1'] = { id: 'M-1', to: 'sup: s1', about: { workerSilent: 'W-1/R1' } };
+  assert.deepEqual(silent('2026-11-06T18:30:00Z'), [], 'once');
+});

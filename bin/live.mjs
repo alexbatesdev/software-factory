@@ -115,7 +115,7 @@ async function inboxTick() {
   const triage = { seat: config.boardLead?.seat || 'board lead', since: LIVE_SINCE };
   const workers = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.worker).map(([sup, s]) => [s.worker, sup]));
   const developer = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
-  const plan = inboxCommands(store.state, { supervisors, seats, workers, developer, developerSince: '2026-11-05T22:40:00.000Z', router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
+  const plan = inboxCommands(store.state, { supervisors, seats, workers, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
     fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }

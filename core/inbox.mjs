@@ -82,7 +82,21 @@ export function inboxCommands(state, cfg, fleet = null) {
   for (const w of Object.values(state.work)) (w.updates || []).forEach((u, i) => {
     const sup = cfg.workers?.[u.by], key = `${w.id}/${i}`;
     if (sup && !told.has(`workerNote:${key}`)) cmds.push(msg(sup, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
-  });
+  });  // A worker job the worker never wrote on: its session may lack the board tools (W-218), or the brief never started.
+  const workerOf = Object.fromEntries(Object.entries(cfg.workers || {}).map(([wk, sup]) => [sup, wk]));
+  for (const w of Object.values(state.work)) {
+    const worker = workerOf[w.stream];
+    if (!worker || !cfg.now) continue;
+    for (const a of w.assignments || []) {
+      const since = (a.history || []).filter(h => h.status === 'started').at(-1)?.at;
+      const key = `${w.id}/${a.id}`;
+      if (a.status !== 'started' || ![w.stream, worker].includes(a.owner) || !since || since < (cfg.workerSilentSince || '')
+        || Date.parse(cfg.now) - Date.parse(since) < (cfg.workerSilentMs ?? 600000) || told.has(`workerSilent:${key}`)
+        || (w.updates || []).some(u => u.by === worker && u.at >= since)) continue;
+      cmds.push(msg(w.stream, w.id, { workerSilent: key }, `${w.id} ${a.id} started at ${since.slice(11, 16)}Z and ${worker} hasn't written on it. Check its pane: if it says the software-factory tools are missing, restart it (a fresh session loads them); if the brief never started, re-send it. Every brief asks for a progress note at start.`));
+    }
+  }
+
   // Board bugs reach the board developer's pane like stream work reaches a supervisor (W-211): once per new record it
   // owns, and once per note someone else adds after developerSince. Parked records wait quietly.
   if (cfg.developer) for (const w of Object.values(state.work)) {
