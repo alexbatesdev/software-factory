@@ -37,11 +37,14 @@ export async function readPrs(urls, run = exec) {
 const RED = ['FAILURE', 'ERROR', 'TIMED_OUT', 'STARTUP_FAILURE'];
 /** Merge and CI state of each repo:num spec at its head, 30 per GraphQL call. `conflict` is only true once GitHub has computed it. */
 /** @param me Alex's login: his own reviews and threads are not feedback to act on. */
-export async function readPrHealth(specs, owner, run = exec, me = null) {
+// A bot (a GitHub app, or a 🤖-signed account like Hermes) counts only when it reports a finding.
+const isBot = c => c.author?.__typename === 'Bot' || c.body.trimStart().startsWith('🤖');
+const isFinding = body => body.includes('codex-code-review-finding') || /hermes-verdict \w+ \([^)]*found=[1-9]/.test(body);
+export async function readPrHealth(specs, owner, run = exec, me = null, since = '') {
   const out = new Map();
   for (let i = 0; i < specs.length; i += 30) {
     const chunk = specs.slice(i, i + 30).map(x => x.split(':'));
-    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}`).join(' ')}}`;
+    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}`).join(' ')}}`;
     const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000, maxBuffer: 1 << 23 })).stdout);
     chunk.forEach(([repo, n], j) => {
       const p = data?.[`p${j}`]?.pullRequest; if (!p) return;
@@ -54,7 +57,13 @@ export async function readPrHealth(specs, owner, run = exec, me = null) {
       const changesRequested = (p.reviews?.nodes || []).filter(r => by(r) !== me && r.commit?.oid === p.headRefOid).map(r => ({ id: r.id, by: by(r), url: r.url }));
       const threads = (p.reviewThreads?.nodes || []).filter(t => !t.isResolved && by(t.comments?.nodes?.[0]) !== me && by(t.last?.nodes?.[0]) !== me)
         .map(t => ({ id: t.id, by: by(t.comments.nodes[0]), url: t.comments.nodes[0]?.url }));
-      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads });
+      // Conversation comments and review summaries can't be resolved: anything another person (or a codex finding) said after
+      // Alex last spoke counts. `since` keeps the first read from reopening records on old comments.
+      const lastMine = [since, ...(p.comments?.nodes || []).filter(c => by(c) === me).map(c => c.createdAt)].sort().at(-1) || '';
+      const said = [...(p.comments?.nodes || []), ...(p.summaries?.nodes || []).map(r => ({ ...r, createdAt: r.submittedAt }))]
+        .filter(c => by(c) !== me && c.body?.trim() && (!isBot(c) || isFinding(c.body)) && c.createdAt > lastMine)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(c => ({ id: c.id, by: by(c), url: c.url }));
+      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads: [...threads, ...said] });
     });
   }
   return out;

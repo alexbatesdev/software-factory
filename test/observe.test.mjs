@@ -88,3 +88,26 @@ test("main counts as green only when its latest commit's checks passed (W-208)",
   assert.equal((await readMainGreen(['built-rails'], 'o', reply('SUCCESS'))).get('built-rails'), 'main0001');
   for (const s of ['FAILURE', 'PENDING', null]) assert.equal((await readMainGreen(['built-rails'], 'o', reply(s))).get('built-rails'), null, String(s));
 });
+
+test("a stacked PR's review feedback is still read; only its CI and conflicts are main's business (#8588, #8244)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const rec = { ...createWork({ id: 'W-1', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'b' } }, ctx), phase: 'awaiting_human_approval', head: 'ddddddd4' };
+  const health = new Map([['built-rails:1', { head: 'ddddddd4', base: 'alex/stack-base', conflict: true, failing: ['rspec'], changesRequested: [], threads: [{ id: 'T1', by: 'codex', url: 'u' }] }]]);
+  const [c] = healthCommands({ work: { 'W-1': rec } }, health, { owner: OWNER, now: ctx.now });
+  assert.equal(c.target, 'W-1');
+  assert.deepEqual([c.payload.conflict, c.payload.failing, c.payload.threads.map(t => t.id)], [false, [], ['T1']]);
+});
+
+test('the health read counts conversation comments and review summaries from others after Alex last spoke, plus codex findings, never bot noise (#8577)', async () => {
+  const { readPrHealth } = await import('../sources/github.mjs');
+  const c = (id, login, createdAt, body = 'please fix', bot = false) => ({ id, url: `https://x/${id}`, createdAt, body, author: { login, __typename: bot ? 'Bot' : 'User' } });
+  const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'a1', commits: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] },
+    comments: { nodes: [c('IC0', 'sam-built', '2026-11-06T09:00:00Z'), c('IC1', 'alexbatesdev', '2026-11-06T10:00:00Z'), c('IC2', 'chatgpt-codex-connector', '2026-11-06T11:00:00Z', '<!-- codex-pull-request-review-summary -->', true),
+      c('IC3', 'chatgpt-codex-connector', '2026-11-06T11:01:00Z', '<!-- codex-code-review-finding:v1 --> P2', true), c('IC4', 'github-actions', '2026-11-06T11:02:00Z', 'audit', true), c('IC5', 'sam-built', '2026-11-06T11:03:00Z'),
+      c('IC6', 'built-engineering-bot', '2026-11-06T11:03:10Z', '🤖 *Not a human. This is Hermes* <!-- hermes-verdict COMMENT (report-rows=14 found=0 proven=0) -->'), c('IC7', 'built-engineering-bot', '2026-11-06T11:03:20Z', '🤖 Hermes <!-- hermes-verdict REQUEST_CHANGES (report-rows=3 found=2 proven=1) -->')] },
+    summaries: { nodes: [{ ...c('PRR_9', 'chelsieminor', null, 'one more thing'), submittedAt: '2026-11-06T11:04:00Z' }, { ...c('PRR_8', 'chelsieminor', null, ''), submittedAt: '2026-11-06T11:05:00Z' }] } } } };
+  const h = (await readPrHealth(['built-rails:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-06T00:00:00Z')).get('built-rails:1');
+  assert.deepEqual(h.threads.map(t => t.id), ['IC3', 'IC5', 'IC7', 'PRR_9']);
+  const old = (await readPrHealth(['built-rails:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-06T11:03:30Z')).get('built-rails:1');
+  assert.deepEqual(old.threads.map(t => t.id), ['PRR_9'], 'nothing from before the cutoff');
+});

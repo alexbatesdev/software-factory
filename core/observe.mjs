@@ -96,8 +96,10 @@ export function healthCommands(state, health, { owner, now, mutationBranch, excl
   for (const [key, ws] of byPr) {
     const own = state.work[idx.get(key.replace(':', '-'))], w = acting(own) ? own : ws[0];
     const h = health.get(key);
-    if (!h || h.base !== 'main' || W.trackOf(w, { mutationBranch, exclude }) === 'mutation') continue;
-    const payload = { head: h.head, conflict: h.conflict, failing: h.failing, changesRequested: h.changesRequested || [], threads: h.threads || [], mainGreen: mainGreen.get(key.split(':')[0]) || null };
+    if (!h || W.trackOf(w, { mutationBranch, exclude }) === 'mutation') continue;
+    // A stacked PR's CI and conflicts are judged against its base, not main; its review feedback is still ours to work.
+    const onMain = h.base === 'main';
+    const payload = { head: h.head, conflict: onMain && h.conflict, failing: onMain ? h.failing : [], changesRequested: h.changesRequested || [], threads: h.threads || [], mainGreen: onMain && mainGreen.get(key.split(':')[0]) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   return cmds;

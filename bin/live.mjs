@@ -145,13 +145,15 @@ function healTick() {
   }
 }
 
+// Conversation comments count from here (W-219): 11-05 catches #8577's codex finding without reopening older threads.
+const COMMENTS_FROM = '2026-11-05T00:00:00.000Z';
 async function githubTick() {
   try {
     const owner = config.githubOwner, s = store.state;
     const tracked = [...new Set(Object.values(s.work).filter(w => !TERMINAL.includes(w.phase)).map(w => recordPrKey(w, owner)).filter(Boolean))];
     const { lines, own } = await readPrLines({ owner, tracked });
     const { prs, heads } = projectPrs(lines, own);
-    const health = await readPrHealth([...own], owner, undefined, config.githubLogin);
+    const health = await readPrHealth([...own], owner, undefined, config.githubLogin, COMMENTS_FROM);
     const mainGreen = await readMainGreen([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
     apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...healthCommands(s, health, { owner, now: now(), mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude }), 'poller');
