@@ -419,6 +419,9 @@ export function applyEvent(work, e, ctx) {
       if (!e.by) fail('An acknowledgment needs who acknowledged it.');
       if (!['done', 'declined', 'received'].includes(e.outcome)) fail('An ack outcome is received, done or declined.');
       r.ack = { by: e.by, outcome: e.outcome, note: e.note || null, at: ctx.now };
+      // A declined fixes request is the supervisor's word that nothing in it needs a change (W-255): its open findings stand.
+      if (e.outcome === 'declined' && r.type === 'fixes' && ctx.now >= DECLINE_SETTLES_FROM)
+        for (const f of w.findings.filter(f => f.status === 'open')) Object.assign(f, { status: 'accepted', note: `Declined with ${r.id} by ${e.by}${e.note ? `: ${e.note}` : ''}`, at: ctx.now });
       if (e.outcome === 'done') {
         if (r.type === 'cancel') w.phase = 'cancelled';
         if (r.type === 'pause') w.paused = true;
@@ -787,6 +790,7 @@ const FINDINGS_FOLLOW_HEAD_FROM = '2026-11-05T22:00:00.000Z';
 const FEEDBACK_NO_CHANGE_FROM = '2026-11-05T22:30:00.000Z';
 // W-210: a clean review settles open review findings recorded at its own head as well as earlier ones.
 const SAME_HEAD_CLEAN_FROM = '2026-11-05T22:45:00.000Z';
+const DECLINE_SETTLES_FROM = '2026-11-06T20:38:00.000Z';
 /** Fixes with nothing pending strands a record: queue the request unless one is already open for this head. */
 function requestFixes(w, ctx) {
   if (w.requests.some(r => r.type === 'fixes' && !r.ack && sameSha(r.head, w.head))) return;

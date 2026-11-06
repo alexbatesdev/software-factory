@@ -633,6 +633,18 @@ test('W-160 shape: findings given as plain text keep their text, and a later cle
   assert.equal(w.findings.at(-1).status, 'resolved', 'the later clean review is the final word on this head');
 });
 
+test('declining a fixes request settles its open findings as accepted with the reason, so the record can move on (W-255: W-149 F5 "Good to merge?")', () => {
+  const H = 'aaaaaaa1', at = now => ctx({ now });
+  let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
+  w = applyEvent(w, { type: 'review', head: H, by: 'reviewer 1', result: 'findings', findings: ['a question for Alex, nothing to fix'] }, at('2026-11-06T20:00:00.000Z')).work;
+  const fx = w.requests.at(-1).id, decline = { type: 'ack', requestId: fx, outcome: 'declined', by: 'sup: s', note: 'asks Alex whether to merge' };
+  assert.equal(applyEvent(w, decline, at('2026-11-06T20:30:00.000Z')).work.findings.at(-1).status, 'open', 'replayed as recorded before the rule');
+  const x = applyEvent(w, decline, at('2026-11-06T20:40:00.000Z')).work;
+  assert.deepEqual([x.findings.at(-1).status, x.findings.at(-1).note], ['accepted', `Declined with ${fx} by sup: s: asks Alex whether to merge`]);
+  assert.equal(stranded(x, '2026-11-06T20:40:00.000Z'), true, 'heal then moves it on');
+});
+
 test('a fixes request acked "received" is settled by a later clean review at the head, so heal moves the record on (W-249: #8563 body-only fixes)', () => {
   const H = 'aaaaaaa1', at = now => ctx({ now });
   let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
