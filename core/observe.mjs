@@ -104,3 +104,23 @@ export function healthCommands(state, health, { owner, now, mutationBranch, excl
   }
   return cmds;
 }
+
+/**
+ * The hourly audit (local-head's sweep, as code): what this GitHub read saw that no record holds. An own PR with no
+ * live record, and feedback whose id no finding carries. Mutation PRs are Alex's own and stay off the board.
+ * @param prs projectPrs' map (id repo-n → {branch}), so a Mutation PR with no record is known by its branch
+ * @returns [{key, id ('pr' for a missing record), by?, url?}]
+ */
+export function auditMissed(state, own, health, { owner, mutationBranch, exclude, prs = new Map() }) {
+  const works = Object.values(state.work), told = new Set(works.flatMap(w => (w.findings || []).flatMap(f => f.source?.ids || [])));
+  const out = [];
+  for (const key of own) {
+    const recs = works.filter(w => recordPrKey(w, owner) === key);
+    const branch = prs.get(key.replace(':', '-'))?.branch;
+    if ([...recs, ...(branch ? [{ links: { branch } }] : [])].some(w => W.trackOf(w, { mutationBranch, exclude }) === 'mutation')) continue;
+    if (!recs.some(w => !W.TERMINAL.includes(w.phase))) { out.push({ key, id: 'pr' }); continue; }
+    const h = health.get(key);
+    for (const x of [...(h?.changesRequested || []), ...(h?.threads || []), ...(h?.comments || [])]) if (!told.has(x.id)) out.push({ key, id: x.id, by: x.by, url: x.url });
+  }
+  return out;
+}

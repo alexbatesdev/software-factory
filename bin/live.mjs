@@ -12,7 +12,7 @@ import { createApi } from '../core/api.mjs';
 import { createMcp } from '../mcp/server.mjs';
 import { sandboxSeat } from '../core/sandbox-seat.mjs';
 import { randomBytes } from 'node:crypto';
-import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey, taskIdOf, projectCommands } from '../core/observe.mjs';
+import { projectPrs, projectTasks, headCommands, healthCommands, recordPrKey, taskIdOf, projectCommands, auditMissed } from '../core/observe.mjs';
 import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
 import { inboxCommands } from '../core/inbox.mjs';
@@ -147,6 +147,7 @@ function healTick() {
 
 // Conversation comments count from here (W-219): 11-05 catches #8577's codex finding without reopening older threads.
 const COMMENTS_FROM = '2026-11-05T00:00:00.000Z';
+let lastAudit = 0;
 async function githubTick() {
   try {
     const owner = config.githubOwner, s = store.state;
@@ -157,6 +158,15 @@ async function githubTick() {
     const mainGreen = await readMainGreen([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
     apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...healthCommands(s, health, { owner, now: now(), mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude }), 'poller');
+    // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
+    if (Date.now() - lastAudit >= 3600000) {
+      lastAudit = Date.now();
+      const dev = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
+      const told = new Set(Object.values(store.state.messages).map(m => m.about?.missed).filter(Boolean));
+      const missed = auditMissed(store.state, own, health, { owner, mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude, prs }).filter(m => !told.has(`${m.key}/${m.id}`));
+      log(`audit: ${missed.length} missed`);
+      for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
+    }
     // PR states for the page and merge close: every PR a live record links.
     const links = [...new Set(Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean))];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
