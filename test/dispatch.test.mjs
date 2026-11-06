@@ -117,3 +117,14 @@ test('a parked assignment resumes on its own stream once its blocker clears and 
   assert.equal(plan([parked(false)])['W-1'], undefined, 'still waiting: nothing planned');
   assert.equal(plan([parked(true), w('W-3', { phase: 'implementation', assignments: [{ id: 'R1', kind: 'implementation', owner: S1, status: 'started' }] })])['W-1'].action, null, 'stream busy: waits its turn');
 });
+
+test('a record parked on someone, owned by a non-stream seat, or declined by a stream is not sent there (W-217, W-186 shape)', () => {
+  const p = plan([
+    loose('W-1', { waitingOn: { who: 'Alex', what: 'role-file edit' } }),
+    loose('W-2', { owner: 'triage board worker', kind: 'build' }),
+    loose('W-3', { owner: null, phase: 'queued', requests: [{ type: 'dispatch', ack: { by: S1, outcome: 'declined' } }] }),
+  ]);
+  assert.match(p['W-1'].reason, /waiting on Alex/); assert.equal(p['W-1'].action, null);
+  assert.match(p['W-2'].reason, /triage board worker/); assert.equal(p['W-2'].action, null);
+  assert.equal(p['W-3'].to, S2, 'goes to the stream that has not declined it');
+});

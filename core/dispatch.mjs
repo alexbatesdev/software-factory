@@ -75,16 +75,21 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); continue; }
     if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); continue; }
     if (w.owner && terminals.includes(w.owner)) { wait(`owner ${w.owner} runs in Terminals`); continue; }
+    if (w.waitingOn) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); continue; }
+    if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner)) { wait(`owned by ${w.owner}, not a stream`); continue; }
     if (w.openQuestions > 0) { wait(`${w.openQuestions} open question(s)`); continue; }
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); continue; }
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); continue; }
     const bound = boundStream(w, byId, labels);
+    // A stream that declined this record isn't sent it again unless someone pins it there (W-217).
+    const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));
+    if (bound && declined.has(bound.to) && !w.streamPin) { wait(`${bound.to} declined it; re-route or pin it`); continue; }
     if (bound && holds.has(bound.to)) { wait(`${bound.to} is busy with ${holds.get(bound.to)}; waits its turn (${bound.why})`); continue; }
     // ponytail: ties go to config order, not the stream idle longest; add last-dispatch times if one stream keeps winning ties.
     const here = routeOf(w, labels), mine = STREAM_LOAD.includes(w.phase) ? here : null;
     const cost = l => load[l] // this record's own slot doesn't count against its stream
       - (l === mine ? 1 : 0);
-    const to = bound?.to || labels.filter(l => !holds.has(l)).sort((a, b) => cost(a) - cost(b))[0];
+    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l)).sort((a, b) => cost(a) - cost(b))[0];
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); continue; }
     busy.set(to, w.id); runningOn.set(to, w.id);
     const spread = labels.map(l => `${l}: ${cost(l)}`).join(', ');
