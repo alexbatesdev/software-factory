@@ -596,7 +596,7 @@ export function applyEvent(work, e, ctx) {
     }
     case 'heal': {
       // The factory's repair for a stranded record: settle stale findings, then queue the one thing that moves it.
-      if (!stranded(w)) fail(`${w.id} isn't stranded.`);
+      if (!stranded(w, ctx.now)) fail(`${w.id} isn't stranded.`);
       for (const f of w.findings) if (f.status === 'open' && ['ci', 'conflict'].includes(f.source?.type) && !sameSha(f.source.head, w.head))
         Object.assign(f, { status: 'resolved', note: `Superseded: the head is now ${w.head.slice(0, 7)}.`, at: ctx.now });
       const open = w.findings.some(f => f.status === 'open');
@@ -726,10 +726,12 @@ export function unverifyHead(work, ctx) {
 
 /** Only the request for this commit and work round may describe the current phase. */
 /** PR work in fixes or review with nothing live and nothing pending: no seat will ever move it (W-149, W-160, W-138). */
-export function stranded(w) {
+// From here a request acked "received" is queued with its seat, not settled (W-216: the heal re-filed W-192 every 15 min).
+const RECEIVED_PENDING_FROM = '2026-11-06T01:00:00.000Z';
+export function stranded(w, now) {
   if (!['fixes', ...REVIEWING].includes(w.phase) || !prLinked(w) || liveAssignment(w)) return false;
   const r = phaseRequest(w);
-  return !r || !!r.ack;
+  return !r || !!r.ack && !(r.ack.outcome === 'received' && (now || '') >= RECEIVED_PENDING_FROM);
 }
 
 export function phaseRequest(w) {

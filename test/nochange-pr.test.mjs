@@ -110,3 +110,14 @@ test('a no-change fixes round also settles review-thread feedback at the head, w
    { type: 'assignment_done', assignmentId: 'R6', expectedVersion: 1, noChange: { verifiedOn: head, evidence: 'replied on T1: the claim is wrong, see the spec' } }, later);
  assert.deepEqual([x.findings.at(-1).status, x.phase], ['accepted', 'awaiting_human_approval']);
 });
+
+test('a fixes request acked received (queued behind other work) is pending, so the heal leaves it alone (W-216)', () => {
+ const later = { ...ctx, now: '2026-11-06T02:00:00Z' };
+ let w = ready(); w.phase = 'fixes'; w.approvalWait = null;
+ w.findings.push({ id: 'F2', text: 'thread', status: 'open', severity: null, reviewHead: head, note: null });
+ w = ev(w, { type: 'heal', isDraft: false }, later);
+ const r = w.requests.at(-1); r.ack = { by: 's', outcome: 'received', note: 'queued behind W-193', at: later.now };
+ assert.ok(!W.stranded(w, later.now));
+ r.ack.outcome = 'declined';
+ assert.ok(W.stranded(w, later.now), 'a declined request leaves it stranded');
+});
