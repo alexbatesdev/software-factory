@@ -757,7 +757,9 @@ export function escapes(w) {
 export function stranded(w, now) {
   if (!['fixes', ...REVIEWING].includes(w.phase) || !prLinked(w) || liveAssignment(w)) return false;
   const r = phaseRequest(w);
-  return !r || !!r.ack && !(r.ack.outcome === 'received' && (now || '') >= RECEIVED_PENDING_FROM);
+  // A clean review at the head after a "received" ack means the round needed no commit (W-249): nothing is pending.
+  const settled = r?.ack?.outcome === 'received' && w.reviews.some(v => v.result === 'clean' && sameSha(v.head, w.head) && v.at > r.ack.at);
+  return !r || !!r.ack && (settled || !(r.ack.outcome === 'received' && (now || '') >= RECEIVED_PENDING_FROM));
 }
 
 export function phaseRequest(w) {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWork, applyEvent, updateWork, gate, migrate, syncIntake, observeHead, unverifyHead, prReadyPreflight, observeHealth } from '../core/work.mjs';
+import { createWork, applyEvent, updateWork, gate, migrate, syncIntake, observeHead, unverifyHead, prReadyPreflight, observeHealth, stranded } from '../core/work.mjs';
 
 const T = '2026-10-26T15:00:00.000Z';
 const ctx = (over = {}) => ({ now: T, by: 'test', openQuestions: 0, ...over });
@@ -631,4 +631,17 @@ test('W-160 shape: findings given as plain text keep their text, and a later cle
   assert.equal(w.findings.at(-1).text, 'Fixed (PR body): Risk 3 understated who is blocked.');
   w = applyEvent(w, { type: 'review', head: H, by: 'reviewer 2', result: 'clean' }, later).work;
   assert.equal(w.findings.at(-1).status, 'resolved', 'the later clean review is the final word on this head');
+});
+
+test('a fixes request acked "received" is settled by a later clean review at the head, so heal moves the record on (W-249: #8563 body-only fixes)', () => {
+  const H = 'aaaaaaa1', at = now => ctx({ now });
+  let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
+  w = applyEvent(w, { type: 'review', head: H, by: 'reviewer 1', result: 'findings', findings: ['PR body overstates scope'] }, at('2026-11-06T00:00:00.000Z')).work;
+  const fx = w.requests.at(-1).id;
+  w = applyEvent(w, { type: 'ack', requestId: fx, outcome: 'received', by: 'sup: s' }, at('2026-11-06T00:01:00.000Z')).work;
+  assert.equal(stranded(w, '2026-11-06T20:00:00.000Z'), false, 'received: the stream is on it');
+  w = applyEvent(w, { type: 'review', head: H, by: 'reviewer 2', result: 'clean' }, at('2026-11-06T19:36:00.000Z')).work;
+  assert.equal(stranded(w, '2026-11-06T20:00:00.000Z'), true);
+  assert.equal(applyEvent(w, { type: 'heal', isDraft: true }, at('2026-11-06T20:00:00.000Z')).work.phase, 'ready_for_human');
 });
