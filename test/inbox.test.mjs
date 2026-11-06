@@ -30,8 +30,15 @@ test("an answer goes to the router's pick, else a seat that asked, else the reco
   const answered = (from, extra = {}) => ({ status: 'answered', from, work: 'W-1', answer: { choice: 'a', at: 'z', ...extra } });
   const s = store({ work: { 'W-1': work({ requests: [] }), 'W-2': work({ id: 'W-2', stream: null, requests: [] }) },
     questions: { 'TB-1': answered('local-head'), 'TB-2': answered('reaped pane'), 'TB-3': { ...answered('reaped pane'), work: 'W-2' }, 'TB-4': answered('local-head', { routeTo: S1 }) } });
-  const to = Object.fromEntries(plan(s).cmds.map(c => [c.payload.about.answers, c.payload.to]));
+  const to = Object.fromEntries(plan(s).cmds.reverse().map(c => [c.payload.about.answers, c.payload.to])); // the first message per answer
   assert.deepEqual(to, { 'TB-1': 'local-head', 'TB-2': S1, 'TB-3': R, 'TB-4': S1 });
+});
+
+test("an answer asked by another seat also reaches the record's owner, once (W-243: TB-158 went to local-head only)", () => {
+  const s = store({ work: { 'W-1': work({ requests: [] }) }, questions: { 'TB-1': { status: 'answered', from: 'local-head', work: 'W-1', answer: { choice: 'a', at: 'z' } } } });
+  assert.deepEqual(plan(s).cmds.map(c => c.payload.to).sort(), ['local-head', S1].sort());
+  for (const c of plan(s).cmds) s.append(c, ctx('board'));
+  assert.deepEqual(plan(s).cmds, []);
 });
 
 test('a worker that stops with a started assignment messages its supervisor once', () => {

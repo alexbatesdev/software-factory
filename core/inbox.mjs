@@ -39,7 +39,11 @@ export function inboxCommands(state, cfg, fleet = null) {
     const rec = state.work[q.work];
     // The router's pick wins; else the asking seat if it still exists, else the record's stream, else the router.
     const to = q.answer.routeTo || [q.from].find(f => cfg.seats.includes(f)) || (rec && routeOf(rec, cfg.supervisors)) || cfg.router;
-    cmds.push(msg(to, q.work || null, { answers: id }, `Answer to ${id}${q.from && q.from !== to ? ` (asked by ${q.from})` : ''}: ${[q.answer.choice && `(${q.answer.choice})`, q.answer.note].filter(Boolean).join(' ')}`));
+    const text = `Answer to ${id}${q.from && q.from !== to ? ` (asked by ${q.from})` : ''}: ${[q.answer.choice && `(${q.answer.choice})`, q.answer.note].filter(Boolean).join(' ')}`;
+    cmds.push(msg(to, q.work || null, { answers: id }, text));
+    // The record's own seat hears it too when someone else asked (W-243).
+    const own = rec && [rec.stream, rec.owner].find(x => x && x !== to && cfg.seats.includes(x));
+    if (own) cmds.push(msg(own, q.work, { answers: id }, text));
   }
   let watches = fleet?.watches || {};
   if (fleet) {
