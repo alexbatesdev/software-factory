@@ -79,6 +79,13 @@ test("a recreated sandbox gets back Alex's comment hook without losing its other
   assert.deepEqual(withBaseline(once), once, 'applying it twice changes nothing');
 });
 
+test('a worker pane whose agent has gone (no claude in the sandbox) is relaunched, even mid-job (W-240)', () => {
+  const base = { units: [unit(undefined)], works: busy, supervisors: [S], restartStale: true };
+  assert.deepEqual(planRecycles({ ...base, health: { u: { diskPct: 0.4, agentSince: null } } }).due.map(d => [d.unit, d.restart]), [['u', true]]);
+  assert.deepEqual(planRecycles({ ...base, health: {} }).due, [], 'no reading, no action');
+  assert.deepEqual(planRecycles({ ...base, restartStale: false, health: { u: { diskPct: 0.4, agentSince: null } } }).due, [], 'off with restarts');
+});
+
 test('a worker whose session finished a job restarts fresh at the boundary, after a quiet spell, and only when switched on', () => {
   const t = Date.parse('2026-11-06T18:00:00Z'), iso = ms => new Date(ms).toISOString();
   const works = { 'W-1': { id: 'W-1', stream: S, updates: [{ at: iso(t - 600000), by: 'sbx: s' }], assignments: [{ id: 'R1', kind: 'implementation', status: 'done', history: [{ status: 'done', at: iso(t - 600000) }] }] } };

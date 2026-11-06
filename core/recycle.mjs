@@ -16,6 +16,8 @@ export function planRecycles({ units, health = {}, works, threshold = 0.75, recy
     const to = u.supervisor?.label, h = health[u.id];
     if (!u.worker || !supervisors.includes(to)) continue;
     if (recycling[u.id]) { drain.set(to, recycling[u.id].failed ? `${u.worker.label} recycle failed: ${recycling[u.id].failed}` : `recycling ${u.worker.label} (${recycling[u.id].step})`); continue; }
+    // No agent in the sandbox (an exit that finished after a restart gave up, W-240): start one, job or not.
+    if (restartStale && h && h.agentSince === null) { due.push({ unit: u.id, to, worker: u.worker, restart: true }); continue; }
     if (!h || h.diskPct < threshold) {
       // Stale session: it finished a job (or someone wrote on its stream) after it started, and the stream is quiet now.
       const mine = Object.values(works).filter(r => r.stream === to);

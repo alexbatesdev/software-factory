@@ -100,7 +100,7 @@ export function inboxCommands(state, cfg, fleet = null) {
   // Board bugs reach the board developer's pane like stream work reaches a supervisor (W-211): once per new record it
   // owns, and once per note someone else adds after developerSince. Parked records wait quietly.
   if (cfg.developer) for (const w of Object.values(state.work)) {
-    if (w.stream !== cfg.developer || ['done', 'cancelled'].includes(w.phase) || w.waitingOn) continue;
+    if (![w.stream, w.owner].includes(cfg.developer) || ['done', 'cancelled'].includes(w.phase) || w.waitingOn) continue;
     if (!told.has(`devRecord:${w.id}`)) cmds.push(msg(cfg.developer, w.id, { devRecord: w.id }, `${w.id} ${quote(w.title)} is yours (board developer): read it and work it, or park it with progress waitingOn.`));
     else {
       // Notes from before the record's own notice are its setup (created, owner set), which the notice already covers.

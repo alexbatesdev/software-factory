@@ -157,7 +157,7 @@ async function exitAgent(worker) {
 /** A fresh agent session in the same sandbox: its disk, repo and installed board MCP stay; its context doesn't. */
 export async function restart(worker) {
   const line = await bridgeLine(worker);
-  if (!(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit' };
+  if (!(await atShell(worker)) && !(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit' };
   await markNudgeSeen(worker.sandbox).catch(() => {}); // the unblocker rule still covers the dialog if this fails
   await herdr('pane', 'run', worker.ref, line);
   for (let i = 0; i < 20; i++) { await pause(3000); if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}` }; }
