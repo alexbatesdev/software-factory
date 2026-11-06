@@ -45,3 +45,8 @@ test("layout: Terminals is Alex's, so its tabs have no pane limit", () => {
   const tabs = [{ workspace_id: 'w4', label: 'A', pane_count: 6 }];
   assert.deepEqual(layoutIssues({ workspaces, tabs, agents: [], units: [] }), []);
 });
+
+test('layout: a host stream supervisor needs no sbx worker beside it (TB-159)', () => {
+  const units = [{ name: 'Host', paired: null, supervisor: { label: 'sup: host', workspace: 'Host' }, worker: null }];
+  assert.deepEqual(layoutIssues({ workspaces: [], tabs: [], agents: [], units }), []);
+});

@@ -9,6 +9,12 @@ const takenUp = w => (w.requests || []).some(r => r.type === 'dispatch' && ['rec
 // A stream is busy while its worker has a job: building or fixing, a live work assignment, or a dispatch not yet acked.
 const active = w => BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && pendingDispatch(w));
 
+/** A stream with `repos` {name: checkout} (a host stream, TB-159) works only those repos; the sbx streams work everything else. */
+export function canTake(w, label, supervisors) {
+  const has = s => !!s?.repos && Object.hasOwn(s.repos, w.repo ?? '');
+  return supervisors[label]?.repos ? has(supervisors[label]) : !Object.values(supervisors).some(has);
+}
+
 const worked = w => (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked', 'done'].includes(a.status));
 const STREAM_LOAD = ['queued', ...BUILDING, ...REVIEWING];
 
@@ -83,13 +89,14 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const bound = boundStream(w, byId, labels);
     // A stream that declined this record isn't sent it again unless someone pins it there (W-217).
     const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));
+    if (bound && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || 'built-rails'}; re-route it`); continue; }
     if (bound && declined.has(bound.to) && !w.streamPin) { wait(`${bound.to} declined it; re-route or pin it`); continue; }
     if (bound && holds.has(bound.to)) { wait(`${bound.to} is busy with ${holds.get(bound.to)}; waits its turn (${bound.why})`); continue; }
     // ponytail: ties go to config order, not the stream idle longest; add last-dispatch times if one stream keeps winning ties.
     const here = routeOf(w, labels), mine = STREAM_LOAD.includes(w.phase) ? here : null;
     const cost = l => load[l] // this record's own slot doesn't count against its stream
       - (l === mine ? 1 : 0);
-    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l)).sort((a, b) => cost(a) - cost(b))[0];
+    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors)).sort((a, b) => cost(a) - cost(b))[0];
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); continue; }
     busy.set(to, w.id); runningOn.set(to, w.id);
     const spread = labels.map(l => `${l}: ${cost(l)}`).join(', ');

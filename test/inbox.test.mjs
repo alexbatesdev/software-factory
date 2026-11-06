@@ -175,3 +175,9 @@ test("a worker job with no note from the worker 10 minutes after it started tell
   state.messages['M-1'] = { id: 'M-1', to: 'sup: s1', about: { workerSilent: 'W-1/R1' } };
   assert.deepEqual(silent('2026-11-06T18:30:00Z'), [], 'once');
 });
+
+test('a host stream request points its supervisor at the host-stream how-to (TB-159)', () => {
+  const s = store({ work: { 'W-1': work() } });
+  const [c] = inboxCommands(s.state, { ...cfg, hostHowTo: { [S1]: '/x/host-streams.md' } }).cmds;
+  assert.match(c.payload.text, /Host stream: spawn this job's worker per \/x\/host-streams\.md/);
+});

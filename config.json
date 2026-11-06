@@ -10,6 +10,13 @@
       "sup: stream-2": {
         "workspace": "Stream 2",
         "worker": "sbx: stream-2"
+      },
+      "sup: host": {
+        "workspace": "Host",
+        "howTo": "~/Code/plans/software-factory-v2/host-streams.md",
+        "repos": {
+          "teamwork-mini-mcp": "~/Code/teamwork mini mcp"
+        }
       }
     },
     "renamed": {

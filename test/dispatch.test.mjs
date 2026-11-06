@@ -128,3 +128,16 @@ test('a record parked on someone, owned by a non-stream seat, or declined by a s
   assert.match(p['W-2'].reason, /triage board worker/); assert.equal(p['W-2'].action, null);
   assert.equal(p['W-3'].to, S2, 'goes to the stream that has not declined it');
 });
+
+test('a host stream takes only records in its repos; the sbx streams take everything else', () => {
+  const H = 'sup: host';
+  const hcfg = { ...cfg, supervisors: { ...cfg.supervisors, [H]: { repos: { 'teamwork-mini-mcp': '~/Code/teamwork mini mcp' } } } };
+  const p = Object.fromEntries(autoDispatchPlan([
+    loose('W-1', { owner: null, repo: 'teamwork-mini-mcp' }), loose('W-2', { owner: null, repo: 'built-rails' }), loose('W-3', { owner: null }),
+  ], hcfg).map(x => [x.id, x]));
+  assert.equal(p['W-1'].to, H);
+  assert.notEqual(p['W-2'].to, H);
+  assert.notEqual(p['W-3'].to, H);
+  const pinned = autoDispatchPlan([w('W-4', { owner: S1, repo: 'teamwork-mini-mcp' })], hcfg)[0];
+  assert.deepEqual([pinned.action, /can't work in teamwork-mini-mcp/.test(pinned.reason)], [null, true], pinned.reason);
+});
