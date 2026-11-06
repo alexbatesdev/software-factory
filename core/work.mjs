@@ -564,8 +564,10 @@ export function applyEvent(work, e, ctx) {
         a.history.push({ status: a.status, at: ctx.now, by: ctx.by }); a.status = 'done'; a.version++; a.noChange = { ...e.noChange, at: ctx.now, by: ctx.by };
         note(w, ctx, `Assignment ${a.id} closed with no change: already satisfied on ${e.noChange.verifiedOn}. Evidence: ${e.noChange.evidence}. Nothing was built.`);
         if (e.head && !sameSha(e.head, e.noChange.verifiedOn)) fail('No-change head must match its verified commit.');
-        if (prLinked(w)) finishNoChangeProbe(w, a, ctx);
-        else closeNoChange(w, a, ctx, e.noChange.evidence);
+        // Its PR already merged (W-251): the check ran on main, so it closes the record like work with no PR.
+        const merged = ctx.prState?.state === 'MERGED' && ctx.prState.url === w.links?.pr;
+        if (prLinked(w) && !merged) finishNoChangeProbe(w, a, ctx);
+        else closeNoChange(w, a, ctx, e.noChange.evidence, merged);
         break;
       }
       if (BUILDING.includes(a.kind) && e.head) {
@@ -825,8 +827,8 @@ function finishNoChangeProbe(w, a, ctx) {
   }
   note(w, ctx, `No-change assignment ${a.id} finished at unchanged ${remote.head}; PR work is now ${w.phase}.`);
 }
-function closeNoChange(w, a, ctx, evidence) {
-  if (prLinked(w) || (w.coverage?.prs || []).some(p => p.state === 'OPEN')) fail('A PR/code deliverable must follow its review lifecycle; no-change cannot close it.');
+function closeNoChange(w, a, ctx, evidence, merged = false) {
+  if ((prLinked(w) && !merged) || (w.coverage?.prs || []).some(p => p.state === 'OPEN')) fail('A PR/code deliverable must follow its review lifecycle; no-change cannot close it.');
   if (!['implementation', 'discovery'].includes(a.kind)) fail('Only a regular implementation/discovery check can close without a code review.');
   if (!a.noChange?.verifiedOn || !a.noChange?.evidence) fail('No-change completion needs verified commit and evidence.');
   if (liveAssignment(w)) fail('Another assignment is still active.');

@@ -141,3 +141,11 @@ test('feedback raised while the latest internal review was clean is an escape, c
  w = W.observeHealth(w, { head, conflict: false, failing: [], comments: [{ id: 'C1', by: 'sam', url: 'u2' }] }, at('2026-11-06T04:00:00Z'));
  assert.equal(W.escapes(w).length, 1, 'feedback after a review that found things is not an escape');
 });
+test('a verify on a record whose PR already merged closes no-change against main, only when GitHub confirms the merge (W-251: W-32 R7)',()=>{
+ let w=W.createWork({id:'W-1',title:'verify',links:{pr:url}},ctx);w=ev(w,{type:'head',sha:head});
+ w=ev(w,{type:'assign',assignmentId:'R7',kind:'implementation',status:'started',owner:'worker',evidence:'verify the AC on main'});
+ const main='18c66be1'+'0'.repeat(32), verify={type:'assignment_done',assignmentId:'R7',expectedVersion:w.assignments.at(-1).version,noChange:{verifiedOn:main,evidence:'AC met on main'}};
+ assert.throws(()=>ev(w,verify),/baseline|GitHub/,'an open PR still follows its review lifecycle');
+ const x=ev(w,verify,{...ctx,prState:{url,head,state:'MERGED',isDraft:false}});
+ assert.deepEqual([x.phase,x.completion.kind,x.completion.verifiedOn],['done','no-change',main]);
+});
