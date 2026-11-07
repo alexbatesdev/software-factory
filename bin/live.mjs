@@ -18,7 +18,7 @@ import { parseAcs } from '../core/derive.mjs';
 import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
-import { mergeCloses } from '../core/units.mjs';
+import { mergeCloses, holdReleases } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
@@ -169,10 +169,11 @@ async function githubTick() {
       for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
     }
     // PR states for the page and merge close: every PR a live record links.
-    const links = [...new Set(Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean))];
+    const links = [...new Set([...Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean), ...holdReleases(store.state.work, owner).urls])];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
     healTick();
     await mergeTick();
+    holdTick();
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
 }
@@ -193,6 +194,14 @@ async function mergeTick() {
     apply([{ kind: 'event', target: c.id, payload: { type: 'merged', prs, ...(c.outstanding.length && { outstanding: c.outstanding }) } },
       ...open.map(id => ({ kind: 'question_close', target: id, payload: { note: `${c.id}'s PR merged, which settles it` } }))], 'poller (merged)');
   }
+}
+
+// A record held until a PR merges (W-292) is released on the merge, and the board lead re-triages it.
+function holdTick() {
+  const lead = Object.entries(config.roles || {}).find(([, r]) => r === 'board-lead')?.[0];
+  for (const { id, pr } of holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null).released)
+    apply([{ kind: 'event', target: id, payload: { type: 'hold_released', pr } },
+      ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: ${pr} merged, so its hold is released. Re-triage it.` } }] : [])], 'poller (hold)');
 }
 
 // A trusted review of someone else's PR finishes on Alex's own submitted review, or the PR closing first.

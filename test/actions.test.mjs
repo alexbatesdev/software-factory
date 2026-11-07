@@ -4,7 +4,7 @@ import { commandsFor } from '../core/actions.mjs';
 import { ACTIONS, refusal } from '../core/capabilities.mjs';
 
 // Events only the factory itself may produce (GitHub readers, Alex's own routes); no board action may mint one.
-const GATE_EVENTS = ['mark_ready', 'merged', 'authorize_pr_ready', 'pr_ready_op', 'waive_internal_review', 'retro_close', 'transition', 'alex_review_seen'];
+const GATE_EVENTS = ['mark_ready', 'merged', 'authorize_pr_ready', 'pr_ready_op', 'waive_internal_review', 'retro_close', 'transition', 'alex_review_seen', 'hold_released'];
 const sample = { ref: 'W-1/R1', work: 'W-1', assignmentId: 'R1', kind: 'implementation', status: 'queued', head: 'abc1234', result: 'clean', id: 'TB-1', to: 'sup', owner: 'sup', title: 't', text: 't', type: 'mark_ready', pr: 'https://github.com/o/r/pull/1', bucket: 'ready', into: 'W-2', note: 'n', evidence: 'e', findingId: 'F1', id: 'TB-1' };
 
 test('no board action can mint a gate event, even when asked to by name', () => {
@@ -47,4 +47,10 @@ test('a record nobody started can be withdrawn with a reason; started work canno
 test('triage can set the repo a record works in, so a host-repo record reaches its host stream (W-233)', () => {
   const cmds = commandsFor('triage', { work: 'W-1', bucket: 'ready', repo: 'teamwork-mini-mcp' });
   assert.deepEqual(cmds[0], { kind: 'update', target: 'W-1', payload: { repo: 'teamwork-mini-mcp' } });
+});
+
+test('triage untilMerged holds the record on those PRs', () => {
+  const cs = commandsFor('triage', { work: 'W-1', bucket: 'intake', note: 'held', untilMerged: '#8606, https://github.com/o/r/pull/9' });
+  assert.deepEqual(cs.at(-1), { kind: 'event', target: 'W-1', payload: { type: 'hold', prs: ['#8606', 'https://github.com/o/r/pull/9'] } });
+  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'intake', untilMerged: 'when 8606 lands' }), /untilMerged/);
 });

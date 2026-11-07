@@ -62,3 +62,12 @@ test('a task record that holds its own PR, with no PR record of its own, closes 
   assert.deepEqual(run('MERGED').map(c => [c.id, c.prs]), [['W-149', [PR(8487)]]]);
   assert.deepEqual(run('OPEN'), []);
 });
+
+import { holdReleases } from '../core/units.mjs';
+test('a merge hold is released when its PR merges, and only then', () => {
+  const ws = { 'W-1': { id: 'W-1', phase: 'intake', repo: null, externalDeps: [{ pr: '#8606' }, { text: 'a person' }] }, 'W-2': { id: 'W-2', phase: 'done', externalDeps: [{ pr: '#8606' }] } };
+  const url = 'https://github.com/builtforteams/built-rails/pull/8606';
+  assert.deepEqual(holdReleases(ws, 'builtforteams').urls, [url]);
+  assert.deepEqual(holdReleases(ws, 'builtforteams', u => (u === url ? 'MERGED' : null)).released, [{ id: 'W-1', pr: '#8606' }]);
+  assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'OPEN').released, []);
+});

@@ -657,6 +657,17 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Waiting on ${e.who}: ${e.what}. Evidence: ${e.evidence}.`);
       break;
     }
+    case 'hold': {
+      if (!e.prs?.length) fail('A hold needs PRs.');
+      const add = e.prs.filter(pr => !w.externalDeps.some(d => d.pr === pr));
+      w.externalDeps = [...w.externalDeps, ...add.map(pr => ({ ref: pr, pr, text: `${pr} merges` }))];
+      note(w, ctx, `Held until ${e.prs.join(', ')} merge${e.prs.length > 1 ? '' : 's'}.`);
+      break;
+    }
+    case 'hold_released':
+      w.externalDeps = w.externalDeps.filter(d => d.pr !== e.pr);
+      note(w, ctx, `${e.pr} merged, so its hold is released.`);
+      break;
     case 'note':
       if (!e.text) fail('A note needs text.');
       note(w, ctx, e.text);

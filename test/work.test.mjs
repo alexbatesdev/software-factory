@@ -657,3 +657,9 @@ test('a fixes request acked "received" is settled by a later clean review at the
   assert.equal(stranded(w, '2026-11-06T20:00:00.000Z'), true);
   assert.equal(applyEvent(w, { type: 'heal', isDraft: true }, at('2026-11-06T20:00:00.000Z')).work.phase, 'ready_for_human');
 });
+
+test('a merge hold waits on its PRs until each is released', () => {
+  const held = run(build(), { type: 'hold', prs: ['#8606', '#8631'] }, { type: 'hold', prs: ['#8606'] });
+  assert.deepEqual(held.externalDeps.map(d => d.pr), ['#8606', '#8631']);
+  assert.deepEqual(run(held, { type: 'hold_released', pr: '#8606' }).externalDeps.map(d => d.pr), ['#8631']);
+});

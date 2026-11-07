@@ -45,7 +45,10 @@ const BUILD = {
   triage: a => {
     need(a, 'work', 'bucket');
     if (!['ready', 'clarify', 'intake'].includes(a.bucket)) fail('Triage a record ready, clarify or intake.');
-    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }];
+    // W-292: a hold "until #N merges" is structured, so the poller can release it.
+    const prs = a.untilMerged ? String(a.untilMerged).split(/[\s,]+/).filter(Boolean) : [];
+    if (prs.some(p => !/^#\d+$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(p))) fail('untilMerged takes PRs as #N or PR URLs.');
+    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(prs.length ? [ev(a.work, { type: 'hold', prs })] : [])];
   },
   // Repair (board developer): a poller's duplicate record folds into the record that carries the work.
   absorb: a => { need(a, 'work', 'into'); return [ev(a.work, { type: 'absorb', into: a.into })]; },
