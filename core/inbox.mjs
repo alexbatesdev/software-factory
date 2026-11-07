@@ -29,6 +29,20 @@ const quote = t => `"${String(t).replace(/["\n]/g, "'").slice(0, 60)}"`;
  * @param fleet {units, now, watches: {workerStops, idleQueues}} or null when the fleet couldn't be read
  * @returns {{cmds, watches}}
  */
+// file.rb:N refs in a record's text, as [basename, line].
+const refs = w => [...`${w.title} ${w.objective || ''}`.matchAll(/([\w.-]+\.[a-z]{1,4}):(\d+)/g)].map(m => [m[1], Number(m[2])]);
+/** Open records citing the same file within 15 lines (W-269): a discovery the board likely already holds. */
+function dupeNote(w, works) {
+  const mine = refs(w), hits = [];
+  if (!mine.length || w.kind === 'factory') return '';
+  for (const o of Object.values(works)) {
+    if (o.id === w.id || o.kind === 'factory' || ['done', 'cancelled'].includes(o.phase)) continue;
+    const hit = refs(o).find(([f, n]) => mine.some(([g, m]) => f === g && Math.abs(n - m) <= 15));
+    if (hit) hits.push(`${o.id} (${hit[0]}:${hit[1]})`);
+  }
+  return hits.length ? ` Likely duplicate of ${hits.join(', ')}: check before triaging; if so, withdraw it with a note there.` : '';
+}
+
 export function inboxCommands(state, cfg, fleet = null) {
   const told = toldKeys(state, cfg.v1Before), cmds = [];
   for (const e of eligibleRequests(state.work, cfg.cutoff, cfg.supervisors)) {
@@ -127,7 +141,7 @@ export function inboxCommands(state, cfg, fleet = null) {
   // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.
   if (cfg.triage?.since) for (const w of Object.values(state.work))
     if (['intake', 'proposed'].includes(w.phase) && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`))
-      cmds.push(msg(cfg.triage.seat, w.id, { intake: w.id }, `${w.id} ${quote(w.title)} is in intake: triage it (ready, clarify with a question for Alex, or leave in intake with a note).`));
+      cmds.push(msg(cfg.triage.seat, w.id, { intake: w.id }, `${w.id} ${quote(w.title)} is in intake: triage it (ready, clarify with a question for Alex, or leave in intake with a note).${dupeNote(w, state.work)}`));
   // The board lead's hourly check-in (Alex, 2026-11-04): one message per hour, delivered like any other.
   const hour = cfg.checkIn?.now?.slice(0, 13);
   if (hour && !told.has(`checkIn:${hour}`)) cmds.push(msg(cfg.checkIn.seat, null, { checkIn: hour }, `Hourly check-in ${hour}:00Z: run your role file's check-in, file what you find as factory records, then ack this message.`));

@@ -197,3 +197,18 @@ test('a building record acked "received" with nothing assigned for 15 min nudges
   const parkedRec = store({ work: { 'W-1': { ...fixes, assignments: [{ id: 'R5', kind: 'fixes', status: 'blocked', waitingOn: 'TB-1' }] } } });
   assert.equal(inboxCommands(parkedRec.state, { ...cfg, now: '2026-11-06T23:50:00.000Z' }).cmds.filter(x => x.payload.about?.heldIdle).length, 0, 'parked work already frees the stream');
 });
+
+test('an intake notice names an open record citing the same file within 15 lines as a likely duplicate (W-269: W-267/W-258, W-268/W-232)', () => {
+  const at = '2026-11-07T00:00:00.000Z';
+  const s = store({ work: {
+    'W-232': work({ id: 'W-232', phase: 'awaiting_human_approval', objective: 'habtm ids (app/models/company_document.rb:35-37)' }),
+    'W-9': work({ id: 'W-9', phase: 'done', objective: 'icims_helpers.rb:97' }),
+    'W-270': work({ id: 'W-270', phase: 'ready', kind: 'factory', objective: 'evidence: company_document.rb:35-37' }),
+    'W-268': work({ id: 'W-268', phase: 'intake', createdAt: at, requests: [], objective: 'HABTM (company_document.rb:35-37) and controller.rb:116' }),
+    'W-269': work({ id: 'W-269', phase: 'intake', createdAt: at, requests: [], objective: 'company_document.rb:90 is unrelated' }),
+  } });
+  const notes = Object.fromEntries(inboxCommands(s.state, { ...cfg, triage: { seat: 'board lead', since: '2026-11-05T00:00:00.000Z' } }).cmds
+    .filter(x => x.payload.about.intake).map(x => [x.payload.about.intake, x.payload.text]));
+  assert.match(notes['W-268'], /Likely duplicate of W-232 \(company_document\.rb:35\):/, 'a factory record quoting the lines is not a duplicate');
+  assert.doesNotMatch(notes['W-269'], /duplicate/);
+});
