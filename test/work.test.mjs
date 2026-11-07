@@ -50,6 +50,17 @@ test('review at a stale head is refused', () => {
   assert.throws(() => applyEvent(w, { type: 'review', head: 'old', by: 'reviewer', result: 'clean' }, ctx()), /head/);
 });
 
+test('a review that pushed its fixes moves the head of a record with no PR, from the head it started at', () => {
+  const w = run(toImplementation(), { type: 'implementation_done', head: 'aaaaaaa1' });
+  assert.throws(() => applyEvent(w, { type: 'review', head: 'bbbbbbb2', from: 'ccccccc3', by: 'reviewer', result: 'clean' }, ctx()), /head/);
+  const r = run(w, { type: 'review', head: 'bbbbbbb2', from: 'aaaaaaa1', by: 'reviewer', result: 'clean' });
+  assert.equal(r.head, 'bbbbbbb2');
+  assert.equal(r.phase, 'ready_for_human');
+  const pr = run(toImplementation(), { type: 'implementation_done', head: 'aaaaaaa1' });
+  pr.links = { pr: 'https://github.com/o/r/pull/1' };
+  assert.throws(() => applyEvent(pr, { type: 'review', head: 'bbbbbbb2', from: 'aaaaaaa1', by: 'reviewer', result: 'clean' }, ctx()), /head/);
+});
+
 test('findings -> fixes -> a clean re-review is ready for human, with no checks or criteria recorded', () => {
   let w = run(toImplementation(), { type: 'implementation_done', head: 'aaa' },
     { type: 'review', head: 'aaa', by: 'reviewer', result: 'findings', findings: [{ text: 'missing nil guard', severity: 'P2' }] });

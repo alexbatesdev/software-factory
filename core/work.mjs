@@ -277,7 +277,10 @@ export function applyEvent(work, e, ctx) {
     case 'review': {
       // A review can finish after a fixes round opened under it (e.g. GitHub saw a conflict mid-review): it still counts.
       if (![...REVIEWING, 'fixes', 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) fail(`${w.id} isn't waiting for review (it is ${w.phase}).`);
-      if (e.head !== w.head) fail(`That review is of ${e.head}, but the current head is ${w.head}.`);
+      // W-294: with no PR the poller can't see a review's pushed fixes, so a review from the current head may move it.
+      const moved = e.head !== w.head && !prLinked(w) && e.from && sameSha(e.from, w.head);
+      if (e.head !== w.head && !moved) fail(`That review is of ${e.head}, but the current head is ${w.head}.`);
+      if (moved) { note(w, ctx, `Head ${w.head} -> ${e.head}: the review pushed its fixes (no PR to observe).`); w.head = e.head; }
       if (!e.by || e.by === w.implementer) fail('A review must be independent of the implementer.');
       if (!['clean', 'findings'].includes(e.result)) fail('A review result is "clean" or "findings".');
       w.reviews.push({ head: e.head, by: e.by, result: e.result, at: ctx.now, link: e.link || null });

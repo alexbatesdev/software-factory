@@ -22,7 +22,7 @@ const BUILD = {
       ? { type: 'assignment_done', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, head: a.head, ...(a.noChange ? { noChange: a.noChange } : {}) }
       : { type: 'implementation_done', head: a.head })];
   },
-  review: a => { need(a, 'work', 'head', 'result'); return [ev(a.work, { type: 'review', head: a.head, result: a.result, by: a.by, link: a.link, findings: a.findings })]; },
+  review: a => { need(a, 'work', 'head', 'result'); return [ev(a.work, { type: 'review', head: a.head, from: a.from, result: a.result, by: a.by, link: a.link, findings: a.findings })]; },
   await_approval: a => { need(a, 'work'); return [ev(a.work, { type: 'await_approval', head: a.head, evidence: a.evidence, waiver: a.waiver })]; },
   // `withdraw: TB-n` closes a question the caller asked (W-274); capabilities limit it to the asker.
   ask: a => a.withdraw ? (need(a, 'note'), [{ kind: 'question_close', target: a.withdraw, payload: { note: `Withdrawn by its asker: ${a.note}` } }]) : ([{ kind: 'ask', payload: { title: a.title, options: a.options, recommend: a.recommend, work: a.work, promptedBy: a.promptedBy, why: a.why, ac: a.ac, recommendWhy: a.recommendWhy, item: a.item } }]),
