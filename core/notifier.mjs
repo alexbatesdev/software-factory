@@ -77,9 +77,13 @@ export function workerJob(u, works) {
     .sort(([, a], [, b]) => startedAt(a).localeCompare(startedAt(b))).at(-1);
 }
 
-export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000, supervisors }) {
+// A host stream has no paired worker (W-295): its worker is the unpaired agent its started job names as owner.
+const hostWorker = (u, works, others) => others.find(a => Object.values(works).some(r => r.stream === u.supervisor?.label && (r.assignments || []).some(x => x.status === 'started' && x.owner === a.label)));
+
+export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000, supervisors, others = [] }) {
   const next = { ...watch }, due = [];
-  for (const u of units) {
+  for (const unit of units) {
+    const u = unit.worker ? unit : { ...unit, worker: hostWorker(unit, works, others) };
     const to = u.supervisor?.label, st = u.worker?.status;
     if (!u.worker || !supervisors.includes(to)) continue;
     // A unit first seen with a started job is armed: the watch is in memory, and a restart must not swallow a stop.

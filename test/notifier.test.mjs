@@ -145,3 +145,11 @@ test('an idle seat that owns open records is pestered after a grace period, then
   r = run(r.watch, 'working', T0 + 2500000); assert.deepEqual([r.due, r.watch], [[], {}], 'working clears the watch');
   assert.deepEqual(planIdleOwners({ seats: seat('idle'), works: { 'W-3': works['W-3'] }, watch: {}, now: T0 }).due, [], 'nothing open, nothing to say');
 });
+
+test('a host stream with no paired worker is woken when the worker its started job names stops', () => {
+  const host = { id: 'host', supervisor: { label: 'sup: host' }, worker: null };
+  const works = { 'W-234': { id: 'W-234', stream: 'sup: host', assignments: [{ id: 'R2', kind: 'review', owner: 'w234-create-task', status: 'started' }] } };
+  const others = [{ label: 'w234-create-task', ref: 'w31:p1', status: 'done' }];
+  const r = planWorkerStops({ units: [host], others, works, watch: { host: { armed: true, stoppedAt: T0 } }, now: T0 + 70000, graceMs: 60000, supervisors: ['sup: host'] });
+  assert.deepEqual(r.due.map(d => [d.to, d.work, d.assignment, d.worker]), [['sup: host', 'W-234', 'R2', 'w234-create-task']]);
+});
