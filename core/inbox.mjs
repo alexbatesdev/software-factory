@@ -1,6 +1,7 @@
 // What each seat should find in its inbox: board requests, worker stops, idle queues and answers, as message commands.
 // Pure. A message is created once per subject; waking the seat is the Wake port's job, not this one's.
 import { isTrustedReviewSeat } from './capabilities.mjs';
+import { BUILDING, LIVE_ASSIGNMENT } from './work.mjs';
 import { eligibleRequests, planWorkerStops, planIdleQueues, planIdleOwners, routeOf, workerJob, PREFIX } from './notifier.mjs';
 
 /**
@@ -101,6 +102,14 @@ export function inboxCommands(state, cfg, fleet = null) {
     }
   }
 
+  // A building record whose request was acked "received" but never assigned holds its stream (dispatch counts it running).
+  if (cfg.now) for (const w of Object.values(state.work)) {
+    const r = (w.requests || []).at(-1), to = routeOf(w, cfg.supervisors), key = r && `${w.id}/${r.id}`;
+    if (!to || !BUILDING.includes(w.phase) || r?.ack?.outcome !== 'received' || told.has(`heldIdle:${key}`)
+      || Date.parse(cfg.now) - Date.parse(r.ack.at) < (cfg.heldIdleMs ?? 900000)
+      || (w.assignments || []).some(a => LIVE_ASSIGNMENT.includes(a.status))) continue;
+    cmds.push(msg(to, w.id, { heldIdle: key }, `${w.id} ${quote(w.title)} is in ${w.phase} with ${r.id} acked "received" and nothing assigned, so it holds your stream. Assign it, or if it waits on someone, park it (assign, then progress --stage blocked --waitingOn) so the stream takes other work.`));
+  }
   // Board bugs reach the board developer's pane like stream work reaches a supervisor (W-211): once per new record it
   // owns, and once per note someone else adds after developerSince. Parked records wait quietly.
   if (cfg.developer) for (const w of Object.values(state.work)) {

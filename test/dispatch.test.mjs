@@ -82,7 +82,7 @@ test('priority work waits only for what the stream is running, not for work queu
 test('queue order is decided only by queueOrder in core/work.mjs', async () => {
   const { readdirSync, readFileSync } = await import('node:fs');
   const dir = new URL('../core/', import.meta.url);
-  const copies = readdirSync(dir).filter(f => f !== 'work.mjs' && /priority \?\? 3/.test(readFileSync(new URL(f, dir), 'utf8')));
+  const copies = readdirSync(dir).filter(f => f.endsWith('.mjs') && f !== 'work.mjs' && /priority \?\? 3/.test(readFileSync(new URL(f, dir), 'utf8')));
   assert.deepEqual(copies, []);
 });
 

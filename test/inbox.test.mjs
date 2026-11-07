@@ -181,3 +181,19 @@ test('a host stream request points its supervisor at the host-stream how-to (TB-
   const [c] = inboxCommands(s.state, { ...cfg, hostHowTo: { [S1]: '/x/host-streams.md' } }).cmds;
   assert.match(c.payload.text, /Host stream: spawn this job's worker per \/x\/host-streams\.md/);
 });
+
+test('a building record acked "received" with nothing assigned for 15 min nudges its supervisor once to assign or park it (W-263: W-224 R4)', () => {
+  const fixes = work({ phase: 'fixes', requests: [{ id: 'R4', type: 'fixes', at: 'x', ack: { outcome: 'received', at: '2026-11-06T23:34:00.000Z' } }] });
+  const s = store({ work: { 'W-1': fixes } });
+  const held = c => inboxCommands(s.state, { ...cfg, now: c }).cmds.filter(x => x.payload.about?.heldIdle);
+  assert.equal(held('2026-11-06T23:40:00.000Z').length, 0, 'not before the grace');
+  const [c] = held('2026-11-06T23:50:00.000Z');
+  assert.deepEqual([c.payload.to, c.payload.about], [S1, { heldIdle: 'W-1/R4' }]);
+  assert.match(c.payload.text, /park it/);
+  s.append(c, ctx('board'));
+  assert.equal(held('2026-11-06T23:59:00.000Z').length, 0, 'once');
+  const assigned = store({ work: { 'W-1': { ...fixes, assignments: [{ id: 'R5', kind: 'fixes', status: 'started' }] } } });
+  assert.equal(inboxCommands(assigned.state, { ...cfg, now: '2026-11-06T23:50:00.000Z' }).cmds.filter(x => x.payload.about?.heldIdle).length, 0, 'assigned work is not held idle');
+  const parkedRec = store({ work: { 'W-1': { ...fixes, assignments: [{ id: 'R5', kind: 'fixes', status: 'blocked', waitingOn: 'TB-1' }] } } });
+  assert.equal(inboxCommands(parkedRec.state, { ...cfg, now: '2026-11-06T23:50:00.000Z' }).cmds.filter(x => x.payload.about?.heldIdle).length, 0, 'parked work already frees the stream');
+});
