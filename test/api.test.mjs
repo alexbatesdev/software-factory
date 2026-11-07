@@ -198,3 +198,19 @@ test('a record whose PR Alex closed resolves only once GitHub shows the PR close
     assert.equal(f.store.state.work['W-1'].phase, 'done');
   } finally { f.close(); }
 });
+
+test('ask refuses a second open question on a record unless marked distinct, and the asker can withdraw its own (W-274: TB-176/TB-177)', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'Fix it' });
+    const q = { title: 'Which rule?', promptedBy: 'review', work: 'W-1' };
+    assert.equal((await f.act(S1, 'ask', q))[0], 200);
+    const [code, body] = await f.act('board lead', 'ask', q);
+    assert.equal(code, 409);
+    assert.match(body.error, /TB-1 .*Which rule/);
+    assert.equal((await f.act('board lead', 'ask', { ...q, distinct: true }))[0], 200);
+    assert.match((await f.act(S1, 'ask', { withdraw: 'TB-2', note: 'dup' }))[1].error, /only questions it asked/);
+    assert.equal((await f.act('board lead', 'ask', { withdraw: 'TB-2', note: 'duplicate of TB-1' }))[0], 200);
+    assert.equal(f.store.state.questions['TB-2'].status, 'superseded');
+  } finally { f.close(); }
+});

@@ -24,7 +24,8 @@ const BUILD = {
   },
   review: a => { need(a, 'work', 'head', 'result'); return [ev(a.work, { type: 'review', head: a.head, result: a.result, by: a.by, link: a.link, findings: a.findings })]; },
   await_approval: a => { need(a, 'work'); return [ev(a.work, { type: 'await_approval', head: a.head, evidence: a.evidence, waiver: a.waiver })]; },
-  ask: a => [{ kind: 'ask', payload: { title: a.title, options: a.options, recommend: a.recommend, work: a.work, promptedBy: a.promptedBy, why: a.why, ac: a.ac, recommendWhy: a.recommendWhy, item: a.item } }],
+  // `withdraw: TB-n` closes a question the caller asked (W-274); capabilities limit it to the asker.
+  ask: a => a.withdraw ? (need(a, 'note'), [{ kind: 'question_close', target: a.withdraw, payload: { note: `Withdrawn by its asker: ${a.note}` } }]) : ([{ kind: 'ask', payload: { title: a.title, options: a.options, recommend: a.recommend, work: a.work, promptedBy: a.promptedBy, why: a.why, ac: a.ac, recommendWhy: a.recommendWhy, item: a.item } }]),
   answer: a => { need(a, 'id'); return [{ kind: 'answer', target: a.id, payload: { choice: a.choice, note: a.note } }]; },
   route: a => {
     need(a, 'id', 'to');

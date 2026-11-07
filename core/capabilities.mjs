@@ -16,12 +16,14 @@ export const ROLES = {
 export const isTrustedReviewSeat = label => /^(pr-\d+-trusted|trusted-review-\d+)$/.test(label || '');
 
 // Narrower grants inside an action, keyed role → action → check on the command's arguments.
+const ownAsk = (a, c) => !a.withdraw || (!!c.seat && c.questions?.[a.withdraw]?.from === c.seat) || 'a seat withdraws only questions it asked';
 const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
 const LIMITS = {
-  'local-head': { set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word' },
-  'board-lead': { assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
+  'local-head': { ask: ownAsk, set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word' },
+  'board-lead': { ask: ownAsk, assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
     progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',
     ack: (a, c) => /^M-\d+$/.test(a.ref || '') || (!!c.seat && c.questions?.[a.ref]?.from === c.seat) || 'the board lead acks only messages addressed to it, and answers to its own questions' },
+  'stream-supervisor': { ask: ownAsk },
   'sbx-worker': { progress: a => !a.assignmentId || 'a worker adds notes (and its branch); its supervisor records the assignment\'s stages',
     ack: a => /^M-\d+$/.test(a.ref || '') || 'a worker acks only messages addressed to it' },
   'questions-router': { set_owner: noPin, ack: a => /^M-\d+$/.test(a.ref || '') || 'the questions router acks only messages addressed to it' },

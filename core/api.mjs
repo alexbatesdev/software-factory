@@ -27,6 +27,11 @@ export function createApi({ store, config, readPr = async () => null, now = () =
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state;
+    // One open question per record reaches Alex unless the asker says it's a separate decision (W-274).
+    if (action === 'ask' && !args.withdraw && args.work && !args.distinct) {
+      const open = Object.entries(s.questions).filter(([, q]) => q.work === args.work && q.status === 'open');
+      if (open.length) return [409, { error: `${args.work} already has an open question: ${open.map(([id, q]) => `${id} "${q.title}" (from ${q.from})`).join('; ')}. Add to it instead, or pass distinct: true if this is a separate decision.` }];
+    }
     if (action === 'route' && args.setOwner) args = { ...args, setOwnerOf: s.questions[args.id]?.work || undefined };
     // An ack or a create names the calling seat, never a claimed name.
     if (['ack', 'create'].includes(action)) args = { ...args, by: seat };
