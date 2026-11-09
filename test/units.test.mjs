@@ -114,3 +114,24 @@ test('a hold whose review date passed is due for its reviewer; it is never relea
   const ws = { 'W-1': held('W-1', '2026-11-08'), 'W-2': held('W-2', '2026-11-20'), 'W-3': held('W-3', '2026-11-01', 'done') };
   assert.deepEqual(reviewsDue(ws, '2026-11-09T10:00:00Z'), [{ id: 'W-1', by: '2026-11-08', reviewer: 'board lead' }]);
 });
+
+import { contradictions } from '../core/units.mjs';
+test('the audit names each contradiction once per record and kind, with evidence and a next action (W-317 phase 5)', () => {
+  const now = '2026-11-10T12:00:00.000Z', old = '2026-11-09T00:00:00.000Z', PR = 'https://github.com/o/r/pull/1';
+  const state = {
+    work: {
+      'W-1': { id: 'W-1', phase: 'awaiting_human_approval', links: { pr: PR }, updatedAt: now, updates: [] },
+      'W-2': { id: 'W-2', phase: 'implementation', updatedAt: old, updates: [], assignments: [{ id: 'R1', status: 'blocked', version: 3, waitingOn: 'TB-9', at: old }] },
+      'W-3': { id: 'W-3', kind: 'factory', phase: 'intake', updatedAt: old, updates: [{ at: old, text: 'Fixed in 3fd21f7, suite green' }] },
+      'W-4': { id: 'W-4', phase: 'implementation', updatedAt: old, updates: [{ at: old, text: 'started' }], assignments: [{ id: 'R2', status: 'started', at: old }] },
+      'W-5': { id: 'W-5', phase: 'implementation', updatedAt: now, updates: [{ at: now, text: 'checkpoint' }], assignments: [{ id: 'R1', status: 'started', at: old }] },
+      'W-6': { id: 'W-6', phase: 'done', links: { pr: PR }, updatedAt: old, updates: [] },
+    },
+    questions: { 'TB-9': { status: 'answered' } },
+    messages: { 'M-1': { about: { resume: 'W-2/R1/v3' }, at: old } },
+  };
+  const got = contradictions(state, { prState: u => (u === PR ? 'MERGED' : null), now });
+  assert.deepEqual(got.map(c => `${c.kind}/${c.id}`).sort(), ['answered-still-blocked/W-2', 'factory-fix-open/W-3', 'merged-awaiting/W-1', 'started-silent/W-4']);
+  for (const c of got) assert.ok(c.evidence && c.next, `${c.kind} carries evidence and a next action`);
+  assert.deepEqual(contradictions(state, { now }).map(c => c.kind).includes('merged-awaiting'), false, 'no fresh PR read: no merge claim');
+});

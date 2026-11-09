@@ -19,7 +19,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
-import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue } from '../core/units.mjs';
+import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue, contradictions } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen, readCompare } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
@@ -158,7 +158,7 @@ function healTick() {
 
 // Conversation comments count from here (W-219): 11-05 catches #8577's codex finding without reopening older threads.
 const COMMENTS_FROM = '2026-11-05T00:00:00.000Z';
-let lastAudit = 0;
+let lastAudit = 0, contradictionsDue = false;
 async function githubTick() {
   try {
     const owner = config.githubOwner, s = store.state;
@@ -175,6 +175,7 @@ async function githubTick() {
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {
       lastAudit = Date.now();
+      contradictionsDue = true;
       const dev = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
       const told = new Set(Object.values(store.state.messages).map(m => m.about?.missed).filter(Boolean));
       const missed = auditMissed(store.state, own, health, { owner, exclude: config.autoDispatch?.exclude, prs }).filter(m => !told.has(`${m.key}/${m.id}`));
@@ -191,6 +192,14 @@ async function githubTick() {
     apply(skipNotes(store.state.work, config), 'board (skip)');
     await mergeTick();
     holdTick();
+    // After merge-close, so a merge it just closed is not reported. Once per (kind, record), to the board lead (W-317).
+    if (contradictionsDue) {
+      contradictionsDue = false;
+      const lead = config.boardLead?.seat || 'board lead', told = new Set(Object.values(store.state.messages).map(m => m.about?.contradiction).filter(Boolean));
+      const found = contradictions(store.state, { prState: u => openPrs.get(u)?.state || null, now: now() }).filter(c => !told.has(`${c.kind}/${c.id}`));
+      log(`audit: ${found.length} contradictions`);
+      for (const c of found) apply([{ kind: 'message', payload: { to: lead, work: c.id, about: { contradiction: `${c.kind}/${c.id}` }, text: `[software factory, automated, not Alex] Contradiction on ${c.id} (${c.kind}): ${c.evidence}. Next: ${c.next}.` } }], 'board (audit)');
+    }
     await syncResolvedThreads(store, gh, now);
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
