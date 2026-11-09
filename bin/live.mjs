@@ -26,6 +26,7 @@ import { list as readFleet } from '../fleet/herdr.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
+import { syncResolvedThreads } from '../effects/threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles } from '../core/recycle.mjs';
 import { gh as liveGh } from '../effects/github.mjs';
@@ -177,6 +178,7 @@ async function githubTick() {
     apply(skipNotes(store.state.work, config), 'board (skip)');
     await mergeTick();
     holdTick();
+    await syncResolvedThreads(store, gh, now);
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
 }
@@ -202,7 +204,13 @@ async function mergeTick() {
 // A record held until a PR merges (W-292) is released on the merge, and the board lead re-triages it.
 function holdTick() {
   const lead = Object.entries(config.roles || {}).find(([, r]) => r === 'board-lead')?.[0];
-  for (const { id, pr } of holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null).released)
+  const { released, closed } = holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null);
+  for (const { id, pr } of closed) {
+    const key = `${id}/${pr}`;
+    if (lead && !Object.values(store.state.messages).some(m => m.about?.holdClosed === key))
+      apply([{ kind: 'message', payload: { to: lead, work: id, about: { holdClosed: key }, text: `[software factory, automated, not Alex] ${id}: ${pr} closed without merging, so its hold will never release; re-triage it.` } }], 'poller (hold)');
+  }
+  for (const { id, pr } of released)
     apply([{ kind: 'event', target: id, payload: { type: 'hold_released', pr } },
       ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: ${pr} merged, so its hold is released. Re-triage it.` } }] : [])], 'poller (hold)');
 }

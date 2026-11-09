@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import { openStore } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
+import { syncResolvedThreads } from '../effects/threads.mjs';
 
 const S1 = 'triage board worker', PR = 'https://github.com/builtforteams/built-rails/pull/8635', T = '2026-11-09T18:00:00.000Z';
 const config = { roles: { 'triage board worker': 'board-developer' }, routing: { supervisors: {} } };
@@ -79,5 +80,18 @@ test('a factual PR-description fix is applied by the worker, never asked as a qu
       assert.equal(code, 409, title);
       assert.match(body.error, /apply it yourself/);
     }
+  } finally { f.close(); }
+});
+
+test('a request whose thread Alex resolved on GitHub himself closes as resolved on the next sync', async () => {
+  let isResolved = false;
+  const f = await serve({ thread: async () => ({ pr: PR, isResolved }) });
+  try {
+    await f.act('resolve_thread', request);
+    await syncResolvedThreads(f.store, { thread: async () => ({ pr: PR, isResolved }) }, () => T);
+    assert.equal(f.store.state.threads['RT-1'].status, 'requested', 'still open on GitHub');
+    isResolved = true;
+    await syncResolvedThreads(f.store, { thread: async () => ({ pr: PR, isResolved }) }, () => T);
+    assert.deepEqual([f.store.state.threads['RT-1'].status, f.store.state.threads['RT-1'].detail], ['resolved', 'Resolved on GitHub directly.']);
   } finally { f.close(); }
 });

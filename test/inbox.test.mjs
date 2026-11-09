@@ -62,6 +62,19 @@ test('a worker that stops again on the same assignment messages its supervisor a
   assert.equal(sent, 2);
 });
 
+test('a worker blocked for 5 minutes with a started job messages its supervisor once per blocked episode', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'implementation', requests: [], assignments: [{ id: 'R1', kind: 'implementation', status: 'started', version: 1 }] }) } });
+  const unit = status => ({ id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status } });
+  let watches, sent = [];
+  for (const [status, t] of [['blocked', 0], ['blocked', 200000], ['blocked', 310000], ['blocked', 600000], ['working', 700000], ['blocked', 800000], ['blocked', 1200000]]) {
+    const p = plan(s, { units: [unit(status)], now: t, watches });
+    watches = p.watches;
+    sent.push(...p.cmds.filter(c => c.payload.about.workerBlocked));
+  }
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[0].payload.to, S1);
+});
+
 test('a worker reported working whose pane has not changed for quietMs messages its supervisor once per stretch', () => {
   const s = store({ work: { 'W-1': work({ phase: 'review', requests: [], assignments: [{ id: 'R3', kind: 'review', owner: 'sbx: stream-1', status: 'started', version: 1 }] }) } });
   const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'working' } };
@@ -150,6 +163,15 @@ test("a worker's own board note reaches its supervisor once, so nobody has to re
   assert.match(first[0].payload.text, /PR #9 pushed at abc1234/);
   state.messages['M-1'] = { id: 'M-1', to: 'sup: s1', about: { workerNote: 'W-5/1' } };
   assert.equal(notes(inboxCommands(state, cfg)).length, 0, 'once');
+});
+
+test("a worker's note on another stream's record also reaches that record's supervisor (W-288)", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const work = { id: 'W-9', title: 'Fix it', phase: 'implementation', stream: 'sup: s2', requests: [], assignments: [], updates: [{ at: 't1', by: 'sbx: s1', text: 'For stream-2: rebase first.' }] };
+  const state = { work: { 'W-9': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: ['sup: s1', 'sup: s2'], seats: [], workers: { 'sbx: s1': 'sup: s1', 'sbx: s2': 'sup: s2' } };
+  const to = inboxCommands(state, cfg).cmds.filter(c => c.payload.about?.workerNote).map(c => c.payload.to).sort();
+  assert.deepEqual(to, ['sup: s1', 'sup: s2']);
 });
 
 test("a record owned by the board developer reaches its pane when it's filed, and again when someone else adds a note", async () => {

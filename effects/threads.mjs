@@ -23,3 +23,12 @@ export async function resolveThreads(store, ids, gh, now) {
   }
   return out;
 }
+
+/** Requests whose thread Alex resolved on GitHub himself close as resolved (at most `limit` reads per call). */
+export async function syncResolvedThreads(store, gh, now, limit = 20) {
+  const open = Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status)).slice(0, limit);
+  for (const t of open) {
+    const th = await gh.thread(t.threadId).catch(() => null);
+    if (th?.isResolved) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'resolved', detail: 'Resolved on GitHub directly.' } }, { now: now(), by: 'board (thread sync)' });
+  }
+}
