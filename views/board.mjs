@@ -39,9 +39,11 @@ function personWait(w, state, prs, prApproval) {
   const rt = Object.values(state.threads || {}).filter(t => t.work === w.id && t.status !== 'resolved').length;
   if (rt) return { who: 'you', text: `Waiting on you: resolve ${rt} review thread${rt > 1 ? 's' : ''} (Approvals, Review threads)` };
   if (W.awaitsPrApproval(w, prApproval)) return { who: 'you', text: 'Waiting on you: approve opening a new PR (Approvals, New PRs)' };
-  const onAlex = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`])]
-    .find(x => x && /^Alex\b/.test(x[0]));
+  const stated = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`])].filter(Boolean);
+  const onAlex = stated.find(x => /^Alex\b/.test(x[0]));
   if (onAlex) return { who: 'you', text: `Waiting on you: ${onAlex[1]} (${onAlex[0]})` };
+  // Someone else's stated wait is the real one; the PR's approval state is only the fallback.
+  if (w.waitingOn) return null;
   const pr = prs.get(w.links?.pr);
   const parkedOpen = w.phase === 'intake' && w.triage?.bucket === 'intake' && !(w.externalDeps || []).length && pr?.state === 'OPEN' && !pr.isDraft;
   if ((w.phase === 'awaiting_human_approval' || parkedOpen) && pr?.reviewDecision) {
@@ -101,9 +103,10 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     const [base, ctx] = inputs(w);
     const st = statusOf(base, { ...ctx, group: groupOf(w) });
     const q = queued.get(w.id), started = (w.assignments || []).find(a => a.status === 'started');
-    const person = personWait(w, state, prs, prApproval), stated = w.waitingOn || (w.assignments || []).some(a => a.status === 'blocked' && a.waitingOn);
+    // The scheduler is the authority on queue place; only a record-level stated wait outranks it.
+    const person = personWait(w, state, prs, prApproval);
     if (person && st.waiting?.who !== 'you') st.waiting = person;
-    else if (q && st.waiting?.who !== 'you' && !stated) st.waiting = { who: 'factory', text: q.position ? `In queue, #${q.position}: the next free stream takes #1` : `Not dispatched: ${q.reason}` };
+    else if (q && st.waiting?.who !== 'you' && !w.waitingOn) st.waiting = { who: 'factory', text: q.position ? `In queue, #${q.position}: the next free stream takes #1` : `Not dispatched: ${q.reason}` };
     // Held on Alex's open question: it waits on him, wherever its triage parked it.
     const heldOn = (w.externalDeps || []).map(d => d.question).find(id => state.questions[id]?.status === 'open') || null;
     if (heldOn) st.waiting = { who: 'you', text: `Waiting on you: ${heldOn} (${state.questions[heldOn].title})` };

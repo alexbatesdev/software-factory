@@ -150,3 +150,19 @@ test('a parked record whose PR is open and ready waits on its reviewers, not in 
   const v = boardView(s.state, { prs: new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'REVIEW_REQUIRED', approvedBy: [] }]]) }).find(x => x.id === id);
   assert.deepEqual(v.waiting, { who: 'reviewers', text: 'Waiting for approvals on #72' });
 });
+
+test("a stated wait on someone else outranks a ready PR's approvals line, and a cleared block shows the scheduler's queue place", async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:'), c = { now: '2026-11-09T22:00:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/74';
+  const id = s.append({ kind: 'create', payload: { title: 'Shared seats', links: { pr: PR } } }, c).id;
+  s.append({ kind: 'event', target: id, payload: { type: 'wait', who: 'product', what: 'confirm shared-seat behaviour', evidence: 'x' } }, c);
+  s.state.work[id].phase = 'awaiting_human_approval';
+  const approved = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['dev'] }]]);
+  assert.deepEqual(boardView(s.state, { prs: approved }).find(x => x.id === id).waiting, { who: 'product', text: 'Waiting on product: confirm shared-seat behaviour' });
+  const q = s.append({ kind: 'create', payload: { title: 'Name fallback' } }, c).id;
+  s.appendAll([{ kind: 'event', target: q, payload: { type: 'transition', to: 'ready' } }, { kind: 'event', target: q, payload: { type: 'transition', to: 'queued' } },
+    { kind: 'event', target: q, payload: { type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'started', owner: 'sbx: s', evidence: 'b' } },
+    { kind: 'event', target: q, payload: { type: 'progress', assignmentId: 'R1', expectedVersion: 1, stage: 'blocked', waitingOn: 'TB-179', text: 'needs an answer' } }], c);
+  const queue = [{ id: q, action: null, reason: 'TB-179 cleared; sup: s is busy with W-271, resumes next' }];
+  assert.match(boardView(s.state, { queue }).find(x => x.id === q).waiting.text, /^In queue, #1/);
+});
