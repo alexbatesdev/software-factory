@@ -138,7 +138,7 @@ test("a ready PR's card says what it really waits on: Alex's thread clicks, miss
   s.state.work[id].phase = 'awaiting_human_approval';
   const view = (prs, threads = {}) => { s.state.threads = threads; return boardView(s.state, { prs: new Map([[PR, prs]]) }).find(x => x.id === id).waiting; };
   assert.deepEqual(view({ reviewDecision: 'REVIEW_REQUIRED', approvedBy: ['qa-pat'] }), { who: 'reviewers', text: 'Waiting for approvals on #7 (approved so far: qa-pat)' });
-  assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }), { who: 'github', text: 'GitHub reviews approved on #7 (qa-pat, dev-sam); not ready to merge: PR state not read yet' }, 'APPROVED alone is never merge-ready (W-318)');
+  assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }), { who: 'github', text: 'GitHub reviews approved on #7 (qa-pat, dev-sam); not mergeable yet: PR state not read yet' }, 'APPROVED alone is never merge-ready (W-318)');
   s.state.threads = { 'RT-1': { work: id, status: 'requested' }, 'RT-2': { work: id, status: 'resolved' } };
   const withRt = boardView(s.state, { prs: new Map([[PR, { reviewDecision: 'REVIEW_REQUIRED', approvedBy: [] }]]) }).find(x => x.id === id);
   assert.equal(withRt.approval, 'resolve 1 review thread');
@@ -186,6 +186,7 @@ test("each card carries its section from the server, and the page holds no secon
   const { readFileSync } = await import('node:fs');
   const page = readFileSync(new URL('../views/index.html', import.meta.url), 'utf8');
   assert.match(page, /const tierOf = c => c\.section;/);
+  assert.match(page, /\['merge', 'Maybe mergeable \(not confirmed; final QA is yours\)'\]/, 'Alex, W-328: maybe, never confirmed');
   assert.doesNotMatch(page, /waiting\?\.who|AGENT\.test|c\.heldOn \|\|/, 'the page must not decide sections itself');
   const s = openStore(':memory:'), c = { now: '2026-11-09T23:30:00.000Z', by: 'test' };
   const id = s.append({ kind: 'create', payload: { title: 'Plain' } }, c).id;
@@ -200,9 +201,9 @@ test('Ready to merge needs every gate, not APPROVED alone; a miss is named and w
   const ok = { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa', 'dev'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0, head: 'h1', approvals: [{ by: 'qa', commit: 'h1' }, { by: 'dev', commit: 'h1' }], recentCommits: ['a0', 'h1'] };
   const card = pr => boardView(s.state, { prs: new Map([[PR, pr]]) }).find(x => x.id === id);
   assert.equal(card(ok).section, 'merge');
-  assert.match(card(ok).waiting.text, /^Ready to merge: #8641 approved \(qa, dev\), checks clean, no open threads; final QA is yours/);
+  assert.match(card(ok).waiting.text, /^Maybe mergeable: #8641 approved \(qa, dev\), checks clean, no open threads; not confirmed, final QA is yours/);
   const miss = (pr, re) => { const v = card({ ...ok, ...pr }); assert.equal(v.section, 'others', JSON.stringify(pr)); assert.match(v.waiting.text, re); };
-  miss({ base: 'alex/hcp-export-1' }, /not ready to merge: stacked on alex\/hcp-export-1/);
+  miss({ base: 'alex/hcp-export-1' }, /not mergeable yet: stacked on alex\/hcp-export-1/);
   miss({ mergeState: 'UNSTABLE' }, /failing or pending checks/);
   miss({ mergeState: 'BLOCKED' }, /failing or pending checks/);
   miss({ mergeState: 'DIRTY' }, /merge conflicts/);
@@ -225,7 +226,7 @@ test('a stale GitHub read never shows a PR as ready to merge (W-317 phase 4)', a
   const v = readAt => boardView(s.state, { prs, prsReadAt: readAt, now: at }).find(x => x.id === id);
   assert.equal(v(at - 60000).section, 'merge');
   assert.equal(v(at - 20 * 60000).section, 'others');
-  assert.match(v(at - 20 * 60000).waiting.text, /not ready to merge: GitHub not read since/);
+  assert.match(v(at - 20 * 60000).waiting.text, /not mergeable yet: GitHub not read since/);
 });
 
 test('a task folded into a ready PR unit is not a second Ready to merge card (review of b7b5392)', async () => {

@@ -88,8 +88,8 @@ function personWait(w, state, prs, stale) {
         return { who: 'reviewers', text: `Waiting for re-approval on ${n}: approved at ${at.slice(0, 7)} (${old.map(a => a.by).sort().join(', ')}), ${since}` };
       }
       const miss = mergeMiss(w, pr, stale);
-      return miss ? { who: 'github', text: `GitHub reviews approved on ${n} (${by.join(', ')}); not ready to merge: ${miss}` }
-        : { who: 'github', ready: true, text: `Ready to merge: ${n} approved (${by.join(', ')}), checks clean, no open threads; final QA is yours` };
+      return miss ? { who: 'github', text: `GitHub reviews approved on ${n} (${by.join(', ')}); not mergeable yet: ${miss}` }
+        : { who: 'github', ready: true, text: `Maybe mergeable: ${n} approved (${by.join(', ')}), checks clean, no open threads; not confirmed, final QA is yours` };
     }
     return { who: 'reviewers', text: `Waiting for approvals on ${n}${by.length ? ` (approved so far: ${by.join(', ')})` : ''}` };
   }
