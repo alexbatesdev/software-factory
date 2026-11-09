@@ -233,7 +233,9 @@ export async function recycle(worker, log = () => {}) {
     const { stdout } = await run('sbx', ['ls'], { timeout: 20000 }).catch(() => ({ stdout: '' }));
     if (new RegExp(`^${worker.sandbox}\\s+\\S+\\s+running`, 'm').test(stdout) && !(await atShell(worker))) {
       // The fresh VM has no ~/.claude of Alex's; the running session picks the hook up from its settings file.
-      const hook = await restoreBaseline(worker.sandbox, worker.agent).then(() => 'comment hook restored', e => `comment hook NOT restored: ${e.message}`);
+      const hook = await restoreBaseline(worker.sandbox, worker.agent).then(() => 'baseline restored', e => `baseline NOT restored: ${e.message}`);
+      // A fresh VM has no Codex login, and Codex reads its config only at start.
+      if (worker.agent === 'codex') return { ok: true, detail: `${worker.sandbox} recreated; ${hook}. Codex needs Alex: bin/sbx-codex-login ${worker.sandbox} from built-rails-a, then a restart to load its board tools` };
       return { ok: true, detail: `${worker.sandbox} recreated and its agent started; ${hook}` };
     }
   }
