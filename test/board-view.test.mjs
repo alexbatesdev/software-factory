@@ -124,7 +124,8 @@ test("a card shows the record's real wait: Alex's actions are his, never masked 
   s.append({ kind: 'event', target: mine, payload: { type: 'transition', to: 'ready' } }, c);
   const queue = [prOk, script].map(id => ({ id, action: null, reason: 'a reason from the queue' }));
   const v = Object.fromEntries(boardView(s.state, { queue, prApproval: { trusted: ['teamwork'] } }).map(x => [x.id, x]));
-  assert.deepEqual(v[prOk].waiting, { who: 'you', text: 'Waiting on you: approve opening a new PR (Approvals, New PRs)' });
+  assert.equal(v[prOk].approval, 'approve opening a new PR', 'the side panel holds it; it is not a Needs-you card (Alex, 11-09)');
+  assert.notEqual(v[prOk].waiting?.who, 'you');
   assert.deepEqual(v[script].waiting, { who: 'you', text: 'Waiting on you: role-file edits (Alex runs ~/Code/plans/x.sh)' });
   assert.deepEqual(v[held].waiting, { who: null, text: 'Held until #1 merges' });
   assert.notEqual(v[mine].waiting?.who, 'you', 'work a non-stream seat owns never dispatches, so it needs no new-PR click');
@@ -138,8 +139,10 @@ test("a ready PR's card says what it really waits on: Alex's thread clicks, miss
   const view = (prs, threads = {}) => { s.state.threads = threads; return boardView(s.state, { prs: new Map([[PR, prs]]) }).find(x => x.id === id).waiting; };
   assert.deepEqual(view({ reviewDecision: 'REVIEW_REQUIRED', approvedBy: ['qa-pat'] }), { who: 'reviewers', text: 'Waiting for approvals on #7 (approved so far: qa-pat)' });
   assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }), { who: 'you', text: 'Waiting on you: GitHub reviews approved on #7 (qa-pat, dev-sam); final QA and merge checks need you' });
-  assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }, { 'RT-1': { work: id, status: 'requested' }, 'RT-2': { work: id, status: 'resolved' } }),
-    { who: 'you', text: 'Waiting on you: resolve 1 review thread (Approvals, Review threads)' });
+  s.state.threads = { 'RT-1': { work: id, status: 'requested' }, 'RT-2': { work: id, status: 'resolved' } };
+  const withRt = boardView(s.state, { prs: new Map([[PR, { reviewDecision: 'REVIEW_REQUIRED', approvedBy: [] }]]) }).find(x => x.id === id);
+  assert.equal(withRt.approval, 'resolve 1 review thread');
+  assert.deepEqual(withRt.waiting, { who: 'reviewers', text: 'Waiting for approvals on #7' }, 'the card keeps its own wait');
 });
 
 test('a parked record whose PR is open and ready waits on its reviewers, not in Parked (W-106: built-architecture #72)', async () => {

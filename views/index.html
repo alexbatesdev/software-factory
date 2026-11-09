@@ -26,6 +26,7 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .groups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 /* Support work (Alex's support week): a gold glow plus a tag, the same on cards, questions, threads and new PRs. */
 .support { box-shadow: 0 0 0 2px var(--gold), 0 0 14px 2px var(--gold-glow) !important; border-radius: 8px; }
+.appr { font-size: 12px; color: var(--link); cursor: pointer; margin-top: 2px; }
 .stag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--gold); border: 1px solid var(--gold); border-radius: 4px; padding: 0 4px; margin-right: 4px; }
 .group { background: var(--card); border: 1px solid var(--you); border-radius: 8px; padding: 6px 10px; }
 .group b { color: var(--you); margin-right: 6px; } .group .ids { font-size: 12px; color: var(--mute); }
@@ -119,6 +120,7 @@ function cardEl(c, labels) {
   if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', null, `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; meta.append(a); }
   d.append(meta);
   if (c.waiting) d.append(el('div', 'w', c.waiting.text));
+  if (c.approval) { const a = el('div', 'appr', `In Approvals: ${c.approval}`); a.onclick = () => { document.getElementById('side').hidden = false; }; d.append(a); }
   if (c.unverified) d.append(el('div', 'mute', `Unverified: ${c.unverified}`));
   return d;
 }

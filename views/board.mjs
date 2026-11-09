@@ -34,11 +34,15 @@ function withDelivery(state, w, questions) {
  *   queue: the last auto-dispatch plan [{id, action, reason}], in queue order}
  * @returns [{id, title, kind, phase, phaseLabel, stream, pr, label, waiting, category, needs, updatedAt, project, running, queue}] for every record
  */
-// What a card waits on when a person must act: Alex's clicks and decisions first, then a ready PR's approvals and merge.
-function personWait(w, state, prs, prApproval) {
+// A click waiting in the Approvals side panel: noted on the card, never a Needs-you wait (Alex, 11-09).
+function approvalNote(w, state, prApproval) {
   const rt = Object.values(state.threads || {}).filter(t => t.work === w.id && t.status !== 'resolved').length;
-  if (rt) return { who: 'you', text: `Waiting on you: resolve ${rt} review thread${rt > 1 ? 's' : ''} (Approvals, Review threads)` };
-  if (W.awaitsPrApproval(w, prApproval)) return { who: 'you', text: 'Waiting on you: approve opening a new PR (Approvals, New PRs)' };
+  if (rt) return `resolve ${rt} review thread${rt > 1 ? 's' : ''}`;
+  return W.awaitsPrApproval(w, prApproval) ? 'approve opening a new PR' : null;
+}
+
+// What a card waits on when a person must act: Alex's decisions first, then a ready PR's approvals and merge.
+function personWait(w, state, prs) {
   const stated = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`])].filter(Boolean);
   const onAlex = stated.find(x => /^Alex\b/.test(x[0]));
   if (onAlex) return { who: 'you', text: `Waiting on you: ${onAlex[1]} (${onAlex[0]})` };
@@ -104,13 +108,13 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     const st = statusOf(base, { ...ctx, group: groupOf(w) });
     const q = queued.get(w.id), started = (w.assignments || []).find(a => a.status === 'started');
     // The scheduler is the authority on queue place; only a record-level stated wait outranks it.
-    const person = personWait(w, state, prs, prApproval);
+    const person = personWait(w, state, prs);
     if (person && st.waiting?.who !== 'you') st.waiting = person;
     else if (q && st.waiting?.who !== 'you' && !w.waitingOn) st.waiting = { who: 'factory', text: q.position ? `In queue, #${q.position}: the next free stream takes #1` : `Not dispatched: ${q.reason}` };
     // Held on Alex's open question: it waits on him, wherever its triage parked it.
     const heldOn = (w.externalDeps || []).map(d => d.question).find(id => state.questions[id]?.status === 'open') || null;
     if (heldOn) st.waiting = { who: 'you', text: `Waiting on you: ${heldOn} (${state.questions[heldOn].title})` };
     return { id: w.id, title: w.title, kind: w.kind, running: started ? { id: started.id, kind: started.kind, owner: started.owner } : null, queue: q || null, priority: w.priority === 1, phase: w.phase, phaseLabel: PHASE_LABEL[w.phase], stream: w.stream || null, pr: w.links?.pr || null,
-      label: st.label, heldOn, waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null) };
+      label: st.label, heldOn, approval: approvalNote(w, state, prApproval), waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null) };
   });
 }
