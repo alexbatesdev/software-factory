@@ -202,19 +202,22 @@ export async function installBoardMcp(sandbox, { port = 4849 } = {}) {
 
 const herdr = (...a) => run('herdr', a, { timeout: 30000 });
 const atShell = async worker => !(await herdr('pane', 'process-info', '--pane', worker.ref)).stdout.includes('bridge.mjs');
-/** The key that answers Claude's "Background work is running" dialog with Exit, or null when that dialog isn't showing. */
-export function exitChoice(screen) {
+/** The key that moves a quit along: Exit in Claude's "Background work is running" dialog, Enter when the quit command sits unsent in the input box (W-326), else null. */
+export function exitChoice(screen, quit) {
   const m = /Background work is running[\s\S]*?(\d)\.\s*Exit and stop tasks/.exec(String(screen));
-  return m ? m[1] : null;
+  if (m) return m[1];
+  return quit && String(screen).split('\n').some(l => /^\s*[›❯>]\s*(\S.*)$/.exec(l)?.[1].trim() === quit) ? 'enter' : null;
 }
 
 /** Quit the worker's agent and wait for its pane's shell; false when it didn't exit within a minute. */
 async function exitAgent(worker) {
-  await herdr('pane', 'send-text', worker.ref, QUIT[worker.agent] || QUIT.claude); await herdr('pane', 'send-keys', worker.ref, 'enter');
+  const quit = QUIT[worker.agent] || QUIT.claude;
+  // Codex drops an Enter that lands in the same burst as the text, so let the text settle first.
+  await herdr('pane', 'send-text', worker.ref, quit); await pause(500); await herdr('pane', 'send-keys', worker.ref, 'enter');
   for (let i = 0; i < 20 && !(await atShell(worker)); i++) {
     await pause(3000);
     // Callers exit only between jobs, so the tasks it stops are a finished job's leftovers (Alex, TB-158 a).
-    const key = exitChoice((await herdr('pane', 'read', worker.ref, '--source', 'visible').catch(() => ({ stdout: '' }))).stdout);
+    const key = exitChoice((await herdr('pane', 'read', worker.ref, '--source', 'visible').catch(() => ({ stdout: '' }))).stdout, quit);
     if (key) await herdr('pane', 'send-keys', worker.ref, key);
   }
   return atShell(worker);

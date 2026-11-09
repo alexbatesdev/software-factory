@@ -158,3 +158,11 @@ test("a codex sandbox's baseline is its AGENTS.md (standards plus the 🤖 rule)
   assert.equal((again['/home/agent/.codex/config.toml'].match(/check_for_update_on_startup/g) || []).length, 1);
   assert.match(again['/home/agent/.codex/config.toml'], /^check_for_update_on_startup = false$/m);
 });
+
+test("a quit command left sitting in Codex's input box is submitted again, so the between-jobs restart exits (W-326)", async () => {
+  const { exitChoice } = await import('../hosts/sbx.mjs');
+  const codex = '• Final report: PR #8650, head abc1234.\n\n› /quit\n\n  ? for shortcuts                                   100% context left\n';
+  assert.equal(exitChoice(codex, '/quit'), 'enter');
+  assert.equal(exitChoice('• Final report.\n\n› \n', '/quit'), null, 'an empty input box needs nothing');
+  assert.equal(exitChoice('Background work is running\n  1. Exit and stop tasks\n', '/exit'), '1', 'the dialog answer still wins');
+});
