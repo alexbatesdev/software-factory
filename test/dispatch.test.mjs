@@ -240,3 +240,9 @@ test("the scout reproduces on an origin/main worktree, never the clone's base ch
   assert.match(b, /fresh worktree off origin\/main/);
   assert.match(b, /never the clone's base checkout/);
 });
+
+test('support work skips the new-PR go when dispatching (W-329)', () => {
+  const run = support => autoDispatchPlan([w('W-1', { kind: 'build', source: { type: 'manual' }, support })], { ...cfg, prApproval: { trusted: ['teamwork'] } }, { terminals: [] })[0];
+  assert.match(run(false).reason, /Alex's go/, 'unasked extra work waits');
+  assert.ok(run(true).action, 'support work dispatches');
+});

@@ -38,7 +38,8 @@ export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
  */
 // A new PR nobody asked for waits for Alex's go (Alex, 11-09): work that will open one, from a source he hasn't trusted.
 // Only `repos` go through PRs (no repo is built-rails); Alex's own tooling commits to main.
-export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval
+// A fix found while investigating a support task is part of that task (Alex, 11-09, W-329): `support` is supportOf, set by the caller.
+export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval && !w.support
   && (!repos || repos.includes(w.repo || 'built-rails')) && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
 
 /** An unstarted record a stream would take, held for Alex's new-PR go: the Approvals list and its card both read this. */

@@ -73,3 +73,20 @@ test("a record can't be marked ready into New PRs without its breakdown, and the
     assert.deepEqual(b.newPrs[0].proposal, { ...proposal, by: 'board lead', at: T });
   } finally { server.close(); }
 });
+
+test("a fix found while investigating a support task is part of it: no New-PR approval, assignable, dispatched (Alex, 11-09, W-329: W-314 from W-301)", async () => {
+  const f = await serve();
+  try {
+    const ctx = { now: T, by: 'test' };
+    const sup = f.store.append({ kind: 'create', payload: { title: 'Carrix | INVESTIGATE', kind: 'build', source: { type: 'teamwork', key: 'tw-1' }, stream: S1 } }, ctx).id;
+    f.store.state.work[sup].support = true;
+    const fix = f.store.append({ kind: 'create', payload: { title: 'Terminating a worker leaves them seated', kind: 'build', source: { type: 'manual' }, proposedFrom: sup, stream: S1 } }, ctx).id;
+    f.store.append({ kind: 'event', target: fix, payload: { type: 'transition', to: 'ready' } }, ctx);
+    const b = await f.board();
+    assert.ok(!b.newPrs.some(p => p.id === fix), 'not in New PRs');
+    assert.equal(b.cards.find(c => c.id === fix).approval, null, 'no approval note on its card');
+    assert.ok(b.newPrs.some(p => p.id === 'W-1'), 'genuinely extra work still waits');
+    const [, body] = await f.post('/api/actions', { action: 'assign', args: { work: fix, assignmentId: 'R1', kind: 'implementation', status: 'started', owner: S1 } }, S1);
+    assert.doesNotMatch(body.error || '', /Alex's go|new PR/, 'the new-PR gate does not refuse it');
+  } finally { f.close(); }
+});

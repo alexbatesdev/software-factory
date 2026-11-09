@@ -49,7 +49,7 @@ function withDelivery(state, w, questions) {
 function approvalNote(w, state, prApproval) {
   const rt = Object.values(state.threads || {}).filter(t => t.work === w.id && t.status !== 'resolved').length;
   if (rt) return `resolve ${rt} review thread${rt > 1 ? 's' : ''}`;
-  return W.awaitsPrApproval(w, prApproval) ? 'approve opening a new PR' : null;
+  return W.awaitsPrApproval({ ...w, support: supportOf(state, w.id) }, prApproval) ? 'approve opening a new PR' : null;
 }
 
 const MERGE_STATE = { DIRTY: 'merge conflicts', BEHIND: 'behind main', BLOCKED: 'failing or pending checks', UNSTABLE: 'failing or pending checks', DRAFT: 'still a draft' };
