@@ -181,3 +181,14 @@ test("only a wait's stated actor makes it Alex's; prose that starts with \"Alex\
   assert.notEqual(v[a].waiting.who, 'you');
   assert.deepEqual(v[b].waiting, { who: 'you', text: 'Waiting on you: query plan (the replica EXPLAIN)' });
 });
+
+test("each card carries its section from the server, and the page holds no second classifier (W-317 phase 3)", async () => {
+  const { readFileSync } = await import('node:fs');
+  const page = readFileSync(new URL('../views/index.html', import.meta.url), 'utf8');
+  assert.match(page, /const tierOf = c => c\.section;/);
+  assert.doesNotMatch(page, /waiting\?\.who|AGENT\.test|c\.heldOn \|\|/, 'the page must not decide sections itself');
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:30:00.000Z', by: 'test' };
+  const id = s.append({ kind: 'create', payload: { title: 'Plain' } }, c).id;
+  s.append({ kind: 'event', target: id, payload: { type: 'wait', who: 'product', what: 'pick a layout', evidence: 'x', actor: 'other' } }, c);
+  assert.equal(boardView(s.state).find(x => x.id === id).section, 'others');
+});

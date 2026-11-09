@@ -4,6 +4,16 @@ import { routeOf, streamHold } from '../core/notifier.mjs';
 import { sourceIndex } from '../core/correlate.mjs';
 import { isPrUnit, groupIndex } from '../core/units.mjs';
 import { statusOf, awaitingReview, PHASE_LABEL } from './status.mjs';
+import { supportOf } from '../core/store.mjs';
+
+// Who a card waits on decides its section. Agents (seats, triage, reviewer panes) are the factory.
+const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
+// The one place a card's section is decided (W-317): support on top, then Alex's action, another person, Parked only when nobody is named.
+export const sectionOf = c => c.support && c.category !== 'history' ? 'support'
+  : c.category === 'history' ? 'done'
+  : c.heldOn || c.needs?.me || c.waiting?.who === 'you' ? 'you'
+  : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others'
+  : c.category === 'parked' ? 'parked' : 'factory';
 
 // The "Unverified:" part of the newest DoD exit report note (core/api.mjs writes it), unless it says nothing.
 function unverifiedOf(w) {
@@ -114,7 +124,8 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     // Held on Alex's open question: it waits on him, wherever its triage parked it.
     const heldOn = (w.externalDeps || []).map(d => d.question).find(id => state.questions[id]?.status === 'open') || null;
     if (heldOn) st.waiting = { who: 'you', text: `Waiting on you: ${heldOn} (${state.questions[heldOn].title})` };
-    return { id: w.id, title: w.title, kind: w.kind, running: started ? { id: started.id, kind: started.kind, owner: started.owner } : null, queue: q || null, priority: w.priority === 1, phase: w.phase, phaseLabel: PHASE_LABEL[w.phase], stream: w.stream || null, pr: w.links?.pr || null,
-      label: st.label, heldOn, approval: approvalNote(w, state, prApproval), waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null) };
+    const c = { id: w.id, title: w.title, kind: w.kind, running: started ? { id: started.id, kind: started.kind, owner: started.owner } : null, queue: q || null, priority: w.priority === 1, phase: w.phase, phaseLabel: PHASE_LABEL[w.phase], stream: w.stream || null, pr: w.links?.pr || null,
+      label: st.label, heldOn, approval: approvalNote(w, state, prApproval), waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null), support: supportOf(state, w.id) };
+    return { ...c, section: sectionOf(c) };
   });
 }
