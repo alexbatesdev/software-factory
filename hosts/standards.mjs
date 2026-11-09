@@ -17,3 +17,9 @@ export function syncStandards(src = SOURCE, dst = MIRROR) {
     return true;
   });
 }
+
+/** The sandbox user's ~/.claude/CLAUDE.md: both documents inlined (an @-import can park a session at an approval dialog). */
+export function standardsClaudeMd(dir = MIRROR) {
+  return `# Team standards\n\nWritten by the software factory from Benny's documents; it is replaced at every sandbox restore, so don't edit it here. The Definition of Done is the bar for finishing any task: close with its exit report. Before asking your supervisor a question, check "What Would Benny Do?": if a passage settles it, act and name the passage.\n\n`
+    + STANDARDS.map(name => readFileSync(join(dir, name), 'utf8').trim()).join('\n\n---\n\n') + '\n';
+}

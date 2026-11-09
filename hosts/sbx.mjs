@@ -9,7 +9,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { sandboxToken } from '../core/sandbox-seat.mjs';
-import { STANDARDS, MIRROR, IN_SANDBOX } from './standards.mjs';
+import { STANDARDS, MIRROR, IN_SANDBOX, standardsClaudeMd } from './standards.mjs';
 
 const run = promisify(execFile);
 // The herdr sbx plugin owns the pane ↔ sandbox mapping; its bridge's start mode recreates a missing sandbox from it.
@@ -124,6 +124,16 @@ export async function markNudgeSeen(sandbox) {
   await new Promise((resolve, reject) => { const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `cat > ${CLAUDE_STATE}`], { timeout: 60000 }, e => e ? reject(e) : resolve()); p.stdin.end(JSON.stringify(withSeenNudge(cur), null, 2)); });
 }
 
+/** Benny's documents in a sandbox: the files, and its user CLAUDE.md so every worker session loads them (Alex, 11-09). */
+export async function installStandards(sandbox, put = sbxPut(sandbox)) {
+  for (const name of STANDARDS) await put(`${IN_SANDBOX}/${name}`, readFileSync(join(MIRROR, name), 'utf8'));
+  await put('/home/agent/.claude/CLAUDE.md', standardsClaudeMd());
+}
+const sbxPut = sandbox => (path, text) => new Promise((resolve, reject) => {
+  const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `mkdir -p "$(dirname ${path})" && cat > ${path}`], { timeout: 60000 }, e => e ? reject(e) : resolve());
+  p.stdin.end(text);
+});
+
 /** Put the comment hook script and its settings entry back in a sandbox. */
 export async function restoreBaseline(sandbox) {
   const put = (path, text) => new Promise((resolve, reject) => {
@@ -133,7 +143,7 @@ export async function restoreBaseline(sandbox) {
   await put(HOOK_PATH, readFileSync(join(homedir(), '.claude/hooks/require-robot-wrapper.sh'), 'utf8'));
   const cur = await run('sbx', ['exec', sandbox, 'cat', '/home/agent/.claude/settings.json'], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
   await put('/home/agent/.claude/settings.json', JSON.stringify(withBaseline(cur), null, 2) + '\n');
-  for (const name of STANDARDS) await put(`${IN_SANDBOX}/${name}`, readFileSync(join(MIRROR, name), 'utf8'));
+  await installStandards(sandbox, put);
   await installBoardMcp(sandbox);
   await markNudgeSeen(sandbox);
 }

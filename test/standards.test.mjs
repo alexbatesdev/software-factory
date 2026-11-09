@@ -14,3 +14,12 @@ test("Benny's documents are mirrored where workers can read them, and only rewri
   assert.deepEqual(syncStandards(src, dst), ['WWBD.md']);
   assert.equal(readFileSync(join(dst, 'WWBD.md'), 'utf8'), 'wwbd v2');
 });
+
+import { standardsClaudeMd } from '../hosts/standards.mjs';
+test("a sandbox's own CLAUDE.md carries both documents in full, so every worker session loads them", () => {
+  const src = mkdtempSync(join(tmpdir(), 'std-src-'));
+  writeFileSync(join(src, 'DEFINITION_OF_DONE.md'), '# Definition of Done\ngate one'); writeFileSync(join(src, 'WWBD.md'), '# How We Work\ninstinct one');
+  const md = standardsClaudeMd(src);
+  assert.match(md, /gate one/); assert.match(md, /instinct one/);
+  assert.match(md, /^# Team standards/);
+});
