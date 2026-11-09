@@ -42,6 +42,7 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .you-t .card { border-left-color: var(--you); } .others-t .card { border-left-color: var(--others); }
 .factory-t .card { border-left-color: var(--factory); opacity: .85; font-size: 13px; width: 230px; }
 .support-t > .h h2 { color: var(--gold); }
+.parked-t .card { opacity: .8; font-size: 13px; }
 .done-t .card { opacity: .6; font-size: 12px; width: 210px; }
 .card .t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card .w { font-size: 12px; margin-top: 2px; } .you-t .card .w { color: var(--you); font-weight: 600; }
@@ -93,12 +94,14 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
 // Support work that isn't finished is always on top, never folded away (Alex's support week).
 const tierOf = c => c.support && c.category !== 'history' ? 'support'
-  : ['history', 'parked'].includes(c.category) ? 'done'
+  : c.category === 'parked' ? 'parked' : c.category === 'history' ? 'done'
   : c.needs?.me || c.waiting?.who === 'you' ? 'you'
   : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others' : 'factory';
 // Cards folded into a PR's card show only when they need Alex; otherwise the PR's card speaks for them.
 const shown = (c, order) => order.includes(c.category) || ['you', 'support'].includes(tierOf(c));
-const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['done', 'Done, closed or parked']];
+const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['parked', 'Parked: to unpark someday'], ['done', 'Done or closed']];
+// Folded sections, each opened on its own; the open state survives the 15s redraw.
+const FOLDED = ['parked', 'done'], unfolded = new Set();
 
 function cardEl(c, labels) {
   const d = el('div', 'card');
@@ -179,7 +182,7 @@ async function render() {
     sec.append(h);
     if (tier === 'factory') { sec.append(factoryLanes(cards, b.buckets.labels, b)); board.append(sec); continue; }
     const tiles = el('div', 'tiles'); tiles.append(...cards.map(c => cardEl(c, b.buckets.labels)));
-    if (tier === 'done') { const det = el('details'); det.open = tier === 'factory'; det.append(el('summary', 'mute', tier === 'done' ? 'show' : 'hide / show'), tiles); sec.append(det); }
+    if (FOLDED.includes(tier)) { const det = el('details'); det.open = unfolded.has(tier); det.ontoggle = () => det.open ? unfolded.add(tier) : unfolded.delete(tier); det.append(el('summary', 'mute', 'show / hide'), tiles); sec.append(det); }
     else sec.append(tiles);
     board.append(sec);
   }
