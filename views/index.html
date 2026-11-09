@@ -55,7 +55,9 @@ details summary { cursor: pointer; }
 /* Approvals (review threads, new PRs): one-click feeds in a side panel, closed on load, never in the questions count. */
 #side { position: fixed; top: 0; right: 0; bottom: 0; width: 600px; overflow-y: auto; background: var(--card); border-left: 1px solid var(--line); box-shadow: -4px 0 16px rgba(0,0,0,.15); padding: 12px 16px; z-index: 10; }
 #side .sh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-#side h3 { margin: 14px 0 4px; font-size: 14px; }
+#side .feed { border: 1px solid var(--line); border-left: 5px solid var(--acc); background: var(--accbg); border-radius: 8px; padding: 10px 14px; margin-top: 14px; }
+#side .feed.prs { --acc: var(--others); --accbg: var(--others-bg); } #side .feed.thr { --acc: var(--factory); --accbg: var(--factory-bg); }
+#side .feed h3 { margin: 0 0 2px; font-size: 16px; color: var(--acc); display: flex; gap: 8px; align-items: baseline; } #side .feed h3 .n { font-size: 13px; color: var(--mute); font-weight: 400; }
 #side .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 #side .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 #approvalsBtn { margin-left: auto; } #approvalsBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
@@ -75,8 +77,8 @@ button:disabled { opacity: .5; cursor: default; }
 </section>
 <aside id="side" hidden>
   <div class="sh"><h2>Approvals</h2><button id="sideClose">Close</button></div>
-  <h3>New PRs</h3><div class="mute">Work no Teamwork task asked for. Approve and it queues; Decline withdraws it.</div><div id="prList"></div>
-  <h3>Review threads to resolve</h3><div class="mute">Resolve marks the thread resolved on GitHub directly; no agent runs.</div><div id="threadList"></div>
+  <section class="feed prs"><h3>New PRs to approve <span class="n" id="prN"></span></h3><div class="mute">Company-repo work no Teamwork task asked for. Approve and it queues; Decline withdraws it.</div><div id="prList"></div></section>
+  <section class="feed thr"><h3>Review threads to resolve <span class="n" id="thrN"></span></h3><div class="mute">Resolve marks the thread resolved on GitHub directly; no agent runs.</div><div id="threadList"></div></section>
 </aside>
 <main id="board"></main>
 <div class="seats" id="seats"></div>
@@ -155,6 +157,7 @@ async function render() {
   document.getElementById('you').hidden = !total;
 
   threadsPanel(b.threads || []); newPrsPanel(b.newPrs || []);
+  document.getElementById('prN').textContent = (b.newPrs || []).length; document.getElementById('thrN').textContent = (b.threads || []).length;
   const pending = (b.newPrs || []).length + (b.threads || []).filter(t => t.status !== 'approved').length, ab = document.getElementById('approvalsBtn');
   ab.textContent = `Approvals (${pending})`; ab.classList.toggle('has', pending > 0);
   const board = document.getElementById('board'); board.replaceChildren();

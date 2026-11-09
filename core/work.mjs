@@ -37,8 +37,9 @@ export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
  * @returns {'excluded'|'trusted-review'|'stream'}
  */
 // A new PR nobody asked for waits for Alex's go (Alex, 11-09): work that will open one, from a source he hasn't trusted.
-export const needsPrApproval = (w, trusted = ['teamwork']) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval
-  && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
+// Only `repos` go through PRs (no repo is built-rails); Alex's own tooling commits to main.
+export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval
+  && (!repos || repos.includes(w.repo || 'built-rails')) && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
 
 export function trackOf(w, cfg = {}) {
   if ((cfg.exclude || []).includes(w.id)) return 'excluded';

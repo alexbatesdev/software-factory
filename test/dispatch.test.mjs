@@ -211,3 +211,11 @@ test('a new PR nobody asked for waits for Alex: agent-filed build work with no P
   const trusted = autoDispatchPlan([w('W-4', { kind: 'build', source: { type: 'agent', by: 'local-head' } })], { ...cfg, prApproval: { trusted: ['teamwork', 'agent:local-head'] } });
   assert.equal(trusted[0].action, 'queue', 'a source in config.prApproval.trusted needs no click');
 });
+
+test("only a company repo's work needs Alex's go for a new PR; Alex's own tooling commits to main (Alex, 11-09, W-186)", () => {
+  const pc = { ...cfg, prApproval: { trusted: ['teamwork'], repos: ['built-rails', 'built-customer-implementations'] } };
+  const at = (repo) => autoDispatchPlan([loose('W-1', { kind: 'build', source: { type: 'agent', by: 'local-head' }, repo })], pc)[0];
+  assert.equal(at('teamwork-mini-mcp').action, 'queue');
+  assert.match(at('built-customer-implementations').reason, /Alex's go/);
+  assert.match(at(undefined).reason, /Alex's go/, 'no repo means built-rails');
+});

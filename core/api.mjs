@@ -45,7 +45,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
     }
     // A new PR nobody asked for starts only after Alex's dashboard click (Alex, 11-09), whoever assigns it.
-    if (action === 'assign' && args.kind !== 'review' && s.work[args.work] && needsPrApproval(s.work[args.work], config.prApproval?.trusted)) return [409, { error: `${args.work} would open a new PR that no Teamwork task asked for: it waits for Alex's go on the dashboard (New PRs). Don't ask it as a question.` }];
+    if (action === 'assign' && args.kind !== 'review' && s.work[args.work] && needsPrApproval(s.work[args.work], config.prApproval)) return [409, { error: `${args.work} would open a new PR that no Teamwork task asked for: it waits for Alex's go on the dashboard (New PRs). Don't ask it as a question.` }];
     if (action === 'route' && args.setOwner) args = { ...args, setOwnerOf: s.questions[args.id]?.work || undefined };
     // An ack or a create names the calling seat, never a claimed name.
     if (['ack', 'create'].includes(action)) args = { ...args, by: seat };
@@ -85,7 +85,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
         const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend, amendments }) => ({ id, title, work, recommend, amendments: amendments || [] }));
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
-          newPrs: Object.values(s.work).filter(w => ['ready', 'queued'].includes(w.phase) && needsPrApproval(w, config.prApproval?.trusted)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null })),
+          newPrs: Object.values(s.work).filter(w => ['ready', 'queued'].includes(w.phase) && needsPrApproval(w, config.prApproval)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null })),
           threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null })),
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }) });
       }
