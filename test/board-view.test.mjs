@@ -119,11 +119,15 @@ test("a card shows the record's real wait: Alex's actions are his, never masked 
   const held = make('Held on two merges');
   s.append({ kind: 'sync_intake', target: held, payload: { bucket: 'intake', note: 'Held until #1 merges' } }, c);
   s.append({ kind: 'event', target: held, payload: { type: 'hold', prs: ['#1'] } }, c);
+  const mine = make('A role-file edit the board developer owns', { source: { type: 'manual' } });
+  s.append({ kind: 'update', target: mine, payload: { owner: 'triage board worker' } }, c);
+  s.append({ kind: 'event', target: mine, payload: { type: 'transition', to: 'ready' } }, c);
   const queue = [prOk, script].map(id => ({ id, action: null, reason: 'a reason from the queue' }));
   const v = Object.fromEntries(boardView(s.state, { queue, prApproval: { trusted: ['teamwork'] } }).map(x => [x.id, x]));
   assert.deepEqual(v[prOk].waiting, { who: 'you', text: 'Waiting on you: approve opening a new PR (Approvals, New PRs)' });
   assert.deepEqual(v[script].waiting, { who: 'you', text: 'Waiting on you: role-file edits (Alex runs ~/Code/plans/x.sh)' });
   assert.deepEqual(v[held].waiting, { who: null, text: 'Held until #1 merges' });
+  assert.notEqual(v[mine].waiting?.who, 'you', 'work a non-stream seat owns never dispatches, so it needs no new-PR click');
 });
 
 test("a ready PR's card says what it really waits on: Alex's thread clicks, missing GitHub approvals, or his final checks (APPROVED is not Built's QA gate)", async () => {

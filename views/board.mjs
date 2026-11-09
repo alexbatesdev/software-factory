@@ -38,7 +38,7 @@ function withDelivery(state, w, questions) {
 function personWait(w, state, prs, prApproval) {
   const rt = Object.values(state.threads || {}).filter(t => t.work === w.id && t.status !== 'resolved').length;
   if (rt) return { who: 'you', text: `Waiting on you: resolve ${rt} review thread${rt > 1 ? 's' : ''} (Approvals, Review threads)` };
-  if (['ready', 'queued'].includes(w.phase) && !(w.assignments || []).length && W.needsPrApproval(w, prApproval)) return { who: 'you', text: 'Waiting on you: approve opening a new PR (Approvals, New PRs)' };
+  if (W.awaitsPrApproval(w, prApproval)) return { who: 'you', text: 'Waiting on you: approve opening a new PR (Approvals, New PRs)' };
   const onAlex = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`])]
     .find(x => x && /^Alex\b/.test(x[0]));
   if (onAlex) return { who: 'you', text: `Waiting on you: ${onAlex[1]} (${onAlex[0]})` };

@@ -41,6 +41,9 @@ export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
 export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval
   && (!repos || repos.includes(w.repo || 'built-rails')) && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
 
+/** An unstarted record a stream would take, held for Alex's new-PR go: the Approvals list and its card both read this. */
+export const awaitsPrApproval = (w, cfg) => ['ready', 'queued'].includes(w.phase) && !(w.assignments || []).length && (!w.owner || /^sup: /.test(w.owner)) && needsPrApproval(w, cfg);
+
 export function trackOf(w, cfg = {}) {
   if ((cfg.exclude || []).includes(w.id)) return 'excluded';
   if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '') || isTrustedReviewSeat(w.owner)) return 'trusted-review';
