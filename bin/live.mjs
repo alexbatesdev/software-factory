@@ -26,6 +26,7 @@ import { list as readFleet } from '../fleet/herdr.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
+import { syncResolvedThreads } from '../effects/threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles } from '../core/recycle.mjs';
 import { gh as liveGh } from '../effects/github.mjs';
@@ -177,6 +178,7 @@ async function githubTick() {
     apply(skipNotes(store.state.work, config), 'board (skip)');
     await mergeTick();
     holdTick();
+    await syncResolvedThreads(store, gh, now);
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
 }
