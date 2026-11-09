@@ -292,7 +292,7 @@ async function recycleTick() {
       if (DRY) { once(`dry run: would restart ${d.worker.label}`); continue; }
       const r = await host.restart(d.worker).catch(e => ({ ok: false, detail: e.message }));
       log(`restart ${d.worker.label}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
-      if (r.ok) { delete health[d.unit]; tell(d.to, { restarted: `${d.worker.label}/${now()}` }, `${d.worker.label} was restarted between jobs (a fresh session in the same sandbox: repo and disk kept, context gone). Brief it cold. If its pane parks on a startup dialog, send it to local-head.`); }
+      if (r.ok) { delete health[d.unit]; tell(d.to, { restarted: `${d.worker.label}/${now()}`, fyi: true }, `${d.worker.label} was restarted between jobs (a fresh session in the same sandbox: repo and disk kept, context gone). Brief it cold. If its pane parks on a startup dialog, send it to local-head.`); }
       else tell(config.boardLead?.seat || 'board lead', { restartFailed: `${d.worker.label}/${now()}` }, `Restarting ${d.worker.label} between jobs failed: ${r.detail}. File it as a factory record if it repeats.`);
       continue;
     }

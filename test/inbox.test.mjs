@@ -212,3 +212,18 @@ test('an intake notice names an open record citing the same file within 15 lines
   assert.match(notes['W-268'], /Likely duplicate of W-232 \(company_document\.rb:35\):/, 'a factory record quoting the lines is not a duplicate');
   assert.doesNotMatch(notes['W-269'], /duplicate/);
 });
+
+test("the board's own bookkeeping lines under a worker's name aren't relayed as worker notes", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const updates = ['Updated links.', 'Proposed from W-4.', 'Out-of-scope discovery proposed as separate work: HCP CSV omits a date', 'R2 done: PR #9 at abc1234'].map((text, i) => ({ at: `t${i}`, by: 'sbx: s1', text }));
+  const state = { work: { 'W-5': { id: 'W-5', title: 'Fix it', phase: 'implementation', stream: 'sup: s1', requests: [], assignments: [], updates } }, questions: {}, messages: {}, notifications: {} };
+  const notes = inboxCommands(state, { supervisors: ['sup: s1'], seats: [], workers: { 'sbx: s1': 'sup: s1' } }).cmds.filter(c => c.payload.about?.workerNote);
+  assert.deepEqual(notes.map(c => c.payload.about.workerNote), ['W-5/3']);
+});
+
+test('an fyi message is stored already acked, so it never counts as unread or wakes a seat', async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:');
+  s.append({ kind: 'message', payload: { to: 'sup: s1', about: { restarted: 'x', fyi: true }, text: 'restarted' } }, { now: 't', by: 'board' });
+  assert.equal(Object.values(s.state.messages)[0].ackedAt, 't');
+});

@@ -48,7 +48,9 @@ function foldMessage(state, { kind, target, payload, ctx }) {
   if (kind === 'message') {
     if (!payload.to || !payload.text) throw new Error('A message needs to and text.');
     const id = `M-${state.nextMessage++}`;
-    state.messages[id] = { id, to: payload.to, from: ctx.by, work: payload.work || null, about: payload.about || {}, text: payload.text, at: ctx.now, ackedAt: null, ackedBy: null };
+    // An fyi needs no action, so it is stored acked: never unread, never a wake (11-09).
+    const fyi = !!payload.about?.fyi;
+    state.messages[id] = { id, to: payload.to, from: ctx.by, work: payload.work || null, about: payload.about || {}, text: payload.text, at: ctx.now, ackedAt: fyi ? ctx.now : null, ackedBy: fyi ? 'fyi' : null };
     return id;
   }
   const m = state.messages[target] || (() => { throw new Error(`There is no message ${target}.`); })();

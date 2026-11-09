@@ -98,9 +98,11 @@ export function inboxCommands(state, cfg, fleet = null) {
     }
   }
   // A worker's own board note (sbx workers on the board) goes to its supervisor, which records what it means.
+  // The board's own lines written under the worker's name (links, discovery bookkeeping) need no one (11-09: 31 of them).
+  const BOOKKEEPING = /^(Updated links\.|Proposed from W-\d+\.|Out-of-scope discovery proposed as separate work: )/;
   for (const w of Object.values(state.work)) (w.updates || []).forEach((u, i) => {
     const sup = cfg.workers?.[u.by], key = `${w.id}/${i}`;
-    if (sup && !told.has(`workerNote:${key}`)) cmds.push(msg(sup, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
+    if (sup && !BOOKKEEPING.test(u.text || '') && !told.has(`workerNote:${key}`)) cmds.push(msg(sup, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
   });  // A worker job the worker never wrote on: its session may lack the board tools (W-218), or the brief never started.
   const workerOf = Object.fromEntries(Object.entries(cfg.workers || {}).map(([wk, sup]) => [sup, wk]));
   for (const w of Object.values(state.work)) {
