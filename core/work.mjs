@@ -33,20 +33,20 @@ export const parked = a => a.status === 'blocked' && !!a.waitingOn;
 export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
 /**
  * What kind of work a record is; every guard asks this instead of re-deriving it.
- * @param cfg {mutationBranch, exclude} from config.json (Mutation is Alex's own; never routed, dispatched or drafted)
- * @returns {'mutation'|'trusted-review'|'stream'}
+ * @param cfg {exclude} from config.json: records listed in autoDispatch.exclude are never routed, dispatched or drafted
+ * @returns {'excluded'|'trusted-review'|'stream'}
  */
 export function trackOf(w, cfg = {}) {
-  if ((cfg.exclude || []).includes(w.id) || new RegExp(cfg.mutationBranch || 'mutation', 'i').test(`${w.links?.branch || ''} ${w.links?.pr || ''}`)) return 'mutation';
+  if ((cfg.exclude || []).includes(w.id)) return 'excluded';
   if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '') || isTrustedReviewSeat(w.owner)) return 'trusted-review';
   return 'stream';
 }
 // A skip the factory never says out loud hides bugs (11-09: two security PRs read as Mutation for 2.6 days).
-const SKIP_NOTE = 'Skipped by the factory: Mutation track';
-/** One note per live record the factory leaves alone as Mutation, naming why. */
+const SKIP_NOTE = 'Skipped by the factory: excluded';
+/** One note per live record the factory leaves alone as excluded, naming why. */
 export function skipNotes(works, cfg = {}) {
-  return Object.values(works).filter(w => !TERMINAL.includes(w.phase) && trackOf(w, cfg) === 'mutation' && !(w.updates || []).some(u => u.text?.startsWith(SKIP_NOTE)))
-    .map(w => ({ kind: 'event', target: w.id, payload: { type: 'note', text: `${SKIP_NOTE} (${(cfg.exclude || []).includes(w.id) ? 'listed in autoDispatch.exclude' : `branch or PR matches mutationBranch /${cfg.mutationBranch || 'mutation'}/`}). No dispatch, notices or auto-ready.` } }));
+  return Object.values(works).filter(w => !TERMINAL.includes(w.phase) && trackOf(w, cfg) === 'excluded' && !(w.updates || []).some(u => u.text?.startsWith(SKIP_NOTE)))
+    .map(w => ({ kind: 'event', target: w.id, payload: { type: 'note', text: `${SKIP_NOTE} (listed in autoDispatch.exclude). No dispatch, notices or auto-ready.` } }));
 }
 /** Queue order everywhere work waits for a stream: priority 1 (Alex's "priority") first, then oldest record. */
 export const queueOrder = (a, b) => (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2));

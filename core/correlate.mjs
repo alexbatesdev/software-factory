@@ -73,13 +73,12 @@ export function refresh(w, item, parseAcs) {
 
 /**
  * observe_source / source_gone commands for what changed between the records and one source's fresh read.
- * @param cfg {mutationBranch, exclude}: a Mutation PR nobody tracks never becomes a record (Mutation work is Alex's own).
+ * @param cfg {exclude}
  */
 export function sourceCommands(state, items, sourceType, parseAcs, cfg = {}) {
   const idx = sourceIndex(state), cmds = [];
   for (const it of items.values()) {
     const o = ownerOf(state, it, idx), w = o && state.work[o.id];
-    if (!o && it.kind === 'pr' && trackOf({ links: { branch: it.branch } }, cfg) === 'mutation') continue;
     if (!w || w.source?.key !== it.id && !(w.aliases || []).includes(it.id) || w.source?.key === it.id && JSON.stringify(refresh(w, it, parseAcs)) !== JSON.stringify(w)) cmds.push({ kind: 'observe_source', payload: it });
   }
   for (const w of Object.values(state.work)) {

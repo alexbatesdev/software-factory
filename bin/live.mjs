@@ -87,7 +87,7 @@ function autoDispatchTick() {
   const s = store.state;
   const views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
-  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], mutationBranch: config.mutationBranch, drain }, { terminals });
+  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], drain }, { terminals });
   lastPlan = plan;
   for (const p of plan.filter(p => p.action === 'resume')) {
     const key = `${p.id}/${p.assignmentId}/v${p.version}`;
@@ -129,7 +129,7 @@ async function inboxTick() {
 }
 
 // Marking PRs ready waits on GitHub; on its own loop so a slow GitHub never holds up messages and wakes (W-199).
-const readyTick = () => autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'mutation', now, log: once });
+const readyTick = () => autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'excluded', now, log: once });
 
 // A stranded record (fixes/review with nothing live or pending) gets one heal after a grace period, so a seat mid-way
 // through recording a step isn't overtaken (W-208 follow-up).
@@ -158,14 +158,14 @@ async function githubTick() {
     const { prs, heads } = projectPrs(lines, own);
     const health = await readPrHealth([...own], owner, undefined, config.githubLogin, COMMENTS_FROM);
     const mainGreen = await readMainGreen([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...healthCommands(s, health, { owner, now: now(), mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
-    apply(sourceCommands(store.state, prs, 'pr', parseAcs, { mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude }), 'poller');
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver }), ...healthCommands(s, health, { owner, now: now(), exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
+    apply(sourceCommands(store.state, prs, 'pr', parseAcs, { exclude: config.autoDispatch?.exclude }), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {
       lastAudit = Date.now();
       const dev = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
       const told = new Set(Object.values(store.state.messages).map(m => m.about?.missed).filter(Boolean));
-      const missed = auditMissed(store.state, own, health, { owner, mutationBranch: config.mutationBranch, exclude: config.autoDispatch?.exclude, prs }).filter(m => !told.has(`${m.key}/${m.id}`));
+      const missed = auditMissed(store.state, own, health, { owner, exclude: config.autoDispatch?.exclude, prs }).filter(m => !told.has(`${m.key}/${m.id}`));
       log(`audit: ${missed.length} missed`);
       for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
     }

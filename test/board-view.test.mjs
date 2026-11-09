@@ -79,8 +79,8 @@ test("a ready record's waiting line and queue position come from the auto-dispat
   const { boardView } = await import('../views/board.mjs');
   const s = openStore(), ctx = { now: '2026-11-04T12:00:00.000Z', by: 'test' };
   const ids = ['A', 'B', 'M'].map(t => s.append({ kind: 'create', payload: { title: t } }, ctx).id);
-  const queue = [{ id: ids[0], action: null, reason: 'every stream is busy; waits its turn' }, { id: ids[2], action: null, reason: 'Mutation work is never auto-dispatched' }, { id: ids[1], action: null, reason: 'every stream is busy; waits its turn' }];
+  const queue = [{ id: ids[0], action: null, reason: 'every stream is busy; waits its turn' }, { id: ids[2], action: null, reason: 'Excluded in config.autoDispatch.exclude' }, { id: ids[1], action: null, reason: 'every stream is busy; waits its turn' }];
   const cards = Object.fromEntries(boardView(s.state, { queue }).map(c => [c.id, c]));
   assert.equal(cards[ids[1]].waiting.text, 'In queue, #2: the next free stream takes #1');
-  assert.equal(cards[ids[2]].waiting.text, 'Not dispatched: Mutation work is never auto-dispatched');
+  assert.equal(cards[ids[2]].waiting.text, 'Not dispatched: Excluded in config.autoDispatch.exclude');
 });

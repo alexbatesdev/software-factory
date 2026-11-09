@@ -676,19 +676,18 @@ test('a merge hold waits on its PRs until each is released', () => {
 });
 
 import { readFileSync } from 'node:fs';
-test('the configured Mutation track takes the Mutation branches, not a GraphQL-mutation security branch', () => {
-  const cfg = JSON.parse(readFileSync(new URL('../config.json', import.meta.url)));
-  const track = branch => trackOf({ id: 'W-1', links: { branch } }, cfg);
-  assert.equal(track('alex/test-quality/mutation-gaps-3'), 'mutation');
-  assert.equal(track('alex/mutation-tester'), 'mutation');
-  assert.equal(track('alex/security/graphql-mutation-id-loads/41474202'), 'stream');
-});
 
 import { skipNotes } from '../core/work.mjs';
-test('a record the factory skips as Mutation gets one note saying why', () => {
-  const cfg = { mutationBranch: 'alex/mutation-tester' };
+test('a record the factory skips as excluded gets one note saying why', () => {
+  const cfg = { exclude: ['W-9'] };
   const w = { id: 'W-9', phase: 'ready_for_human', links: { branch: 'alex/mutation-tester' }, updates: [] };
   assert.deepEqual(skipNotes({ 'W-9': w, 'W-1': { ...build(), links: {} } }, cfg).map(c => [c.target, c.payload.type]), [['W-9', 'note']]);
   const noted = { ...w, updates: [{ text: skipNotes({ 'W-9': w }, cfg)[0].payload.text }] };
   assert.deepEqual(skipNotes({ 'W-9': noted }, cfg), []);
+});
+
+test('Mutation-tester work is ordinary stream work; only a listed record is excluded', () => {
+  const cfg = JSON.parse(readFileSync(new URL('../config.json', import.meta.url)));
+  assert.equal(trackOf({ id: 'W-1', links: { branch: 'alex/test-quality/mutation-gaps-3' } }, cfg), 'stream');
+  assert.equal(trackOf({ id: 'W-9', links: {} }, { exclude: ['W-9'] }), 'excluded');
 });

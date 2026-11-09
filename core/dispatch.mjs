@@ -11,8 +11,9 @@ const active = w => BUILDING.includes(w.phase) || live(w) || (w.phase === 'queue
 
 /** A stream with `repos` {name: checkout} (a host stream, TB-159) works only those repos; the sbx streams work everything else. */
 export function canTake(w, label, supervisors) {
-  const has = s => !!s?.repos && Object.hasOwn(s.repos, w.repo ?? '');
-  return supervisors[label]?.repos ? has(supervisors[label]) : !Object.values(supervisors).some(has);
+  // A host stream names its repos, and branches inside other repos (Mutation work, 11-09) that need the host.
+  const has = s => (!!s?.repos && Object.hasOwn(s.repos, w.repo ?? '')) || (!!s?.branches && new RegExp(s.branches).test(w.links?.branch || ''));
+  return supervisors[label]?.repos || supervisors[label]?.branches ? has(supervisors[label]) : !Object.values(supervisors).some(has);
 }
 
 const worked = w => (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked', 'done'].includes(a.status));
@@ -39,7 +40,7 @@ export function streamLoad(works, labels) {
 
 /**
  * @param works server work views (openQuestions, openDeps, intakeHold included)
- * @param cfg {supervisors: {label: {...}}, exclude: [W-n], mutationBranch, drain: Map(stream → reason) for streams taking no new work}; config order breaks load ties
+ * @param cfg {supervisors: {label: {...}}, exclude: [W-n], drain: Map(stream → reason) for streams taking no new work}; config order breaks load ties
  * @param fleet {terminals: [pane labels running in Terminals]}
  * @returns [{id, action: 'queue'|'request'|null, owner?, reason}] for every ready/queued record not already with its supervisor
  */
@@ -76,7 +77,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const wait = reason => out.push({ id: w.id, action: null, reason });
     const holds = w.priority === 1 ? runningOn : busy;
     const track = trackOf(w, cfg);
-    if (track === 'mutation') { wait('Mutation work is never auto-dispatched'); continue; }
+    if (track === 'excluded') { wait('Excluded in config.autoDispatch.exclude'); continue; }
     if (track === 'trusted-review') { wait('a trusted review, not stream work'); continue; }
     if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); continue; }
     if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); continue; }

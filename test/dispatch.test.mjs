@@ -30,10 +30,10 @@ test('a stream with active work makes the next record wait its turn, one dispatc
 test('questions, dependencies, external deps, holds, Mutation, trusted reviews and Terminals never dispatch', () => {
   const p = plan([
     w('W-10', { openQuestions: 1 }), w('W-11', { openDeps: ['W-9'] }), w('W-12', { externalDeps: [{ text: '#8050 merges' }] }),
-    w('W-13', { intakeHold: { by: 'Alex' } }), w('W-67'), w('W-14', { links: { branch: 'alex/mutation-tester' } }),
+    w('W-13', { intakeHold: { by: 'Alex' } }), w('W-67'),
     w('W-15', { owner: 'pr-1-trusted-review' }), w('W-16', { owner: 'sup: in-terminals' }),
   ], ['sup: in-terminals']);
-  for (const [id, re] of [['W-10', /question/], ['W-11', /W-9/], ['W-12', /8050/], ['W-13', /hold/], ['W-67', /Mutation|excluded/], ['W-14', /Mutation/], ['W-15', /trusted review/], ['W-16', /Terminals/]])
+  for (const [id, re] of [['W-10', /question/], ['W-11', /W-9/], ['W-12', /8050/], ['W-13', /hold/], ['W-67', /excluded/i], ['W-15', /trusted review/], ['W-16', /Terminals/]])
     assert.deepEqual([p[id].action, re.test(p[id].reason)], [null, true], `${id}: ${p[id].reason}`);
 });
 
@@ -140,4 +140,17 @@ test('a host stream takes only records in its repos; the sbx streams take everyt
   assert.notEqual(p['W-3'].to, H);
   const pinned = autoDispatchPlan([w('W-4', { owner: S1, repo: 'teamwork-mini-mcp' })], hcfg)[0];
   assert.deepEqual([pinned.action, /can't work in teamwork-mini-mcp/.test(pinned.reason)], [null, true], pinned.reason);
+});
+
+test('a host stream also takes records on the branches it names, so Mutation work runs on the host', () => {
+  const H = 'sup: host';
+  const hcfg = { ...cfg, mutationBranch: undefined, supervisors: { ...cfg.supervisors, [H]: { repos: { 'built-customer-implementations': '~/Code/built-customer-implementations' }, branches: 'alex/(mutation-tester|test-quality/mutation-gaps)' } } };
+  const p = Object.fromEntries(autoDispatchPlan([
+    loose('W-1', { owner: null, repo: 'built-rails', links: { branch: 'alex/test-quality/mutation-gaps-3' } }),
+    loose('W-2', { owner: null, repo: 'built-customer-implementations' }),
+    loose('W-3', { owner: null, repo: 'built-rails', links: { branch: 'alex/security/graphql-mutation-id-loads' } }),
+  ], hcfg).map(x => [x.id, x]));
+  assert.equal(p['W-1'].to, H);
+  assert.match(p['W-2'].reason, /sup: host with W-1/, 'waits for the host, never an sbx stream');
+  assert.notEqual(p['W-3'].to, H);
 });

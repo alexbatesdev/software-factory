@@ -36,13 +36,13 @@ export function groupIndex(works, bySource) {
 
 /**
  * Records a merge finishes: a unit whose PR merged, and a task once every unit it's in has merged.
- * A recorded wait, an open question or Mutation keeps a record open; merged ≠ every requirement met for those.
- * @param ctx {prState: url => 'OPEN'|'MERGED'|'CLOSED'|null, openQuestions: id => n, track: w => 'mutation'|...}
+ * A recorded wait, an open question or an excluded record stays open; merged ≠ every requirement met for those.
+ * @param ctx {prState: url => 'OPEN'|'MERGED'|'CLOSED'|null, openQuestions: id => n, track: w => 'excluded'|...}
  */
 export function mergeCloses(works, bySource, { prState, openQuestions, track }) {
   const g = groupIndex(works, bySource), out = [];
   // Alex's merge is his decision, so a wait or open question doesn't hold the record open (W-248); it is named in the close.
-  const live = w => w && !TERMINAL.includes(w.phase) && track(w) !== 'mutation';
+  const live = w => w && !TERMINAL.includes(w.phase) && track(w) !== 'excluded';
   const merged = id => prState(works[id].links?.pr) === 'MERGED';
   for (const w of Object.values(works)) {
     if (!live(w)) continue;

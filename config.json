@@ -15,8 +15,10 @@
         "workspace": "Host",
         "howTo": "~/Code/plans/software-factory-v2/host-streams.md",
         "repos": {
-          "teamwork-mini-mcp": "~/Code/teamwork mini mcp"
-        }
+          "teamwork-mini-mcp": "~/Code/teamwork mini mcp",
+          "built-customer-implementations": "~/Code/built-customer-implementations"
+        },
+        "branches": "alex/(mutation-tester|test-quality/mutation-gaps)"
       }
     },
     "renamed": {
@@ -102,12 +104,8 @@
   },
   "autoDispatch": {
     "enabled": true,
-    "exclude": [
-      "W-67",
-      "W-84"
-    ]
+    "exclude": []
   },
-  "mutationBranch": "alex/(mutation-tester|test-quality/mutation-gaps)",
   "mergeClose": {
     "enabled": true
   },

@@ -88,7 +88,7 @@ export function headCommands(state, heads, { owner, now, standingWaiver }) {
  * observe_health commands for Alex's PRs into main whose merge or CI state at the record's head needs work.
  * @param health Map(repo:num → {head, base, conflict, failing}); a PR GitHub hasn't finished computing says neither.
  */
-export function healthCommands(state, health, { owner, now, mutationBranch, exclude, mainGreen = new Map() }) {
+export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map() }) {
   const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
   const byPr = new Map();
@@ -96,7 +96,7 @@ export function healthCommands(state, health, { owner, now, mutationBranch, excl
   for (const [key, ws] of byPr) {
     const own = state.work[idx.get(key.replace(':', '-'))], w = acting(own) ? own : ws[0];
     const h = health.get(key);
-    if (!h || W.trackOf(w, { mutationBranch, exclude }) === 'mutation') continue;
+    if (!h || W.trackOf(w, { exclude }) === 'excluded') continue;
     // A stacked PR's CI and conflicts are judged against its base, not main; its review feedback is still ours to work.
     const onMain = h.base === 'main';
     const payload = { head: h.head, conflict: onMain && h.conflict, failing: onMain ? h.failing : [], changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(key.split(':')[0]) || null };
@@ -111,13 +111,13 @@ export function healthCommands(state, health, { owner, now, mutationBranch, excl
  * @param prs projectPrs' map (id repo-n → {branch}), so a Mutation PR with no record is known by its branch
  * @returns [{key, id ('pr' for a missing record), by?, url?}]
  */
-export function auditMissed(state, own, health, { owner, mutationBranch, exclude, prs = new Map() }) {
+export function auditMissed(state, own, health, { owner, exclude, prs = new Map() }) {
   const works = Object.values(state.work), told = new Set(works.flatMap(w => (w.findings || []).flatMap(f => f.source?.ids || [])));
   const out = [];
   for (const key of own) {
     const recs = works.filter(w => recordPrKey(w, owner) === key);
     const branch = prs.get(key.replace(':', '-'))?.branch;
-    if ([...recs, ...(branch ? [{ links: { branch } }] : [])].some(w => W.trackOf(w, { mutationBranch, exclude }) === 'mutation')) continue;
+    if ([...recs, ...(branch ? [{ links: { branch } }] : [])].some(w => W.trackOf(w, { exclude }) === 'excluded')) continue;
     if (!recs.some(w => !W.TERMINAL.includes(w.phase))) { out.push({ key, id: 'pr' }); continue; }
     const h = health.get(key);
     for (const x of [...(h?.changesRequested || []), ...(h?.threads || []), ...(h?.comments || [])]) if (!told.has(x.id)) out.push({ key, id: x.id, by: x.by, url: x.url });

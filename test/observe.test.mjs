@@ -35,13 +35,13 @@ test('heads only produce commands when they change a record', () => {
   assert.deepEqual(headCommands(seen, new Map(), opts).map(c => c.kind), ['unverify_head']);
 });
 
-test('health is judged only for PRs into main, and never for Mutation work', async () => {
+test('health is judged only for PRs into main, and never for an excluded record', async () => {
   const { healthCommands } = await import('../core/observe.mjs');
   const rec = (id, n, branch) => ({ ...createWork({ id, title: 'x', kind: 'build', links: { pr: PR(n), branch } }, ctx), phase: 'rereview', head: 'ddddddd4' });
   const state = { work: { 'W-1': rec('W-1', 1, 'b'), 'W-2': rec('W-2', 2, 'b'), 'W-3': rec('W-3', 3, 'alex/mutation-tester') } };
   const h = base => ({ head: 'ddddddd4', base, conflict: true, failing: [] });
   const health = new Map([['built-rails:1', h('main')], ['built-rails:2', h('alex/stack-base')], ['built-rails:3', h('main')]]);
-  assert.deepEqual(healthCommands(state, health, { owner: OWNER, now: ctx.now, mutationBranch: 'mutation' }).map(c => c.target), ['W-1']);
+  assert.deepEqual(healthCommands(state, health, { owner: OWNER, now: ctx.now, exclude: ['W-3'] }).map(c => c.target), ['W-1']);
 });
 
 test('a PR carried by several records gets one health finding: its own record if in play, else the record doing the work', async () => {
@@ -144,12 +144,12 @@ test("a Teamwork task's feedback: others' comments after Alex last spoke and aft
   assert.match(got[0].url, /^https:\/\/acme\.teamwork\.com\/app\/tasks\/41/);
 });
 
-test('the audit names what the GitHub read saw but no record holds: an own PR with no live record, or feedback never recorded (Mutation aside)', async () => {
+test('the audit names what the GitHub read saw but no record holds: an own PR with no live record, or feedback never recorded (excluded records aside)', async () => {
   const { auditMissed } = await import('../core/observe.mjs');
   const rec = (id, n, extra = {}) => ({ ...createWork({ id, title: 'x', kind: 'build', links: { pr: PR(n), branch: 'b' } }, ctx), phase: 'awaiting_human_approval', ...extra });
   const state = { work: { 'W-1': rec('W-1', 1, { findings: [{ id: 'F1', source: { type: 'threads', ids: ['T1'] } }] }), 'W-2': rec('W-2', 2, { phase: 'done' }), 'W-3': rec('W-3', 3, { links: { pr: PR(3), branch: 'alex/mutation-tester' } }) } };
   const fb = ids => ({ changesRequested: [], threads: ids.map(id => ({ id, by: 'x', url: `u/${id}` })), comments: [] });
   const health = new Map([['built-rails:1', fb(['T1', 'T2'])], ['built-rails:2', fb([])], ['built-rails:3', fb(['T9'])]]);
-  const missed = auditMissed(state, new Set(['built-rails:1', 'built-rails:2', 'built-rails:3', 'built-rails:4']), health, { owner: OWNER, mutationBranch: 'mutation', prs: new Map([['built-rails-4', { branch: 'alex/mutation-round-5' }]]) });
-  assert.deepEqual(missed.map(m => [m.key, m.id]), [['built-rails:1', 'T2'], ['built-rails:2', 'pr']]);
+  const missed = auditMissed(state, new Set(['built-rails:1', 'built-rails:2', 'built-rails:3', 'built-rails:4']), health, { owner: OWNER, exclude: ['W-3'], prs: new Map([['built-rails-4', { branch: 'alex/mutation-round-5' }]]) });
+  assert.deepEqual(missed.map(m => [m.key, m.id]), [['built-rails:1', 'T2'], ['built-rails:2', 'pr'], ['built-rails:4', 'pr']]);
 });

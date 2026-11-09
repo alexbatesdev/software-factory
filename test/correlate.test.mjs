@@ -67,10 +67,10 @@ test("a PR's own record wins over an older task record that links it (W-60 and W
   assert.deepEqual(poll(s, [pr(8244, 'no-task-in-branch')], 'pr'), []);
 });
 
-test('a Mutation PR nobody tracks never becomes a record', () => {
+test('a mutation-tester PR becomes a record like any other (Alex, 11-09)', () => {
   const s = open();
-  const cmds = sourceCommands(s.state, new Map([['built-rails-8283', pr(8283, 'alex/mutation-tester')]]), 'pr', parseAcs, { mutationBranch: 'mutation' });
-  assert.deepEqual(cmds, []);
+  const cmds = sourceCommands(s.state, new Map([['built-rails-8283', pr(8283, 'alex/mutation-tester')]]), 'pr', parseAcs, {});
+  assert.equal(cmds.length, 1);
 });
 
 test("after an absorb, the PR belongs to the record that claimed it, not the placeholder", () => {
