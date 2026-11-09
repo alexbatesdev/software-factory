@@ -328,12 +328,15 @@ async function recycleTick() {
 
 // Long-lived seats restart fresh once a day at a quiet hour (Alex, 11-09); each starts cold from its handoff file.
 // ponytail: the once-a-day mark is in memory, so a live restart inside the hour may restart an idle seat twice.
-const restartedOn = {};
+// Persisted, so a server restart inside the quiet hour can't restart a seat twice the same day.
+const RESTARTED = join(dirname(DB), 'seat-restarts.json');
+const restartedOn = (() => { try { return JSON.parse(readFileSync(RESTARTED, 'utf8')); } catch { return {}; } })();
 async function seatRestartTick() {
   if (!fleet) return;
   const agents = [...fleet.others, ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))];
   for (const { seat, pane } of planSeatRestarts(seatsOf(config), agents, store.state, { now: now(), ...config.seatRecycle, done: restartedOn })) {
     restartedOn[seat.label] = now().slice(0, 10);
+    writeFileSync(RESTARTED, JSON.stringify(restartedOn));
     if (DRY) { once(`dry run: would restart ${seat.label}`); continue; }
     const stopped = await stopSeat(seat, pane, herdrRaw).catch(e => { log(`seat restart ${seat.label}: ${e.message}`); return false; });
     const started = stopped && await startSeat(seat, pane, herdrRaw).then(() => true, e => { log(`seat restart ${seat.label}: start failed: ${e.message}`); return false; });
