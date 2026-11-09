@@ -216,6 +216,24 @@ test('ask refuses a second open question on a record unless marked distinct, and
   } finally { f.close(); }
 });
 
+test('a question is added to with ask amend: its asker or the board lead appends a note; a closed one refuses', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'Fix it' });
+    const q = { title: 'Which rule?', promptedBy: 'review', work: 'W-1', wwbd: 'no passage applies' };
+    await f.act(S1, 'ask', q);
+    assert.match((await f.act('local-head', 'ask', q))[1].error, /amend: TB-1/, 'the 409 names how to add to it');
+    assert.equal((await f.act(S1, 'ask', { amend: 'TB-1', note: 'Reviewer also asked about B.' }))[0], 200);
+    assert.equal((await f.act('board lead', 'ask', { amend: 'TB-1', note: 'Same as W-9.' }))[0], 200);
+    assert.match((await f.act('local-head', 'ask', { amend: 'TB-1', note: 'x' }))[1].error, /only questions it asked/);
+    assert.deepEqual(f.store.state.questions['TB-1'].amendments.map(a => [a.note, a.by]), [['Reviewer also asked about B.', S1], ['Same as W-9.', 'board lead']]);
+    assert.equal(f.store.state.questions['TB-1'].status, 'open');
+    await f.act(S1, 'ask', { withdraw: 'TB-1', note: 'settled' });
+    assert.match((await f.act(S1, 'ask', { amend: 'TB-1', note: 'late' }))[1].error, /not open/);
+    assert.deepEqual(f.store.replay().questions, f.store.state.questions, 'replay rebuilds the amendments');
+  } finally { f.close(); }
+});
+
 test("code work is recorded done only with the Definition of Done's exit report, which lands on the record", async () => {
   const f = await serveWith({ readPr: async url => ({ url, head: 'bbb2222', state: 'OPEN', isDraft: true }) });
   try {

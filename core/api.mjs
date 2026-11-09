@@ -27,15 +27,15 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
     const role = roleOf(config, seat);
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
-    const s = store.state;
+    const s = store.state, asking = action === 'ask' && !args.withdraw && !args.amend;
     // A thread to resolve is a resolve_thread request on the dashboard, never a TB question (Alex, 11-09).
-    if (action === 'ask' && !args.withdraw && /\bresolve\b[^?]*\bthreads?\b/i.test(args.title || '')) return [409, { error: 'Resolving a review thread is not a question: file it with resolve_thread (work, threadId, url, reviewer, ask, resolution) and Alex resolves it from the dashboard.' }];
+    if (asking && /\bresolve\b[^?]*\bthreads?\b/i.test(args.title || '')) return [409, { error: 'Resolving a review thread is not a question: file it with resolve_thread (work, threadId, url, reviewer, ask, resolution) and Alex resolves it from the dashboard.' }];
     // Factual PR-description fixes go through without asking (Alex, 11-09, W-212); a scope change is still a question.
-    if (action === 'ask' && !args.withdraw && /\bPR[- ](body|description)\b/i.test(args.title || '')) return [409, { error: 'A factual PR-description fix (making the body true again, no scope change) is not a question: apply it yourself and put the before/after in your progress note. If it changes scope, ask with distinct wording (the decision, not the edit).' }];
+    if (asking && /\bPR[- ](body|description)\b/i.test(args.title || '')) return [409, { error: 'A factual PR-description fix (making the body true again, no scope change) is not a question: apply it yourself and put the before/after in your progress note. If it changes scope, ask with distinct wording (the decision, not the edit).' }];
     // One open question per record reaches Alex unless the asker says it's a separate decision (W-274).
-    if (action === 'ask' && !args.withdraw && args.work && !args.distinct) {
+    if (asking && args.work && !args.distinct) {
       const open = Object.entries(s.questions).filter(([, q]) => q.work === args.work && q.status === 'open');
-      if (open.length) return [409, { error: `${args.work} already has an open question: ${open.map(([id, q]) => `${id} "${q.title}" (from ${q.from})`).join('; ')}. Add to it instead, or pass distinct: true if this is a separate decision.` }];
+      if (open.length) return [409, { error: `${args.work} already has an open question: ${open.map(([id, q]) => `${id} "${q.title}" (from ${q.from})`).join('; ')}. Add to it with ask amend: ${open[0][0]} and a note, or pass distinct: true if this is a separate decision.` }];
     }
     // Code work is done only against Benny's Definition of Done (Alex, 11-09): the worker's exit report, checked by the supervisor.
     const exitReport = action === 'done' && !args.noChange && s.work[args.work]?.assignments?.find(x => x.id === args.assignmentId)?.kind !== 'review';
@@ -79,7 +79,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (req.method === 'GET' && url.pathname === '/api/board') {
         const s = store.state, inbox = {};
         for (const m of Object.values(s.messages)) if (!m.ackedAt) inbox[m.to] = (inbox[m.to] || 0) + 1;
-        const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend }) => ({ id, title, work, recommend }));
+        const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend, amendments }) => ({ id, title, work, recommend, amendments: amendments || [] }));
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
           threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null })),
