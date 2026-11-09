@@ -6,11 +6,12 @@ import { parseAcs } from './derive.mjs';
 import { inferStream } from './notifier.mjs';
 import { sourceIndex, ownerOf, claimPr, refresh } from './correlate.mjs';
 import { foldQuestion } from './questions.mjs';
+import { foldThread, THREAD_KINDS } from './threads.mjs';
 
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
 const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver'];
 
-export const emptyState = () => ({ work: {}, questions: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, nextQuestion: 1, seq: 0 });
+export const emptyState = () => ({ work: {}, questions: {}, threads: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, nextQuestion: 1, nextThread: 1, seq: 0 });
 
 // What the reducer needs to know about other records, computed from the fold so far.
 export function derivedCtx(state, id) {
@@ -60,6 +61,7 @@ function foldMessage(state, { kind, target, payload, ctx }) {
 export function fold(state, row, { supervisors = [] } = {}) {
   const { kind, target: id, payload, ctx: observed } = row;
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
+  if (THREAD_KINDS.includes(kind)) { const t = foldThread(state, row); state.seq = row.seq; return t; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
   if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close'].includes(kind)) {
     const q = foldQuestion(state, row);

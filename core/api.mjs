@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
 import { escapes } from './work.mjs';
+import { resolveThreads } from '../effects/threads.mjs';
 
 const PAGE = new URL('../views/index.html', import.meta.url);
 
@@ -18,7 +19,7 @@ export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config
  * @param readOnly the shadow runner serves the page and reads only; every write is refused
  * @param observed () => {units, prs} from the latest fleet and GitHub reads, for the views
  */
-export function createApi({ store, config, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
+export function createApi({ store, config, gh = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -27,6 +28,8 @@ export function createApi({ store, config, readPr = async () => null, now = () =
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state;
+    // A thread to resolve is a resolve_thread request on the dashboard, never a TB question (Alex, 11-09).
+    if (action === 'ask' && !args.withdraw && /\bresolve\b[^?]*\bthreads?\b/i.test(args.title || '')) return [409, { error: 'Resolving a review thread is not a question: file it with resolve_thread (work, threadId, url, reviewer, ask, resolution) and Alex resolves it from the dashboard.' }];
     // One open question per record reaches Alex unless the asker says it's a separate decision (W-274).
     if (action === 'ask' && !args.withdraw && args.work && !args.distinct) {
       const open = Object.entries(s.questions).filter(([, q]) => q.work === args.work && q.status === 'open');
@@ -70,6 +73,7 @@ export function createApi({ store, config, readPr = async () => null, now = () =
         const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend }) => ({ id, title, work, recommend }));
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
+          threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null })),
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }) });
       }
       if (req.method === 'GET' && url.pathname === '/api/escapes') {
@@ -78,6 +82,12 @@ export function createApi({ store, config, readPr = async () => null, now = () =
       }
       if (req.method === 'GET' && url.pathname === '/api/whoami') return send(res, 200, { ip: req.socket.remoteAddress, headers: req.headers });
       if (req.method === 'GET' && url.pathname === '/api/inbox') return send(res, 200, { seat, messages: Object.values(store.state.messages).filter(m => m.to === seat && !m.ackedAt) });
+      if (req.method === 'POST' && url.pathname === '/api/threads/resolve') {
+        if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
+        if (readOnly || !gh) return send(res, 405, { error: 'This factory does not write to GitHub.' });
+        const { ids = [] } = await readBody(req);
+        return send(res, 200, { results: await resolveThreads(store, ids, gh, now) });
+      }
       if (req.method === 'POST' && url.pathname === '/api/actions') {
         // A custom header a web page can't send cross-origin without a preflight this server never answers.
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });

@@ -52,6 +52,15 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .run { font-size: 12px; color: var(--factory); font-weight: 600; }
 .seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 details summary { cursor: pointer; }
+/* Review threads Alex resolves with one click: their own panel, never in the questions count. */
+.threads { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 18px; }
+.threads .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+.threads .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.thread { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 6px 0; }
+.thread .ask { font-weight: 600; overflow-wrap: anywhere; } .thread .res { font-size: 12px; color: var(--mute); overflow-wrap: anywhere; }
+.thread .fail { font-size: 12px; color: var(--you); }
+button { font: inherit; font-size: 12px; border: 1px solid var(--link); color: var(--link); background: var(--card); border-radius: 5px; padding: 2px 9px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
 </style>
 </head>
 <body>
@@ -60,6 +69,7 @@ details summary { cursor: pointer; }
   <div class="head"><span class="big" id="youCount"></span><h2>waiting on you</h2><span class="mute" style="margin-left:10px">Ask local-head "what's waiting on me" to answer them.</span></div>
   <div class="groups" id="youGroups"></div>
 </section>
+<section class="threads" id="threads" hidden><div class="prh"><h2>Review threads to resolve</h2><span class="mute">Resolve marks the thread resolved on GitHub directly; no agent runs.</span></div><div id="threadList"></div></section>
 <main id="board"></main>
 <div class="seats" id="seats"></div>
 <script>
@@ -135,6 +145,7 @@ async function render() {
   }
   document.getElementById('you').hidden = !total;
 
+  threadsPanel(b.threads || []);
   const board = document.getElementById('board'); board.replaceChildren();
   const order = b.buckets.order;
   for (const [tier, name] of TIERS) {
@@ -152,6 +163,34 @@ async function render() {
   }
   const seats = document.getElementById('seats'); seats.replaceChildren();
   for (const [seat, n] of Object.entries(b.inbox)) seats.append(el('span', 'seat', `${seat}: ${n} unread`));
+}
+async function resolveThreads(ids, btn) {
+  btn.disabled = true;
+  try { await fetch('/api/threads/resolve', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids }) }); }
+  finally { render(); }
+}
+function threadsPanel(list) {
+  const box = document.getElementById('threadList'); box.replaceChildren();
+  const byPr = new Map(); for (const t of list) byPr.set(t.pr, [...(byPr.get(t.pr) || []), t]);
+  for (const [pr, ts] of byPr) {
+    const sec = el('div', 'pr'), h = el('div', 'prh'), a = el('a', null, `#${pr.split('/pull/')[1]}`);
+    a.href = pr; a.target = '_blank'; a.rel = 'noopener';
+    h.append(a, el('span', 'mute', `${ts[0].work} · ${ts[0].title || ''}`));
+    const open = ts.filter(t => t.status !== 'approved');
+    if (open.length > 1) { const all = el('button', null, `Resolve all ${open.length}`); all.onclick = () => resolveThreads(open.map(t => t.id), all); h.append(all); }
+    sec.append(h);
+    for (const t of ts) {
+      const row = el('div', 'thread'), left = el('div'), link = el('a', null, `${t.id} · ${t.reviewer}`);
+      link.href = t.url; link.target = '_blank'; link.rel = 'noopener';
+      left.append(link, el('div', 'ask', t.ask), el('div', 'res', `Resolution: ${t.resolution}`));
+      if (t.status === 'failed') left.append(el('div', 'fail', `Failed: ${t.detail}`));
+      const b = el('button', null, t.status === 'approved' ? 'Resolving…' : t.status === 'failed' ? 'Retry' : 'Resolve');
+      b.disabled = t.status === 'approved'; b.onclick = () => resolveThreads([t.id], b);
+      row.append(left, b); sec.append(row);
+    }
+    box.append(sec);
+  }
+  document.getElementById('threads').hidden = !list.length;
 }
 render(); setInterval(render, 15000);
 </script>
