@@ -52,10 +52,14 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .run { font-size: 12px; color: var(--factory); font-weight: 600; }
 .seats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; } .seat { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 details summary { cursor: pointer; }
-/* Review threads Alex resolves with one click: their own panel, never in the questions count. */
-.threads { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 18px; }
-.threads .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
-.threads .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+/* Approvals (review threads, new PRs): one-click feeds in a side panel, closed on load, never in the questions count. */
+#side { position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); overflow-y: auto; background: var(--card); border-left: 1px solid var(--line); box-shadow: -4px 0 16px rgba(0,0,0,.15); padding: 12px 16px; z-index: 10; }
+#side .sh { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+#side h3 { margin: 14px 0 4px; font-size: 14px; }
+#side .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
+#side .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+#approvalsBtn { margin-left: auto; } #approvalsBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
+.thread .acts { display: flex; flex-direction: column; gap: 4px; } .thread > button, .thread .acts { align-self: start; }
 .thread { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 6px 0; }
 .thread .ask { font-weight: 600; overflow-wrap: anywhere; } .thread .res { font-size: 12px; color: var(--mute); overflow-wrap: anywhere; }
 .thread .fail { font-size: 12px; color: var(--you); }
@@ -64,12 +68,16 @@ button:disabled { opacity: .5; cursor: default; }
 </style>
 </head>
 <body>
-<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span></header>
+<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="approvalsBtn">Approvals</button></header>
 <section class="you" id="you" hidden>
   <div class="head"><span class="big" id="youCount"></span><h2>waiting on you</h2><span class="mute" style="margin-left:10px">Ask local-head "what's waiting on me" to answer them.</span></div>
   <div class="groups" id="youGroups"></div>
 </section>
-<section class="threads" id="threads" hidden><div class="prh"><h2>Review threads to resolve</h2><span class="mute">Resolve marks the thread resolved on GitHub directly; no agent runs.</span></div><div id="threadList"></div></section>
+<aside id="side" hidden>
+  <div class="sh"><h2>Approvals</h2><button id="sideClose">Close</button></div>
+  <h3>New PRs</h3><div class="mute">Work no Teamwork task asked for. Approve and it queues; Decline withdraws it.</div><div id="prList"></div>
+  <h3>Review threads to resolve</h3><div class="mute">Resolve marks the thread resolved on GitHub directly; no agent runs.</div><div id="threadList"></div>
+</aside>
 <main id="board"></main>
 <div class="seats" id="seats"></div>
 <script>
@@ -146,7 +154,9 @@ async function render() {
   }
   document.getElementById('you').hidden = !total;
 
-  threadsPanel(b.threads || []);
+  threadsPanel(b.threads || []); newPrsPanel(b.newPrs || []);
+  const pending = (b.newPrs || []).length + (b.threads || []).filter(t => t.status !== 'approved').length, ab = document.getElementById('approvalsBtn');
+  ab.textContent = `Approvals (${pending})`; ab.classList.toggle('has', pending > 0);
   const board = document.getElementById('board'); board.replaceChildren();
   const order = b.buckets.order;
   for (const [tier, name] of TIERS) {
@@ -191,8 +201,27 @@ function threadsPanel(list) {
     }
     box.append(sec);
   }
-  document.getElementById('threads').hidden = !list.length;
+  if (!list.length) box.append(el('div', 'mute', 'None.'));
 }
+async function decidePrs(ids, decision, btn) {
+  btn.disabled = true;
+  try { await fetch('/api/pr-approvals', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids, decision }) }); }
+  finally { render(); }
+}
+function newPrsPanel(list) {
+  const box = document.getElementById('prList'); box.replaceChildren();
+  for (const p of list) {
+    const row = el('div', 'thread pr'), left = el('div'), acts = el('div', 'acts');
+    left.append(el('div', 'ask', `${p.id} · ${p.title}`), el('div', 'res', [p.repo, p.from && `from ${p.from}`].filter(Boolean).join(' · ')));
+    if (p.objective) left.append(el('div', 'res', p.objective.slice(0, 400)));
+    const ok = el('button', null, 'Approve'), no = el('button', null, 'Decline');
+    ok.onclick = () => decidePrs([p.id], 'approve', ok); no.onclick = () => decidePrs([p.id], 'decline', no);
+    acts.append(ok, no); row.append(left, acts); box.append(row);
+  }
+  if (!list.length) box.append(el('div', 'mute', 'None.'));
+}
+document.getElementById('approvalsBtn').onclick = () => { document.getElementById('side').hidden = false; };
+document.getElementById('sideClose').onclick = () => { document.getElementById('side').hidden = true; };
 render(); setInterval(render, 15000);
 </script>
 </body>
