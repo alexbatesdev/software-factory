@@ -208,7 +208,7 @@ function setHead(w, sha, ctx, via = 'report', ancestry = null) {
 }
 
 // Alex, 2026-11-09: one internal review per PR; a later head counts as reviewed while it descends from the reviewed one.
-export const REVIEW_CAP_FROM = '2026-11-10T00:00:00.000Z';
+export const REVIEW_CAP_FROM = '2026-11-09T20:10:00.000Z';
 const DESCENDS = ['ahead', 'identical', 'assumed'];
 const lastReview = w => (w.reviews || []).filter(r => !r.forAlex).at(-1);
 /** The internal review the current head inherits through a descending push, if any. Lineage is only set from REVIEW_CAP_FROM. */
@@ -260,7 +260,7 @@ export function applyEvent(work, e, ctx) {
     case 'waive_internal_review':
     case 'await_approval': {
       const waiverOnly = e.type === 'waive_internal_review';
-      if (e.waiver && ctx.now >= REVIEW_CAP_FROM) fail('No internal-review waiver from 2026-11-10: a ready PR never internally reviewed gets one review, and a reviewed one waits without a waiver once the gate passes.');
+      if (e.waiver && ctx.now >= REVIEW_CAP_FROM) fail('No internal-review waiver from 2026-11-09 20:10Z: a ready PR never internally reviewed gets one review, and a reviewed one waits without a waiver once the gate passes.');
       if (waiverOnly && !e.waiver) fail('Recording a waiver requires explicit Alex authorization.');
       const pr = (ctx.verifiedPrs || []).find(p => p.url === w.links?.pr);
       if (!e.evidence || !e.head) fail('Approval wait needs current commit and evidence.');
