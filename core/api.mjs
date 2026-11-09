@@ -46,7 +46,10 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
     }
     const parking = action === 'triage' && args.bucket === 'intake' && s.work[args.work];
-    if (parking && !parking.externalDeps?.length && !parking.waitingOn && !['untilMerged', 'untilAnswered', 'reviewBy', 'deferredTo'].some(k => args[k]))
+    const seats = [...Object.keys(config.routing?.supervisors || {}), ...Object.keys(config.roles || {}), config.boardLead?.seat || 'board lead'];
+    if (action === 'triage' && args.reviewBy && !seats.includes(args.reviewer)) return [409, { error: `reviewer must be a seat that reads its inbox: ${seats.join(', ')}.` }];
+    const kept = parking && (parking.externalDeps || []).filter(d => (d.text || d.ref) !== args.releaseHold);
+    if (parking && !kept.length && !parking.waitingOn && !['untilMerged', 'untilAnswered', 'reviewBy', 'deferredTo'].some(k => args[k]))
       return [409, { error: `Parking ${args.work} in intake needs what releases it: untilMerged (#N), untilAnswered (TB-n), reviewBy (YYYY-MM-DD) with reviewer (the seat that looks again), or deferredTo (who decides, e.g. product).` }];
     // Ready into New PRs only with the breakdown Alex reads there (11-09).
     const tw = action === 'triage' && args.bucket === 'ready' && s.work[args.work];

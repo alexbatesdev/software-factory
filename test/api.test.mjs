@@ -267,3 +267,15 @@ test('parking a record in intake needs a release condition, a review date or a d
     assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'still held' }))[0], 200, 'already held: a re-triage note needs nothing new');
   } finally { f.close(); }
 });
+
+test('a re-triage that releases the last hold must say what holds it next, and a reviewer must be a real seat (review of e651cea)', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'Parked' });
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'n', reviewBy: '2026-11-01', reviewer: 'board lead' }))[0], 200);
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'n', releaseHold: 'review by 2026-11-01 (board lead)' }))[0], 409, 'releasing the only hold leaves nothing to release it');
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'n', releaseHold: 'review by 2026-11-01 (board lead)', reviewBy: '2026-11-20', reviewer: 'board lead' }))[0], 200);
+    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'n', reviewBy: '2026-11-20', reviewer: 'product' });
+    assert.equal(code, 409); assert.match(body.error, /reviewer/);
+  } finally { f.close(); }
+});

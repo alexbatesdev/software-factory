@@ -135,3 +135,12 @@ test('the audit names each contradiction once per record and kind, with evidence
   for (const c of got) assert.ok(c.evidence && c.next, `${c.kind} carries evidence and a next action`);
   assert.deepEqual(contradictions(state, { now }).map(c => c.kind).includes('merged-awaiting'), false, 'no fresh PR read: no merge claim');
 });
+
+test('the contradiction audit names a record once per kind, and leaves held factory records alone (review of 8fb142f)', () => {
+  const now = '2026-11-10T12:00:00.000Z', old = '2026-11-09T00:00:00.000Z';
+  const state = { questions: {}, messages: {}, work: {
+    'W-1': { id: 'W-1', phase: 'implementation', updatedAt: old, updates: [], assignments: [{ id: 'R1', status: 'started', at: old }, { id: 'R2', kind: 'review', status: 'started', at: old }] },
+    'W-2': { id: 'W-2', kind: 'factory', phase: 'intake', updatedAt: old, externalDeps: [{ ref: 'deferred product', deferred: 'product', text: 'deferred to product' }], updates: [{ at: old, text: 'seen at 8fb142f' }] },
+  } };
+  assert.deepEqual(contradictions(state, { now }).map(c => `${c.kind}/${c.id}`), ['started-silent/W-1']);
+});

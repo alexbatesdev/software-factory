@@ -92,7 +92,7 @@ export function reviewsDue(works, now) {
 const HOUR = 3600000, ago = (now, t) => Date.parse(now) - Date.parse(t || 0);
 /** Contradictions the hourly audit routes to the board lead (W-317): {id, kind, evidence, next}. Detects only; mergeTick repairs merges. */
 export function contradictions(state, { prState = () => null, now }) {
-  const out = [], add = (id, kind, evidence, next) => out.push({ id, kind, evidence, next });
+  const out = [], add = (id, kind, evidence, next) => out.some(c => c.id === id && c.kind === kind) || out.push({ id, kind, evidence, next });
   const resumedAt = Object.fromEntries(Object.values(state.messages || {}).filter(m => m.about?.resume).map(m => [m.about.resume, m.at]));
   for (const w of Object.values(state.work).filter(w => !TERMINAL.includes(w.phase))) {
     if (['awaiting_human_approval', 'ready_for_human'].includes(w.phase) && prState(w.links?.pr) === 'MERGED')
@@ -105,7 +105,7 @@ export function contradictions(state, { prState = () => null, now }) {
       if (a.status === 'started' && ago(now, last) > 6 * HOUR)
         add(w.id, 'started-silent', `${a.id} started with no note since ${last}`, 'check the worker pane; record progress, block it, or cancel it');
     }
-    const fix = w.kind === 'factory' && (w.updates || []).find(u => /\b[0-9a-f]{7,40}\b/.test(u.text || ''));
+    const fix = w.kind === 'factory' && !(w.externalDeps || []).length && !w.waitingOn && (w.updates || []).find(u => /\b[0-9a-f]{7,40}\b/.test(u.text || ''));
     if (fix && ago(now, w.updatedAt) > 24 * HOUR)
       add(w.id, 'factory-fix-open', `a note names a commit ("${fix.text.slice(0, 80)}") and nothing has moved since ${w.updatedAt}`, 'resolve it with that commit, or say what is left');
   }
