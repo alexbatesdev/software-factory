@@ -9,7 +9,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { sandboxToken } from '../core/sandbox-seat.mjs';
-import { STANDARDS, MIRROR, IN_SANDBOX, standardsClaudeMd } from './standards.mjs';
+import { STANDARDS, MIRROR, IN_SANDBOX, CODEX_REVIEW, standardsClaudeMd } from './standards.mjs';
+import { QUIT } from '../fleet/factory.mjs';
 
 const run = promisify(execFile);
 // The herdr sbx plugin owns the pane ↔ sandbox mapping; its bridge's start mode recreates a missing sandbox from it.
@@ -57,8 +58,11 @@ export function parseHealth(out, nowMs = Date.now()) {
   return { diskPct: parseDf(df), agentSince: agent.trim() && Number.isFinite(secs) ? nowMs - secs * 1000 : null };
 }
 
+/** Disk use, then the elapsed seconds of the sandbox's oldest `agent` process (its interactive session). */
+export const healthCmd = (agent = 'claude') => `df -P /; echo --; p=$(pgrep -o -x ${agent}) && ps -o etimes= -p "$p"; true`;
+
 export async function health(worker) {
-  const { stdout } = await run('sbx', ['exec', worker.sandbox, 'sh', '-c', 'df -P /; echo --; p=$(pgrep -o -x claude) && ps -o etimes= -p "$p"; true'], { timeout: 20000 });
+  const { stdout } = await run('sbx', ['exec', worker.sandbox, 'sh', '-c', healthCmd(worker.agent)], { timeout: 20000 });
   return parseHealth(stdout);
 }
 
@@ -124,22 +128,36 @@ export async function markNudgeSeen(sandbox) {
   await new Promise((resolve, reject) => { const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `cat > ${CLAUDE_STATE}`], { timeout: 60000 }, e => e ? reject(e) : resolve()); p.stdin.end(JSON.stringify(withSeenNudge(cur), null, 2)); });
 }
 
-/** Benny's documents in a sandbox: the files, and its user CLAUDE.md so every worker session loads them (Alex, 11-09). */
-export async function installStandards(sandbox, put = sbxPut(sandbox)) {
+// Codex has no hook, so Alex's comment rule is an instruction in its AGENTS.md (wording from require-robot-wrapper.sh).
+export const ROBOT_RULE = "## GitHub comments\n\nAlex's rule: text posted to GitHub as him must have a line '🤖' alone at the start and a line '🤖' alone at the end. "
+  + 'That covers every PR or issue comment, review comment, reply and review body (gh pr comment, gh pr review, gh issue comment, gh api comments/replies/reviews, GraphQL comment mutations). '
+  + 'Write the body to a file and pass it with --body-file or -F body=@file, wrapped in those two lines.\n';
+export const codexAgentsMd = (dir = MIRROR) => `${standardsClaudeMd(dir)}\n${ROBOT_RULE}`;
+
+/** Benny's documents in a sandbox: the files, and the agent's user instructions file so every worker session loads them (Alex, 11-09). */
+export async function installStandards(sandbox, put = sbxPut(sandbox), agent = 'claude') {
   for (const name of STANDARDS) await put(`${IN_SANDBOX}/${name}`, readFileSync(join(MIRROR, name), 'utf8'));
-  await put('/home/agent/.claude/CLAUDE.md', standardsClaudeMd());
+  if (agent !== 'codex') return put('/home/agent/.claude/CLAUDE.md', standardsClaudeMd());
+  await put(`${IN_SANDBOX}/${CODEX_REVIEW}`, readFileSync(join(MIRROR, CODEX_REVIEW), 'utf8'));
+  await put('/home/agent/.codex/AGENTS.md', codexAgentsMd());
 }
 const sbxPut = sandbox => (path, text) => new Promise((resolve, reject) => {
   const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `mkdir -p "$(dirname ${path})" && cat > ${path}`], { timeout: 60000 }, e => e ? reject(e) : resolve());
   p.stdin.end(text);
 });
 
-/** Put the comment hook script and its settings entry back in a sandbox. */
-export async function restoreBaseline(sandbox) {
-  const put = (path, text) => new Promise((resolve, reject) => {
-    const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `mkdir -p "$(dirname ${path})" && cat > ${path}`], { timeout: 60000 }, e => e ? reject(e) : resolve());
-    p.stdin.end(text);
-  });
+const sbxRead = sandbox => path => run('sbx', ['exec', sandbox, 'cat', path], { timeout: 60000 }).then(r => r.stdout, () => '');
+
+/**
+ * A sandbox's baseline for its agent. Claude: the comment hook and its settings entry, standards, board MCP, nudge seen.
+ * Codex: standards and the 🤖 rule in AGENTS.md, the review prompt, and the board server in its config.toml.
+ */
+export async function restoreBaseline(sandbox, agent = 'claude', { put = sbxPut(sandbox), read = sbxRead(sandbox), secret } = {}) {
+  if (agent === 'codex') {
+    await installStandards(sandbox, put, agent);
+    await put(CODEX_CONFIG, withBoardMcpToml(await read(CODEX_CONFIG), boardMcp(sandbox, { secret })));
+    return;
+  }
   await put(HOOK_PATH, readFileSync(join(homedir(), '.claude/hooks/require-robot-wrapper.sh'), 'utf8'));
   const cur = await run('sbx', ['exec', sandbox, 'cat', '/home/agent/.claude/settings.json'], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
   await put('/home/agent/.claude/settings.json', JSON.stringify(withBaseline(cur), null, 2) + '\n');
@@ -149,10 +167,24 @@ export async function restoreBaseline(sandbox) {
 }
 
 /** The worker's way onto the board: the factory's sandbox port, with this sandbox's name and token (sbx-workers-on-the-board). */
+export function boardMcp(sandbox, { port = 4849, secret = readFileSync(new URL('../data/sandbox-secret', import.meta.url), 'utf8').trim() } = {}) {
+  return { url: `http://host.docker.internal:${port}/mcp`, headers: { 'x-sandbox': sandbox, 'x-sandbox-token': sandboxToken(secret, sandbox) } };
+}
+
+const CODEX_CONFIG = '/home/agent/.codex/config.toml';
+const BOARD_TABLE = /^\[mcp_servers\.(software-factory|"software-factory")(\.[^\]]*)?\]\s*$/;
+/** Codex's config.toml with the software-factory server (and its subtables) replaced by one block; the rest kept. Pure. */
+export function withBoardMcpToml(toml = '', { url, headers }) {
+  let mine = false;
+  const kept = String(toml).split('\n').filter(l => { if (/^\s*\[/.test(l)) mine = BOARD_TABLE.test(l.trim()); return !mine; }).join('\n').trimEnd();
+  const q = JSON.stringify; // a JSON string is a valid TOML basic string for these values
+  const block = `[mcp_servers.software-factory]\nurl = ${q(url)}\nhttp_headers = { ${Object.entries(headers).map(([k, v]) => `${q(k)} = ${q(v)}`).join(', ')} }\n`;
+  return kept ? `${kept}\n\n${block}` : block;
+}
+
 export async function installBoardMcp(sandbox, { port = 4849 } = {}) {
-  const secret = readFileSync(new URL('../data/sandbox-secret', import.meta.url), 'utf8').trim();
-  const add = ['claude', 'mcp', 'add', '-s', 'user', '--transport', 'http', 'software-factory', `http://host.docker.internal:${port}/mcp`,
-    '-H', `x-sandbox: ${sandbox}`, '-H', `x-sandbox-token: ${sandboxToken(secret, sandbox)}`];
+  const { url, headers } = boardMcp(sandbox, { port });
+  const add = ['claude', 'mcp', 'add', '-s', 'user', '--transport', 'http', 'software-factory', url, ...Object.entries(headers).flatMap(([k, v]) => ['-H', `${k}: ${v}`])];
   const sh = a => a.map(x => `'${x.replace(/'/g, `'\\''`)}'`).join(' ');
   await run('sbx', ['exec', sandbox, 'bash', '-lc', `claude mcp remove -s user software-factory >/dev/null 2>&1; ${sh(add)}`], { timeout: 60000 });
 }
@@ -165,9 +197,9 @@ export function exitChoice(screen) {
   return m ? m[1] : null;
 }
 
-/** /exit the worker's agent and wait for its pane's shell; false when it didn't exit within a minute. */
+/** Quit the worker's agent and wait for its pane's shell; false when it didn't exit within a minute. */
 async function exitAgent(worker) {
-  await herdr('pane', 'send-text', worker.ref, '/exit'); await herdr('pane', 'send-keys', worker.ref, 'enter');
+  await herdr('pane', 'send-text', worker.ref, QUIT[worker.agent] || QUIT.claude); await herdr('pane', 'send-keys', worker.ref, 'enter');
   for (let i = 0; i < 20 && !(await atShell(worker)); i++) {
     await pause(3000);
     // Callers exit only between jobs, so the tasks it stops are a finished job's leftovers (Alex, TB-158 a).
@@ -181,7 +213,7 @@ async function exitAgent(worker) {
 export async function restart(worker) {
   const line = await bridgeLine(worker);
   if (!(await atShell(worker)) && !(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit' };
-  await markNudgeSeen(worker.sandbox).catch(() => {}); // the unblocker rule still covers the dialog if this fails
+  if (worker.agent !== 'codex') await markNudgeSeen(worker.sandbox).catch(() => {}); // the unblocker rule still covers the dialog if this fails
   await herdr('pane', 'run', worker.ref, line);
   for (let i = 0; i < 20; i++) { await pause(3000); if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}` }; }
   return { ok: false, detail: `no agent running in ${worker.sandbox} a minute after the restart` };
@@ -201,7 +233,7 @@ export async function recycle(worker, log = () => {}) {
     const { stdout } = await run('sbx', ['ls'], { timeout: 20000 }).catch(() => ({ stdout: '' }));
     if (new RegExp(`^${worker.sandbox}\\s+\\S+\\s+running`, 'm').test(stdout) && !(await atShell(worker))) {
       // The fresh VM has no ~/.claude of Alex's; the running session picks the hook up from its settings file.
-      const hook = await restoreBaseline(worker.sandbox).then(() => 'comment hook restored', e => `comment hook NOT restored: ${e.message}`);
+      const hook = await restoreBaseline(worker.sandbox, worker.agent).then(() => 'comment hook restored', e => `comment hook NOT restored: ${e.message}`);
       return { ok: true, detail: `${worker.sandbox} recreated and its agent started; ${hook}` };
     }
   }

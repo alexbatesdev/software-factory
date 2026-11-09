@@ -6,12 +6,17 @@ import { streamBusy } from '../core/recycle.mjs';
 import { exitChoice } from '../hosts/sbx.mjs';
 export const ORCHESTRATOR_TAB = 'Orchestrator', WORKER_TAB = 'Worker', TERMINALS = 'Terminals';
 
+/** The agent a seat runs: a stream's worker runs its `routing.supervisors[sup].agent` (default claude); every other seat is Claude. */
+export const agentOf = (config, label) => Object.values(config.routing?.supervisors || {}).find(s => s.worker === label)?.agent || 'claude';
+// Each agent's own quit command.
+export const QUIT = { claude: '/exit', codex: '/quit' };
+
 /** Fixed seats from `config.factory.seats`, plus a supervisor and sbx worker per stream in `routing.supervisors`. */
 export function seatsOf(config) {
   const was = label => Object.entries(config.routing?.renamed || {}).filter(([, to]) => to === label).map(([from]) => from);
   const streams = Object.entries(config.routing?.supervisors || {}).filter(([, s]) => s.workspace).flatMap(([label, s]) => [
     { label, kind: 'claude', role: 'stream-supervisor', workspace: s.workspace, tab: ORCHESTRATOR_TAB },
-    ...(s.worker ? [{ label: s.worker, kind: 'sbx', workspace: s.workspace, tab: WORKER_TAB }] : []),
+    ...(s.worker ? [{ label: s.worker, kind: 'sbx', agent: agentOf(config, s.worker), workspace: s.workspace, tab: WORKER_TAB }] : []),
   ]);
   return [...(config.factory?.seats || []).filter(s => s.enabled !== false), ...streams].map(s => ({ ...s, was: was(s.label) }));
 }
@@ -120,7 +125,7 @@ export async function startSeat(seat, pane, herdr) {
 /** Stop a seat's process, keeping its pane; true once it is down within 30 s. */
 export async function stopSeat(seat, pane, herdr) {
   if (seat.kind === 'shell') await herdr('pane', 'send-keys', pane, 'ctrl+c');
-  else { await herdr('pane', 'send-keys', pane, 'esc'); await pause(1000); await herdr('pane', 'send-text', pane, seat.kind === 'codex' ? '/quit' : '/exit'); await herdr('pane', 'send-keys', pane, 'enter'); }
+  else { await herdr('pane', 'send-keys', pane, 'esc'); await pause(1000); await herdr('pane', 'send-text', pane, QUIT[seat.agent || seat.kind] || QUIT.claude); await herdr('pane', 'send-keys', pane, 'enter'); }
   for (let i = 0; i < 30; i++) {
     await pause(1000);
     if (!running(seat, await argvOf(herdr, pane))) return true;

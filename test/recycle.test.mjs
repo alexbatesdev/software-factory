@@ -120,3 +120,33 @@ test("an exit held by Claude's background-work dialog picks the option that exit
   assert.equal(exitChoice(screen.replace('1. Exit', '3. Exit')), '3', 'the number shown, not a guess');
   assert.equal(exitChoice('Do you want to proceed?\n 1. Yes\n 2. No'), null, 'any other dialog is left alone');
 });
+
+test("a codex worker's health is read from its codex process, not claude's", async () => {
+  const { healthCmd } = await import('../hosts/sbx.mjs');
+  assert.match(healthCmd('codex'), /pgrep -o -x codex\b/);
+  assert.match(healthCmd(), /pgrep -o -x claude\b/);
+});
+
+test("Codex's board server block is written once, with the sandbox's headers, keeping the rest of its config", async () => {
+  const { withBoardMcpToml } = await import('../hosts/sbx.mjs');
+  const mine = { url: 'http://host.docker.internal:4849/mcp', headers: { 'x-sandbox': 'box', 'x-sandbox-token': 'tok' } };
+  const cur = 'model = "gpt"\n\n[mcp_servers.software-factory]\nurl = "http://old/mcp"\n\n[mcp_servers.software-factory.http_headers]\n"x-sandbox" = "old"\n\n[mcp_servers.other]\ncommand = "x"\n';
+  const once = withBoardMcpToml(cur, mine);
+  assert.equal((once.match(/^\[mcp_servers\.software-factory/gm) || []).length, 1);
+  assert.match(once, /url = "http:\/\/host\.docker\.internal:4849\/mcp"\nhttp_headers = \{ "x-sandbox" = "box", "x-sandbox-token" = "tok" \}/);
+  assert.match(once, /model = "gpt"/); assert.match(once, /\[mcp_servers\.other\]\ncommand = "x"/);
+  assert.doesNotMatch(once, /old/);
+  assert.equal(withBoardMcpToml(once, mine), once, 'applying it twice changes nothing');
+  assert.match(withBoardMcpToml('', mine), /^\[mcp_servers\.software-factory\]/);
+});
+
+test("a codex sandbox's baseline is its AGENTS.md (standards plus the 🤖 rule), its board server and the review prompt; nothing of Claude's", async () => {
+  const { restoreBaseline } = await import('../hosts/sbx.mjs');
+  const wrote = {};
+  await restoreBaseline('box', 'codex', { put: async (p, t) => { wrote[p] = t; }, read: async () => '', secret: 's' });
+  assert.deepEqual(Object.keys(wrote).filter(p => p.includes('.claude')), []);
+  assert.match(wrote['/home/agent/.codex/AGENTS.md'], /^# Team standards/);
+  assert.match(wrote['/home/agent/.codex/AGENTS.md'], /line '🤖' alone at the start and a line '🤖' alone at the end/);
+  assert.match(wrote['/home/agent/.codex/config.toml'], /"x-sandbox" = "box"/);
+  assert.ok(wrote['/home/agent/standards/internal-review-codex.md'], 'the review prompt the brief names');
+});

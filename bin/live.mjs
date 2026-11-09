@@ -33,6 +33,7 @@ import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles } from '../core/recycle.mjs';
 import { gh as liveGh } from '../effects/github.mjs';
 import { syncStandards } from '../hosts/standards.mjs';
+import { agentOf } from '../fleet/factory.mjs';
 
 // Dry run (FACTORY_DRY=1, FACTORY_DB=<a copy of data/factory.db>): reads are real, nothing is typed, marked or moved.
 const DRY = process.env.FACTORY_DRY === '1';
@@ -130,7 +131,7 @@ async function inboxTick() {
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
   const sessions = Object.fromEntries([...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => [a.label, a.session]));
   for (const w of wakePlan(store.state, woken, Date.now(), config.notify?.reminderMs, sessions)) {
-    const r = await wake(w).catch(e => ({ ok: false, reason: e.message }));
+    const r = await wake({ ...w, agent: agentOf(config, w.seat) }).catch(e => ({ ok: false, reason: e.message }));
     if (r.ok) { woken[w.seat] = { at: Date.now(), ids: w.ids, reminded: w.reminder, session: r.session }; log(`woke ${w.seat}${w.reminder ? ' (reminder)' : ''}`); }
   }
 }
@@ -257,6 +258,7 @@ async function teamworkTick() {
 async function fleetTick() {
   try {
     fleet = await readFleet(store.state.legacy.pairs);
+    for (const u of fleet.units) if (u.worker) u.worker.agent = agentOf(config, u.worker.label);
     for (const u of fleet.units) {
       if (u.worker?.status !== 'working') { delete quiet[u.id]; delete screens[u.id]; continue; }
       const stdout = await run('herdr', ['pane', 'read', u.worker.ref, '--source', 'visible', '--lines', '40'], { timeout: 5000 }).then(r => r.stdout, () => null);

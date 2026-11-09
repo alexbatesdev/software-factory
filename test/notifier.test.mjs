@@ -11,7 +11,7 @@ test('a supervisor is found by its one pane label', () => {
   assert.equal(resolveTarget([agent(), agent({ pane_id: 'w9:p1', label: 'other' })], SUP).agent.pane_id, 'w5:p24');
   assert.match(resolveTarget([agent({ label: 'other' })], SUP).reason, /not running/);
   assert.match(resolveTarget([agent(), agent({ pane_id: 'w9:p1' })], SUP).reason, /Several/);
-  assert.match(resolveTarget([agent({ agent: 'codex' })], SUP).reason, /not a Claude/);
+  assert.match(resolveTarget([agent({ agent: 'codex' })], SUP).reason, /not a claude agent/i);
 });
 
 test('busy, blocked, unknown or not interactive-ready defers', () => {
@@ -154,4 +154,11 @@ test('a host stream with no paired worker is woken when the worker its started j
   const others = [{ label: 'w234-create-task', ref: 'w31:p1', status: 'done' }];
   const r = planWorkerStops({ units: [host], others, works, watch: { host: { armed: true, stoppedAt: T0 } }, now: T0 + 70000, graceMs: 60000, supervisors: ['sup: host'] });
   assert.deepEqual(r.due.map(d => [d.to, d.work, d.assignment, d.worker]), [['sup: host', 'W-234', 'R2', 'w234-create-task']]);
+});
+
+test("a codex worker's pane can be woken when its seat runs codex, and nowhere else", () => {
+  const W = 'sbx: stream-2', codex = agent({ agent: 'codex', label: W });
+  assert.equal(resolveTarget([codex], W, 'codex').ok, true);
+  assert.match(resolveTarget([codex], W).reason, /not a claude agent/i);
+  assert.match(resolveTarget([agent({ label: W })], W, 'codex').reason, /not a codex agent/i);
 });

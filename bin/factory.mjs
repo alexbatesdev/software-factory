@@ -75,7 +75,7 @@ async function up(apply) {
       if (s.action === 'adopt') {
         const { panes } = await herdr('pane', 'list');
         await adoptSandbox(s.seat.sandbox, pane, panes.find(p => p.pane_id === pane).workspace_id, { livePanes: panes.map(p => p.pane_id) });
-        await restoreBaseline(s.seat.sandbox);
+        await restoreBaseline(s.seat.sandbox, s.seat.agent);
       }
       if (['reconnect', 'adopt'].includes(s.action)) await attach(pane); else await startSeat(s.seat, pane, herdr);
       console.log(`  done: ${pane}`);

@@ -22,16 +22,16 @@ export function inferStream(w, supervisors) {
 
 
 /**
- * Find the one Claude agent whose pane carries the supervisor's label.
+ * Find the one agent of `kind` (the seat's agent, see fleet agentOf) whose pane carries the seat's label.
  * Returns {ok, agent} when it may be prompted now, {defer} when it exists but must not be typed into,
  * or {reason} when there is no single such agent.
  */
-export function resolveTarget(agents, label) {
+export function resolveTarget(agents, label, kind = 'claude') {
   const found = agents.filter(x => x.label === label);
   if (!found.length) return { reason: `"${label}" is not running in herdr.` };
   if (found.length > 1) return { reason: `Several panes are labelled "${label}"; rename one.` };
   const a = found[0];
-  if (a.agent !== 'claude') return { reason: `"${label}" is not a Claude agent.` };
+  if (a.agent !== kind) return { reason: `"${label}" is not a ${kind} agent.` };
   // A blocked agent is parked at a dialog; typing into it could answer the dialog.
   if (!['idle', 'done'].includes(a.agent_status)) return { agent: a, defer: `${label} is ${a.agent_status || 'unknown'}` };
   if (a.interactive_ready === false) return { agent: a, defer: `${label} is not interactive-ready` };

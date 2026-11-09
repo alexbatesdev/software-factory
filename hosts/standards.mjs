@@ -5,6 +5,8 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export const STANDARDS = ['DEFINITION_OF_DONE.md', 'WWBD.md'];
+// The Codex worker's internal-review prompt (no subagents in Codex): written here by hand, copied into codex sandboxes.
+export const CODEX_REVIEW = 'internal-review-codex.md';
 export const SOURCE = join(homedir(), 'Documents'), MIRROR = join(homedir(), 'Code/plans/standards'), IN_SANDBOX = '/home/agent/standards';
 
 /** Copy each document whose text differs; returns the names it wrote. */

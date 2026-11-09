@@ -14,7 +14,7 @@ async function agents() {
 
 /** Wake one seat if it can take a prompt now; a busy or missing seat is retried by the next tick. */
 export async function wake(w) {
-  const h = resolveTarget(await agents(), w.seat);
+  const h = resolveTarget(await agents(), w.seat, w.agent);
   if (!h.ok) return { ok: false, reason: h.defer || h.reason };
   const r = await herdrRaw('agent', 'prompt', h.agent.pane_id, wakeText(w));
   return r?.type === 'agent_prompted' ? { ok: true, session: h.agent.agent_session?.value || null } : { ok: false, reason: `herdr did not confirm: ${JSON.stringify(r).slice(0, 200)}` };

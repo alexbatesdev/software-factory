@@ -118,3 +118,11 @@ test('once a day at the quiet hour, idle Claude seats with nothing waiting resta
   agents.find(a => a.label === 'lead').status = 'working';
   assert.deepEqual(at('2026-11-10T10:05:00.000Z').map(([l]) => l), ['router2', 'sup: s1'], 'a working seat is left alone');
 });
+
+test("a stream set to codex runs a Codex worker; every other seat, and its own supervisor, stays Claude", async () => {
+  const { agentOf, QUIT } = await import('../fleet/factory.mjs');
+  const cfg = { routing: { supervisors: { ...config.routing.supervisors, 'sup: s2': { workspace: 'Stream 2', worker: 'sbx: s2', agent: 'codex' } } } };
+  assert.deepEqual(seatsOf(cfg).filter(s => s.kind === 'sbx').map(s => [s.label, s.agent]), [['sbx: s1', 'claude'], ['sbx: s2', 'codex']]);
+  assert.deepEqual(['sbx: s2', 'sup: s2', 'sbx: s1', 'local-head'].map(l => agentOf(cfg, l)), ['codex', 'claude', 'claude', 'claude']);
+  assert.deepEqual([QUIT.claude, QUIT.codex], ['/exit', '/quit']);
+});
