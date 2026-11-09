@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The software factory's seats. Run from a Terminals shell, outside the factory:
 //   node bin/factory.mjs                         show each seat and what `up` would do
-//   node bin/factory.mjs up                      start what's stopped, create what's missing (never restarts a running pane)
+//   node bin/factory.mjs up                      sync skills and standards, then start what's stopped, create what's missing (never restarts a running pane)
 //   node bin/factory.mjs down [--with-local-head] [--yes]   stop every seat's process, keep its pane for `up`
 //   node bin/factory.mjs rename                  with the server down: move the board's records to routing.renamed's new labels
 import fs from 'node:fs';
@@ -12,6 +12,8 @@ import { herdrRaw as herdr } from '../fleet/herdr.mjs';
 import { seatsOf, planFactory, planStop, slotFor } from '../fleet/factory.mjs';
 import { bridgeLine, adoptSandbox, sandboxOf, restoreBaseline } from '../hosts/sbx.mjs';
 import { openStore } from '../core/store.mjs';
+import { syncStandards } from '../hosts/standards.mjs';
+import { execFileSync } from 'node:child_process';
 
 const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
 const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
@@ -57,7 +59,19 @@ async function remember(seen) {
 // The plugin's own start line (HERDR_AGENT set, so herdr sees the agent's status); its start mode reuses an existing sandbox.
 const attach = async pane => herdr('pane', 'run', pane, await bridgeLine({ ref: pane }));
 
+// Every agent starts on current context (Alex, 11-09): built-rails skills into ~/Code, Claude's skills into Codex,
+// Benny's standards into the mirror workers read. A failed step is reported; it never blocks the seats.
+function syncContext() {
+  for (const script of ['sync-peer-skills.sh', 'sync-codex-skills.sh']) {
+    try { execFileSync('bash', [path.join(os.homedir(), 'Code/.claude', script)], { stdio: 'inherit' }); console.log(`synced  ${script}`); }
+    catch (e) { console.log(`WARN    ${script} failed: ${e.message.split('\n')[0]}`); }
+  }
+  try { const n = syncStandards(); console.log(`synced  standards${n.length ? ` (${n.join(', ')})` : ' (unchanged)'}`); }
+  catch (e) { console.log(`WARN    standards: ${e.message}`); }
+}
+
 async function up(apply) {
+  if (apply) syncContext();
   const seen = await observe(), home0 = seen.panes.find(p => p.focused);
   await remember(seen);
   for (const s of planFactory(seats, seen.panes)) {
