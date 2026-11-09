@@ -17,7 +17,7 @@ const TOOLS = {
   done: ['The worker finished: head SHA, optional PR URL; noChange for a check that found nothing to build.', obj({ report: { type: 'object', description: 'The worker\'s Definition of Done exit report, required for code work (not reviews or no-change): {changed, proven, unverified, risk}. Check it against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if" first.', properties: { changed: str('what changed'), proven: str('how it was proven: the observed evidence'), unverified: str('what was not verified and why, or "nothing"'), risk: str('residual risk and follow-ups') } }, work: str('W-n'), assignmentId: str('R-n'), expectedVersion: { type: 'number' }, head: str('SHA'), pr: str('PR URL'), noChange: obj({ verifiedOn: str('SHA'), evidence: str('why') }) }, ['work']), 'done'],
   review: ['Record an internal-review result at a head.', obj({ work: str('W-n'), head: str('SHA'), from: str('Only for a record with no PR of its own: the head the review started at, when its fixes moved the head (the factory can\'t observe it)'), result: str('clean | findings'), by: str('reviewer label'), link: str('report path'), findings: { type: 'array' } }, ['work', 'head', 'result']), 'review'],
   await_approval: ['A PR whose internal review gate passed and that GitHub shows ready waits for human approval. No waivers from 2026-11-10.', obj({ work: str('W-n'), head: str('SHA'), evidence: str('evidence'), waiver: { type: 'object' } }, ['work']), 'await_approval'],
-  ask: ['File a question for Alex (one open question per record unless distinct), or withdraw one you asked.', obj({ wwbd: str('Required: the passage of ~/Code/plans/standards/WWBD.md you checked and why it doesn\'t settle this, or "no passage applies". If a passage settles it, act on it instead of asking.'), title: str('the question'), options: { type: 'array', items: obj({ key: str('a'), text: str('option') }) }, recommend: str('option key'), work: str('W-n'), promptedBy: str('who or what raised it, with a verbatim quote'), why: str('context Alex needs'), recommendWhy: str('why that option'), distinct: { type: 'boolean', description: 'true: a separate decision from the open question already on this record' }, withdraw: str('TB-n you asked, to withdraw it instead of asking (with note)'), note: str('why it is withdrawn') }, []), 'ask'],
+  ask: ['File a question for Alex (one open question per record unless distinct), add to an open one (amend), or withdraw one you asked.', obj({ wwbd: str('Required: the passage of ~/Code/plans/standards/WWBD.md you checked and why it doesn\'t settle this, or "no passage applies". If a passage settles it, act on it instead of asking.'), title: str('the question'), options: { type: 'array', items: obj({ key: str('a'), text: str('option') }) }, recommend: str('option key'), work: str('W-n'), promptedBy: str('who or what raised it, with a verbatim quote'), why: str('context Alex needs'), recommendWhy: str('why that option'), distinct: { type: 'boolean', description: 'true: a separate decision from the open question already on this record' }, withdraw: str('TB-n you asked, to withdraw it instead of asking (with note)'), amend: str('TB-n to add to instead of asking: appends note to the open question (its asker or the board lead)'), note: str('with withdraw: why; with amend: what to add') }, []), 'ask'],
   answer: ["Record Alex's answer to TB-n, as he gave it.", obj({ id: str('TB-n'), choice: str('option key or rec'), note: str("Alex's words") }, ['id']), 'answer'],
   route: ['Send an answer on to its owner; setOwner also makes them the record\'s owner.', obj({ id: str('TB-n'), to: str('seat label'), setOwner: { type: 'boolean' }, note: str('why') }, ['id', 'to']), 'route'],
   create: ['Create a work record.', obj({ title: str('title'), objective: str('objective'), kind: str('build | pr-feedback'), links: { type: 'object' } }, ['title']), 'create'],
@@ -35,18 +35,23 @@ const TOOLS = {
 };
 for (const a of ACTIONS) if (!Object.values(TOOLS).some(t => t[2] === a)) throw new Error(`No MCP tool for board action ${a}.`);
 
+/** The tools a role holds, as tools/list returns them; the API serves this so running sessions see today's table. */
+export const toolsFor = role => Object.entries(TOOLS).filter(([, t]) => role && ROLES[role].includes(t[2])).map(([name, [description, inputSchema]]) => ({ name, description, inputSchema }));
+
 /**
  * @param seatOf async () => the caller's seat label
- * @param api {get(path, seat), post(action, args, seat)}
- * @returns handle(message) → response or null (for notifications)
+ * @param api {get(path, seat), post(action, args, seat), tools?(seat)} tools: the server's current table for the seat
+ * @returns handle(message) → response or null (for notifications); handle.changed() → true once when the table moved since tools/list
  */
 export function createMcp({ config, seatOf, api }) {
   let seat;
   // Read every call: a pane relabelled mid-session (a seat rename) must act as its new seat.
-  const mine = async () => { seat = await seatOf(); const role = roleOf(config, seat); return Object.entries(TOOLS).filter(([, t]) => role && ROLES[role].includes(t[2])); };
+  // A session outlives schema changes (11-09: done lost report), so the server's table wins; this process's own is the fallback.
+  const mine = async () => { seat = await seatOf(); const remote = await api.tools?.(seat).catch(() => null); return Array.isArray(remote) ? remote : toolsFor(roleOf(config, seat)); };
+  let listed;
   const text = (body, isError = false) => ({ content: [{ type: 'text', text: typeof body === 'string' ? body : JSON.stringify(body, null, 1) }], isError });
   async function call(name, args = {}) {
-    if (!(await mine()).some(([n]) => n === name)) return text(`${seat} has no ${name} tool.`, true);
+    if (!(await mine()).some(t => t.name === name)) return text(`${seat} has no ${name} tool.`, true);
     if (name === 'inbox') return text(await api.get('/api/inbox', seat));
     if (name === 'read') {
       const s = await api.get('/api/state', seat), q = args.question || (/^TB-\d+$/.test(args.work || '') ? args.work : null);
@@ -61,17 +66,25 @@ export function createMcp({ config, seatOf, api }) {
     const r = await api.post(name, args, seat);
     return text(r, !!r.error);
   }
-  return async function handle(msg) {
+  async function handle(msg) {
     const reply = result => ({ jsonrpc: '2.0', id: msg.id, result });
     if (msg.id === undefined) return null;
     try {
       switch (msg.method) {
-        case 'initialize': return reply({ protocolVersion: msg.params?.protocolVersion || '2025-06-18', capabilities: { tools: {} }, serverInfo: { name: 'software-factory', version: '0.1.0' } });
+        case 'initialize': return reply({ protocolVersion: msg.params?.protocolVersion || '2025-06-18', capabilities: { tools: { listChanged: true } }, serverInfo: { name: 'software-factory', version: '0.1.0' } });
         case 'ping': return reply({});
-        case 'tools/list': return reply({ tools: (await mine()).map(([name, [description, inputSchema]]) => ({ name, description, inputSchema })) });
+        case 'tools/list': { const tools = await mine(); listed = JSON.stringify(tools); return reply({ tools }); }
         case 'tools/call': return reply(await call(msg.params?.name, msg.params?.arguments));
         default: return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `Unknown method ${msg.method}` } };
       }
     } catch (e) { return reply(text(e.message, true)); }
+  }
+  // Only the server's table counts: a server blip must not announce this process's older table.
+  handle.changed = async () => {
+    if (listed === undefined || !api.tools) return false;
+    const now = JSON.stringify(await api.tools(await seatOf()).catch(() => null));
+    if (now === 'null' || now === listed) return false;
+    listed = now; return true;
   };
+  return handle;
 }

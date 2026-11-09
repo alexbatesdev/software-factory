@@ -10,6 +10,8 @@ import { LIVE_ASSIGNMENT, parked } from './work.mjs';
  */
 // A worker restarts fresh between jobs (~/Code/CLAUDE.md: recycle at every boundary) once its stream has been quiet this long.
 const QUIET_MS = 180000;
+/** A job is started or blocked on the stream and not parked (a parked job's handoff is written; the stream is free). */
+export const streamBusy = (works, stream) => Object.values(works).some(r => r.stream === stream && (r.assignments || []).some(a => ['started', 'blocked'].includes(a.status) && !parked(a)));
 export function planRecycles({ units, health = {}, works, threshold = 0.75, recycling = {}, supervisors = [], sessions = {}, now = Date.now(), restartStale = false }) {
   const drain = new Map(), due = [];
   for (const u of units) {
@@ -23,8 +25,7 @@ export function planRecycles({ units, health = {}, works, threshold = 0.75, recy
       const mine = Object.values(works).filter(r => r.stream === to);
       const last = Math.max(0, ...mine.flatMap(r => [...(r.assignments || []).flatMap(a => (a.history || []).filter(x => x.status === 'done').map(x => Date.parse(x.at))),
         ...(r.updates || []).filter(x => [to, u.worker.label].includes(x.by)).map(x => Date.parse(x.at))]));
-      const busy = mine.some(r => (r.assignments || []).some(a => ['started', 'blocked'].includes(a.status) && !parked(a)));
-      if (restartStale && sessions[u.id] && sessions[u.id] < last && now - last >= QUIET_MS && !busy && ['idle', 'done'].includes(u.worker.status))
+      if (restartStale && sessions[u.id] && sessions[u.id] < last && now - last >= QUIET_MS && !streamBusy(works, to) && ['idle', 'done'].includes(u.worker.status))
         due.push({ unit: u.id, to, worker: u.worker, restart: true });
       continue;
     }

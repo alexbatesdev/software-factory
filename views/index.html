@@ -96,6 +96,7 @@ function cardEl(c, labels) {
   if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', null, `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; meta.append(a); }
   d.append(meta);
   if (c.waiting) d.append(el('div', 'w', c.waiting.text));
+  if (c.unverified) d.append(el('div', 'mute', `Unverified: ${c.unverified}`));
   return d;
 }
 

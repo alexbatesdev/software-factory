@@ -46,3 +46,19 @@ test('a relabelled pane acts as its new seat on the next call, without restartin
   assert.equal((await mcp(rpc('tools/call', { name: 'route', arguments: { id: 'TB-1', to: 'sup: s1' } }))).result.isError, false);
   assert.equal(api.calls.at(-1)[2], 'questions router');
 });
+
+test("a running session's tools come from the server's current table, and a change is announced with list_changed", async () => {
+  let remote = [{ name: 'done', description: 'new', inputSchema: { type: 'object', properties: { report: {} } } }], down = false;
+  const api = { ...fake(), tools: async seat => { if (down) throw new Error('ECONNREFUSED'); return seat === 'questions router' ? remote : []; } };
+  const mcp = createMcp({ config, seatOf: async () => 'questions router', api });
+  assert.deepEqual((await mcp(rpc('initialize', {}))).result.capabilities.tools, { listChanged: true });
+  assert.equal(await mcp.changed(), false, 'nothing listed yet, nothing to announce');
+  assert.deepEqual((await mcp(rpc('tools/list'))).result.tools, remote);
+  assert.equal(await mcp.changed(), false);
+  remote = [{ ...remote[0], description: 'newer' }];
+  assert.equal(await mcp.changed(), true);
+  assert.equal(await mcp.changed(), false, 'announced once');
+  down = true;
+  assert.equal(await mcp.changed(), false, 'a server blip announces nothing');
+  assert.ok((await mcp(rpc('tools/list'))).result.tools.some(t => t.name === 'route'), 'server down: its own table');
+});

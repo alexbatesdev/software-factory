@@ -24,9 +24,9 @@ const BUILD = {
   },
   review: a => { need(a, 'work', 'head', 'result'); return [ev(a.work, { type: 'review', head: a.head, from: a.from, result: a.result, by: a.by, link: a.link, findings: a.findings })]; },
   await_approval: a => { need(a, 'work'); return [ev(a.work, { type: 'await_approval', head: a.head, evidence: a.evidence, waiver: a.waiver })]; },
-  // `withdraw: TB-n` closes a question the caller asked (W-274); capabilities limit it to the asker.
+  // `withdraw: TB-n` closes a question the caller asked (W-274); `amend: TB-n` adds a note to an open one.
   // Before asking Alex, check "What Would Benny Do?" (Alex, 11-09); the question carries what was checked.
-  ask: a => a.withdraw ? (need(a, 'note'), [{ kind: 'question_close', target: a.withdraw, payload: { note: `Withdrawn by its asker: ${a.note}` } }]) : (a.wwbd || fail('Missing "wwbd": quote the passage of ~/Code/plans/standards/WWBD.md you checked and why it doesn\'t settle this, or say "no passage applies". If a passage settles it, act on it instead of asking.'), [{ kind: 'ask', payload: { wwbd: a.wwbd, title: a.title, options: a.options, recommend: a.recommend, work: a.work, promptedBy: a.promptedBy, why: a.why, ac: a.ac, recommendWhy: a.recommendWhy, item: a.item } }]),
+  ask: a => a.amend ? (need(a, 'note'), [{ kind: 'question_amend', target: a.amend, payload: { note: a.note } }]) : a.withdraw ? (need(a, 'note'), [{ kind: 'question_close', target: a.withdraw, payload: { note: `Withdrawn by its asker: ${a.note}` } }]) : (a.wwbd || fail('Missing "wwbd": quote the passage of ~/Code/plans/standards/WWBD.md you checked and why it doesn\'t settle this, or say "no passage applies". If a passage settles it, act on it instead of asking.'), [{ kind: 'ask', payload: { wwbd: a.wwbd, title: a.title, options: a.options, recommend: a.recommend, work: a.work, promptedBy: a.promptedBy, why: a.why, ac: a.ac, recommendWhy: a.recommendWhy, item: a.item } }]),
   answer: a => { need(a, 'id'); return [{ kind: 'answer', target: a.id, payload: { choice: a.choice, note: a.note } }]; },
   route: a => {
     need(a, 'id', 'to');

@@ -1,7 +1,7 @@
 // Questions for Alex: asked by a seat, answered by Alex through local-head, routed by the questions router, acked by whoever acts.
 const fail = msg => { throw new Error(msg); };
 
-/** Apply an ask / answer / route / question_ack row to state.questions in place; returns the question id. */
+/** Apply an ask / answer / route / question_ack / question_amend row to state.questions in place; returns the question id. */
 export function foldQuestion(state, { kind, target, payload: p, ctx }) {
   if (kind === 'ask') {
     if (!p.title) fail('A question needs a title.');
@@ -36,6 +36,10 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
     // Settled without an answer, e.g. Alex merged the record's PR past it (W-248).
     if (q.status !== 'open') fail(`${target} is not open.`);
     Object.assign(next, { status: 'superseded', verificationNote: String(p.note || '').slice(0, 500), verificationSource: `closed by ${ctx.by}` });
+  } else if (kind === 'question_amend') {
+    if (q.status !== 'open') fail(`${target} is not open; ask again instead.`);
+    if (!p.note) fail('An amendment needs a note.');
+    next.amendments = [...(q.amendments || []), { note: String(p.note).slice(0, 2000), by: ctx.by, at: ctx.now }];
   } else fail(`Unknown question command "${kind}".`);
   state.questions[target] = next;
   return target;

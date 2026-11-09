@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { seatsOf, planFactory, planStop, slotFor } from '../fleet/factory.mjs';
+import { seatsOf, planFactory, planStop, slotFor, planSeatRestarts } from '../fleet/factory.mjs';
 
 const config = {
   routing: { supervisors: { 'sup: s1': { workspace: 'Stream 1', worker: 'sbx: s1' } } },
@@ -100,4 +100,21 @@ test('a worker whose pane is gone but whose sandbox is known is adopted into a n
   const seats = seatsOf(config).map(s => s.label === 'sbx: s1' ? { ...s, sandbox: 'box-1' } : s);
   assert.equal(planFactory(seats, []).find(s => s.seat.label === 'sbx: s1').action, 'adopt');
   assert.equal(planFactory(seatsOf(config), []).find(s => s.seat.label === 'sbx: s1').action, 'report-missing');
+});
+
+test('once a day at the quiet hour, idle Claude seats with nothing waiting restart fresh; busy, stays, codex and sbx seats never', () => {
+  const cfg = { ...config, factory: { seats: [...config.factory.seats, { label: 'lead', kind: 'claude', role: 'board-lead', workspace: 'Services', tab: 'Factory' }, { label: 'router2', kind: 'claude', role: 'questions-router', workspace: 'Services', tab: 'Factory' }] } };
+  const seats = seatsOf(cfg);
+  const agents = [['local-head', 'idle'], ['unblocker', 'idle'], ['lead', 'done'], ['router2', 'idle'], ['sup: s1', 'idle'], ['sbx: s1', 'idle']].map(([label, status]) => ({ label, status, ref: `p-${label}` }));
+  const state = { messages: {}, work: {} };
+  const at = (now, extra = {}) => planSeatRestarts(seats, agents, extra.state || state, { now, hourUtc: 10, enabled: true, ...extra }).map(r => [r.seat.label, r.pane]);
+  assert.deepEqual(at('2026-11-10T10:05:00.000Z'), [['lead', 'p-lead'], ['router2', 'p-router2'], ['sup: s1', 'p-sup: s1']]);
+  assert.deepEqual(at('2026-11-10T11:05:00.000Z'), [], 'only in the quiet hour');
+  assert.deepEqual(at('2026-11-10T10:05:00.000Z', { enabled: false }), []);
+  assert.deepEqual(at('2026-11-10T10:30:00.000Z', { done: { lead: '2026-11-10', router2: '2026-11-09' } }).map(([l]) => l), ['router2', 'sup: s1'], 'once per seat per day');
+  const busy = { messages: { 'M-1': { to: 'router2', ackedAt: null }, 'M-2': { to: 'lead', ackedAt: 'x' } },
+    work: { 'W-1': { stream: 'sup: s1', assignments: [{ id: 'R1', status: 'started' }] }, 'W-2': { stream: 'lead', assignments: [{ status: 'started' }] } } };
+  assert.deepEqual(at('2026-11-10T10:05:00.000Z', { state: busy }).map(([l]) => l), ['lead'], 'an unacked message or a started job on its stream keeps a seat');
+  agents.find(a => a.label === 'lead').status = 'working';
+  assert.deepEqual(at('2026-11-10T10:05:00.000Z').map(([l]) => l), ['router2', 'sup: s1'], 'a working seat is left alone');
 });

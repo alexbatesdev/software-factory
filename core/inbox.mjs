@@ -2,7 +2,7 @@
 // Pure. A message is created once per subject; waking the seat is the Wake port's job, not this one's.
 import { isTrustedReviewSeat } from './capabilities.mjs';
 import { BUILDING, LIVE_ASSIGNMENT } from './work.mjs';
-import { eligibleRequests, planWorkerStops, planIdleQueues, planIdleOwners, routeOf, workerJob, PREFIX } from './notifier.mjs';
+import { eligibleRequests, planWorkerStops, planBlockedWorkers, planIdleQueues, planIdleOwners, routeOf, workerJob, PREFIX } from './notifier.mjs';
 
 /**
  * Subjects already told: V2 messages, and imported V1 notifications (so cutover tells nobody twice).
@@ -66,6 +66,9 @@ export function inboxCommands(state, cfg, fleet = null) {
     // The watch fires once per stop; a told-key check here would swallow a second stop on the same assignment.
     for (const d of stops.due)
       cmds.push(msg(d.to, d.work, { workerStop: `${d.work}/${d.assignment}` }, `${d.worker} stopped while ${d.work} ${d.assignment} is started: read its pane and record what it reported.`));
+    const blocked = planBlockedWorkers({ units: fleet.units, works: state.work, watch: watches.blockedWorkers, now: fleet.now, supervisors: cfg.supervisors });
+    for (const d of blocked.due)
+      cmds.push(msg(d.to, d.work, { workerBlocked: `${d.work}/${d.since}` }, `${d.worker} has been blocked at a dialog for 5+ min while ${d.work} is started: read its pane. A permission prompt is the agent unblocker's; a question is yours to answer.`));
     const sent = Object.fromEntries([...told].filter(k => k.startsWith('idleQueue:')).map(k => [k.slice(10), true]));
     const drain = fleet.drain || new Map();
     // A draining stream takes no new work: its supervisor hears once per sandbox, and gets no "your stream is free" wake.
@@ -79,7 +82,7 @@ export function inboxCommands(state, cfg, fleet = null) {
     const unread = new Set(Object.values(state.messages).filter(m => !m.ackedAt).map(m => m.to));
     const owners = planIdleOwners({ seats: (fleet.others || []).filter(a => !unread.has(a.label) && !isTrustedReviewSeat(a.label)), works: state.work, watch: watches.idleOwners, now: fleet.now });
     for (const d of owners.due) cmds.push(msg(d.to, d.work, { idleOwner: `${d.to}/${fleet.now}` }, `You're idle and own ${d.count} open record(s). Next: ${d.work} ${quote(d.title)}. Work it, or park it with progress waitingOn (what blocks it) so it stops counting.`));
-    watches = { workerStops: stops.watch, idleQueues: idle.watch, idleOwners: owners.watch };
+    watches = { workerStops: stops.watch, blockedWorkers: blocked.watch, idleQueues: idle.watch, idleOwners: owners.watch };
     // A started assignment whose owner has no pane will never report (W-178). Stream workers have their own stop check.
     // ponytail: "sbx: " prefix stands in for "a stream's worker"; pass the worker labels if another worker naming appears.
     const live = new Set([...(fleet.others || []), ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => a.label));
@@ -102,7 +105,9 @@ export function inboxCommands(state, cfg, fleet = null) {
   const BOOKKEEPING = /^(Updated links\.|Proposed from W-\d+\.|Out-of-scope discovery proposed as separate work: )/;
   for (const w of Object.values(state.work)) (w.updates || []).forEach((u, i) => {
     const sup = cfg.workers?.[u.by], key = `${w.id}/${i}`;
-    if (sup && !BOOKKEEPING.test(u.text || '') && !told.has(`workerNote:${key}`)) cmds.push(msg(sup, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
+    if (!sup || BOOKKEEPING.test(u.text || '') || told.has(`workerNote:${key}`)) return;
+    // The record's own stream hears it too when the worker wrote on another stream's record (W-288).
+    for (const to of new Set([sup, routeOf(w, cfg.supervisors)])) if (to) cmds.push(msg(to, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
   });  // A worker job the worker never wrote on: its session may lack the board tools (W-218), or the brief never started.
   const workerOf = Object.fromEntries(Object.entries(cfg.workers || {}).map(([wk, sup]) => [sup, wk]));
   for (const w of Object.values(state.work)) {
