@@ -691,3 +691,61 @@ test('Mutation-tester work is ordinary stream work; only a listed record is excl
   assert.equal(trackOf({ id: 'W-1', links: { branch: 'alex/test-quality/mutation-gaps-3' } }, cfg), 'stream');
   assert.equal(trackOf({ id: 'W-9', links: {} }, { exclude: ['W-9'] }), 'excluded');
 });
+
+// Alex, 2026-11-09: one internal review per PR unless its history was rewritten (rebase or force push) since that review.
+const CAP = '2026-11-10T09:00:00.000Z';
+const capCtx = (over = {}) => ctx({ now: CAP, ...over });
+const capRun = (w, ...events) => events.reduce((acc, e) => applyEvent(acc, e, capCtx(e.ctx)).work, w);
+const reviewedAt = (result, findings) => capRun(updateWork(toImplementation(), { links: { pr: PR } }, ctx()),
+  { type: 'head', sha: 'aaa1111' }, { type: 'implementation_done', head: 'aaa1111' }, { type: 'review', head: 'aaa1111', by: 'reviewer', result, findings });
+const ghHead = (w, sha, status, isDraft = true) => observeHead(w, { sha, via: 'github', isDraft, ...(status ? { ancestry: { base: 'aaa1111', status } } : {}) }, capCtx({ by: 'github' }));
+
+test('one internal review per PR: a push that descends from the reviewed head keeps it reviewed; a rewrite asks for one more', () => {
+  const ready = reviewedAt('clean');
+  assert.equal(ready.phase, 'ready_for_human');
+  const pushed = ghHead(ready, 'bbb2222', 'ahead');
+  assert.deepEqual([pushed.phase, gate(pushed).ok, pushed.requests.filter(r => r.type === 'review').length], ['ready_for_human', true, 1]);
+  const rewritten = ghHead(ready, 'ccc3333', 'diverged');
+  assert.equal(rewritten.phase, 'rereview');
+  assert.match(gate(rewritten).reasons.join(' '), /No independent review at ccc3333/);
+  // Before the cap date every new head needs its own review, so logged history replays unchanged.
+  assert.equal(observeHead(ready, { sha: 'bbb2222', via: 'github', isDraft: true, ancestry: { base: 'aaa1111', status: 'ahead' } }, ctx()).phase, 'rereview');
+});
+
+test('a reported head is assumed to descend until GitHub shows otherwise', () => {
+  const ready = reviewedAt('clean');
+  const reported = capRun(ready, { type: 'head', sha: 'bbb2222' });
+  assert.equal(reported.phase, 'ready_for_human');
+  assert.equal(ghHead(reported, 'bbb2222', 'diverged').phase, 'rereview');
+  assert.equal(ghHead(reported, 'bbb2222', 'ahead').phase, 'ready_for_human');
+});
+
+test('a fixes round after the one review is not re-reviewed: settling its findings marks it ready', () => {
+  const found = reviewedAt('findings', [{ text: 'nil guard' }]);
+  assert.equal(found.phase, 'fixes');
+  const fixed = capRun(found, { type: 'implementation_done', head: 'bbb2222' });
+  assert.deepEqual([fixed.phase, fixed.requests.filter(r => r.type === 'review').length], ['fixes', 1], 'no second review request');
+  assert.equal(stranded(fixed, CAP), false, 'waiting on the supervisor to settle findings, not stranded');
+  const settled = capRun(fixed, { type: 'finding', findingId: 'F1', status: 'resolved', note: 'fixed in bbb2222' });
+  assert.deepEqual([settled.phase, gate(settled).ok], ['ready_for_human', true]);
+  // Settled while the fixes assignment is still running: its done goes straight to ready.
+  const working = capRun(found, { type: 'assign', assignmentId: 'A1', kind: 'fixes', owner: 'sup: x', status: 'started', evidence: 'x' },
+    { type: 'finding', findingId: 'F1', status: 'resolved', note: 'fixed in bbb2222' });
+  assert.equal(working.phase, 'fixes');
+  const a = working.assignments.at(-1);
+  assert.equal(capRun(working, { type: 'assignment_done', assignmentId: 'A1', expectedVersion: a.version, head: 'bbb2222' }).phase, 'ready_for_human');
+});
+
+test('a ready PR never internally reviewed gets a review: no waiver route after the cap date', () => {
+  const pr = { url: PR, state: 'OPEN', isDraft: false, head: 'aaa1111' };
+  const waiting = { ...capRun(updateWork(toImplementation(), { links: { pr: PR } }, ctx()), { type: 'head', sha: 'aaa1111' }), phase: 'rereview', headVerified: { via: 'github', sha: 'aaa1111' } };
+  const waiver = { by: 'Alex', reason: 'ready', authorization: 'standing' };
+  assert.throws(() => applyEvent(waiting, { type: 'await_approval', head: 'aaa1111', evidence: 'gh', waiver }, capCtx({ verifiedPrs: [pr] })), /No internal-review waiver/);
+  const old = { ...waiting, phase: 'awaiting_human_approval', approvalWait: { head: 'aaa1111', prUrl: PR }, internalReviewWaivers: [{ head: 'aaa1111', prUrl: PR }] };
+  const moved = observeHead(old, { sha: 'bbb2222', via: 'github', isDraft: false }, capCtx({ by: 'github', standingWaiver: waiver }));
+  assert.equal(moved.phase, 'rereview');
+  // Reviewed once: a new commit on the ready PR stays waiting for human approval.
+  const approved = { ...reviewedAt('clean'), phase: 'awaiting_human_approval', approvalWait: { head: 'aaa1111', prUrl: PR }, headVerified: { via: 'github', sha: 'aaa1111' } };
+  const next = ghHead(approved, 'bbb2222', 'ahead', false);
+  assert.deepEqual([next.phase, next.approvalWait?.head], ['awaiting_human_approval', 'bbb2222']);
+});

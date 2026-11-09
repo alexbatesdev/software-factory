@@ -127,6 +127,12 @@ export function normalize(w, ctx = {}) {
     if (ctx.now) note(w, ctx, `The PR moved to ${w.head}; the trusted review was of an older commit.`);
     return w;
   }
+  // Under the cap, reviewed work with nothing open and no one on it is ready (e.g. its fixes round's findings just settled).
+  if (['fixes', ...REVIEWING].includes(w.phase) && !liveAssignment(w) && capped(w, ctx) && gate(w, ctx).ok) {
+    w.phase = 'ready_for_human';
+    note(w, ctx, `Internal review passed at ${w.head} (reviewed once, findings settled). This is not merged, deployed or complete in Teamwork.`);
+    return w;
+  }
   if (w.phase !== 'ready_for_human') return w;
   const g = gate(w, ctx);
   if (g.ok) return w;
@@ -149,9 +155,9 @@ export function gate(w, ctx = {}) {
   if (!isPr(w)) return { ok: false, reasons: ['This kind finishes with an accepted artifact, not the PR ready gate.'] };
   if (!w.head) reasons.push('No commit recorded yet.');
   else if (prLinked(w) && !w.headVerified) reasons.push(`The PR's current head is not verified (GitHub isn't showing it); report the current head before marking ready.`);
-  const review = w.reviews.filter(r => r.head === w.head).at(-1);
+  const review = w.reviews.filter(r => r.head === w.head).at(-1) || inherited(w);
   if (!review) reasons.push(`No independent review at ${w.head || 'the current head'}.`);
-  else if (review.result !== 'clean' && w.findings.some(f => f.reviewHead === w.head && f.status === 'open')) reasons.push(`The review at ${w.head} has open findings.`);
+  else if (review.result !== 'clean' && w.findings.some(f => f.reviewHead === review.head && f.status === 'open')) reasons.push(`The review at ${review.head} has open findings.`);
   const open = w.findings.filter(f => f.status === 'open');
   if (open.length) reasons.push(`${open.length} finding(s) neither resolved nor accepted.`);
   // Alex, 2026-10-28: "So long as a PR goes through internal review im good with it being marked ready." CI and
@@ -162,12 +168,19 @@ export function gate(w, ctx = {}) {
   return { ok: reasons.length === 0, reasons };
 }
 
-function setHead(w, sha, ctx, via = 'report') {
+function setHead(w, sha, ctx, via = 'report', ancestry = null) {
   if (!sha) return;
   w.headVerified = { via, sha, at: ctx.now };
-  if (sha === w.head) return;
-  // The full form of the current short head (or the reverse) is the same commit: keep the longer one, invalidate nothing.
-  if (sameSha(sha, w.head)) { if (sha.length > w.head.length) expandHead(w, w.head, sha); return; }
+  if (sha === w.head || sameSha(sha, w.head)) {
+    // The full form of the current short head (or the reverse) is the same commit: keep the longer one, invalidate nothing.
+    if (sha.length > w.head.length) expandHead(w, w.head, sha);
+    // A GitHub read can overturn a reported head's assumed lineage.
+    if (ctx.now >= REVIEW_CAP_FROM && ancestry && !trace(w, ancestry, w.head) && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
+      w.phase = 'rereview';
+      note(w, ctx, `GitHub shows ${w.head} does not descend from the reviewed ${w.lineage.reviewed} (rebased or force pushed): it needs a new internal review.`);
+    }
+    return;
+  }
   const had = w.head;
   w.head = sha;
   // W-208: CI and conflict findings describe one commit; a new head supersedes them (it gets its own health read).
@@ -178,11 +191,37 @@ function setHead(w, sha, ctx, via = 'report') {
     w.prReadyAuth = null;
     note(w, ctx, `PR-ready authorization for ${had} dropped: the head is now ${sha}.`);
   }
-  if (had && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
+  const kept = ctx.now >= REVIEW_CAP_FROM && trace(w, ancestry, had);
+  if (kept) note(w, ctx, `New commit ${sha} descends from the reviewed ${w.lineage.reviewed}: no new internal review (one per PR unless rebased or force pushed).`);
+  else if (had && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
     w.phase = 'rereview';
     note(w, ctx, `New commit ${sha} replaces ${had}; review, checks and criteria from ${had} no longer count.`);
   }
 }
+
+// Alex, 2026-11-09: one internal review per PR; a later head counts as reviewed while it descends from the reviewed one.
+const REVIEW_CAP_FROM = '2026-11-10T00:00:00.000Z';
+const DESCENDS = ['ahead', 'identical', 'assumed'];
+const lastReview = w => (w.reviews || []).filter(r => !r.forAlex).at(-1);
+/** The internal review the current head inherits through a descending push, if any. Lineage is only set from REVIEW_CAP_FROM. */
+const inherited = w => { const r = lastReview(w), l = w.lineage; return r && l && sameSha(l.reviewed, r.head) && sameSha(l.head, w.head) && DESCENDS.includes(l.status) ? r : null; };
+/** The reviewed head GitHub should be asked about for this head: none when there's no review or lineage is already read. */
+export function ancestryBase(w, sha) {
+  const r = lastReview(w), l = w.lineage;
+  if (!r || !sha || sameSha(r.head, sha) || (l && sameSha(l.head, sha) && sameSha(l.reviewed, r.head) && !['assumed', 'unknown'].includes(l.status))) return null;
+  return r.head;
+}
+// Records whether the head descends from the last internal review: GitHub's compare status, else assumed from an unbroken line.
+function trace(w, ancestry, had) {
+  const r = lastReview(w), l = w.lineage;
+  if (!r) return false;
+  const status = ancestry && sameSha(ancestry.base, r.head) ? ancestry.status
+    : sameSha(r.head, had) || (l && sameSha(l.reviewed, r.head) && sameSha(l.head, had) && DESCENDS.includes(l.status)) ? 'assumed' : 'unknown';
+  w.lineage = { reviewed: r.head, head: w.head, status };
+  return DESCENDS.includes(status);
+}
+/** Under the cap, the current head is internally reviewed (at it, or inherited) so no other review is asked for. */
+const capped = (w, ctx) => ctx.now >= REVIEW_CAP_FROM && isPr(w) && (w.reviews.some(r => !r.forAlex && sameSha(r.head, w.head)) || !!inherited(w));
 
 function expandHead(w, from, to) {
   const fix = x => { if (x && x.head === from) x.head = to; };
@@ -213,6 +252,7 @@ export function applyEvent(work, e, ctx) {
     case 'waive_internal_review':
     case 'await_approval': {
       const waiverOnly = e.type === 'waive_internal_review';
+      if (e.waiver && ctx.now >= REVIEW_CAP_FROM) fail('No internal-review waiver from 2026-11-10: a ready PR never internally reviewed gets one review, and a reviewed one waits without a waiver once the gate passes.');
       if (waiverOnly && !e.waiver) fail('Recording a waiver requires explicit Alex authorization.');
       const pr = (ctx.verifiedPrs || []).find(p => p.url === w.links?.pr);
       if (!e.evidence || !e.head) fail('Approval wait needs current commit and evidence.');
@@ -273,6 +313,12 @@ export function applyEvent(work, e, ctx) {
         w.staleReports = [...(w.staleReports || []), { reported: e.head, current: w.head, at: ctx.now, by: ctx.by }];
         note(w, ctx, `Done reported at ${e.head}, but GitHub shows ${w.head}; review is requested for ${w.head}. Check the report.`);
       } else setHead(w, e.head, ctx);
+      if (capped(w, ctx)) {
+        const open = w.findings.filter(f => f.status === 'open');
+        w.phase = open.length ? 'fixes' : 'rereview';
+        note(w, ctx, `Worker reported done at ${w.head}; it descends from the internal review at ${lastReview(w).head}, so no second review.${open.length ? ` Settle ${open.map(f => f.id).join(', ')} (settle_finding) to mark it ready.` : ''}`);
+        break;
+      }
       w.phase = from === 'implementation' ? 'review' : 'rereview';
       w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head, ...(e.assignmentId ? { assignment: e.assignmentId } : {}) });
       note(w, ctx, `Worker reported done at ${w.head || 'no commit'}; independent review requested.`);
@@ -616,11 +662,11 @@ export function applyEvent(work, e, ctx) {
       for (const f of w.findings) if (f.status === 'open' && ['ci', 'conflict'].includes(f.source?.type) && !sameSha(f.source.head, w.head))
         Object.assign(f, { status: 'resolved', note: `Superseded: the head is now ${w.head.slice(0, 7)}.`, at: ctx.now });
       const open = w.findings.some(f => f.status === 'open');
-      const clean = w.reviews.some(r => sameSha(r.head, w.head) && r.result === 'clean');
+      const clean = w.reviews.some(r => sameSha(r.head, w.head) && r.result === 'clean') || capped(w, ctx);
       if (open) { w.phase = 'fixes'; w.approvalWait = null; requestFixes(w, ctx); note(w, ctx, `Stranded (nothing live or pending): fixes requested for the open findings.`); }
       else if (clean && gate(w, ctx).ok && e.isDraft === false) enterApprovalWait(w, ctx, `healed: clean review at ${w.head}, PR marked ready`);
       // A ready PR is waived from internal review (Alex's standing waiver), so heal doesn't ask for one.
-      else if (e.isDraft === false && ctx.now >= HEAL_WAIVER_FROM && (w.internalReviewWaivers || []).some(x => sameSha(x.head, w.head) && x.prUrl === w.links?.pr)) enterApprovalWait(w, ctx, `healed: PR marked ready, review waived at ${w.head}`);
+      else if (e.isDraft === false && ctx.now >= HEAL_WAIVER_FROM && ctx.now < REVIEW_CAP_FROM && (w.internalReviewWaivers || []).some(x => sameSha(x.head, w.head) && x.prUrl === w.links?.pr)) enterApprovalWait(w, ctx, `healed: PR marked ready, review waived at ${w.head}`);
       else if (clean && gate(w, ctx).ok) { w.phase = 'ready_for_human'; note(w, ctx, `Stranded: back to ready for human, clean review at ${w.head}.`); }
       else { w.phase = 'rereview'; w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head }); note(w, ctx, `Stranded (nothing live or pending): review requested at ${w.head}.`); }
       break;
@@ -693,15 +739,17 @@ export function applyEvent(work, e, ctx) {
 function requestRereview(w, ctx) {
   if (!ctx.now || !w.head || w.requests.some(r => r.type === 'review' && sameSha(r.head, w.head))) return;
   w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by || 'board', delivery: 'pending', ack: null, head: w.head });
-  note(w, ctx, `Re-review requested at ${w.head}: the PR moved on. If it's already marked ready, the standing waiver applies.`);
+  note(w, ctx, `Re-review requested at ${w.head}: the PR moved on.${ctx.now >= REVIEW_CAP_FROM ? '' : " If it's already marked ready, the standing waiver applies."}`);
 }
-export function observeHead(work, { sha, via, isDraft }, ctx) {
+export function observeHead(work, { sha, via, isDraft, ancestry }, ctx) {
   if (TERMINAL.includes(work.phase) || !sha) return work;
   const w = structuredClone(work);
-  setHead(w, sha, ctx, via);
+  setHead(w, sha, ctx, via, ancestry);
+  // A reviewed PR already marked ready stays waiting for approval at a descending commit.
+  if (work.phase === 'awaiting_human_approval' && w.phase === 'awaiting_human_approval' && via === 'github' && isDraft === false && w.head !== work.head && capped(w, ctx) && gate(w, ctx).ok) enterApprovalWait(w, ctx, `new commit ${w.head} descends from the reviewed head; PR still marked ready`);
   // Internal review is only needed before a PR is marked ready (Alex). A new commit on one already marked ready keeps it
   // waiting for approval, under the standing waiver, at the new commit.
-  if (work.phase === 'awaiting_human_approval' && via === 'github' && isDraft === false && w.head !== work.head && ctx.standingWaiver && w.links?.pr) {
+  else if (work.phase === 'awaiting_human_approval' && via === 'github' && isDraft === false && w.head !== work.head && ctx.standingWaiver && w.links?.pr && !(ctx.now >= REVIEW_CAP_FROM)) {
     w.internalReviewWaivers = [...(w.internalReviewWaivers || []), { ...ctx.standingWaiver, head: w.head, prUrl: w.links.pr, at: ctx.now, recordedBy: ctx.by, evidence: `GitHub shows the PR still marked ready at ${w.head}` }];
     w.phase = 'awaiting_human_approval';
     w.approvalWait = { head: w.head, prUrl: w.links.pr, at: ctx.now, by: ctx.by, evidence: 'standing waiver: new commit on a PR already marked ready', requiredApprovals: { qa: 1, dev: 1 } };
@@ -784,6 +832,9 @@ export function escapes(w) {
 
 export function stranded(w, now) {
   if (!['fixes', ...REVIEWING].includes(w.phase) || !prLinked(w) || liveAssignment(w)) return false;
+  // Under the cap a fixes round's findings wait on the supervisor's settle_finding, not on another seat.
+  const open = w.findings.filter(f => f.status === 'open');
+  if (capped(w, { now }) && open.length && open.every(f => f.reviewHead)) return false;
   const r = phaseRequest(w);
   // A clean review at the head after a "received" ack means the round needed no commit (W-249): nothing is pending.
   const settled = r?.ack?.outcome === 'received' && w.reviews.some(v => v.result === 'clean' && sameSha(v.head, w.head) && v.at > r.ack.at);
@@ -847,7 +898,7 @@ function finishNoChangeProbe(w, a, ctx) {
     Object.assign(f, { status: 'accepted', note: `No change (${a.id}): ${a.noChange.evidence}`, at: ctx.now });
   if (!liveAssignment(w)) {
     const open = w.findings.some(f => f.status === 'open');
-    const waived = (w.internalReviewWaivers || []).some(x => sameSha(x.head, w.head) && x.prUrl === w.links?.pr);
+    const waived = ctx.now < REVIEW_CAP_FROM && (w.internalReviewWaivers || []).some(x => sameSha(x.head, w.head) && x.prUrl === w.links?.pr);
     if (baseline.phase === 'awaiting_human_approval' && normalize({ ...w, phase: 'awaiting_human_approval' }, ctx).phase === 'awaiting_human_approval' && remote.isDraft === false && !open) w.phase = 'awaiting_human_approval';
     else if (!open && remote.isDraft === false && (waived || gate(w, ctx).ok)) enterApprovalWait(w, ctx, `no-change ${a.id} at ${remote.head}`);
     else if (open) { w.phase = 'fixes'; w.approvalWait = null; if (ctx.now >= FINDINGS_FOLLOW_HEAD_FROM) requestFixes(w, ctx); }
