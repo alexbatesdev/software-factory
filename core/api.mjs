@@ -30,6 +30,8 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
     const s = store.state;
     // A thread to resolve is a resolve_thread request on the dashboard, never a TB question (Alex, 11-09).
     if (action === 'ask' && !args.withdraw && /\bresolve\b[^?]*\bthreads?\b/i.test(args.title || '')) return [409, { error: 'Resolving a review thread is not a question: file it with resolve_thread (work, threadId, url, reviewer, ask, resolution) and Alex resolves it from the dashboard.' }];
+    // Factual PR-description fixes go through without asking (Alex, 11-09, W-212); a scope change is still a question.
+    if (action === 'ask' && !args.withdraw && /\bPR[- ](body|description)\b/i.test(args.title || '')) return [409, { error: 'A factual PR-description fix (making the body true again, no scope change) is not a question: apply it yourself and put the before/after in your progress note. If it changes scope, ask with distinct wording (the decision, not the edit).' }];
     // One open question per record reaches Alex unless the asker says it's a separate decision (W-274).
     if (action === 'ask' && !args.withdraw && args.work && !args.distinct) {
       const open = Object.entries(s.questions).filter(([, q]) => q.work === args.work && q.status === 'open');

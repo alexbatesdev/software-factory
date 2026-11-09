@@ -70,3 +70,14 @@ test('a thread on another PR fails without a write', async () => {
     assert.equal(wrote, false);
   } finally { f.close(); }
 });
+
+test('a factual PR-description fix is applied by the worker, never asked as a question', async () => {
+  const f = await serve();
+  try {
+    for (const title of ['#8632: apply the 3 PR-body edits?', 'W-169: update the PR description to match 1ff0526?']) {
+      const [code, body] = await f.act('ask', { title, promptedBy: 'x', wwbd: 'n/a' });
+      assert.equal(code, 409, title);
+      assert.match(body.error, /apply it yourself/);
+    }
+  } finally { f.close(); }
+});
