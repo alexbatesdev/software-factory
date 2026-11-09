@@ -19,7 +19,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
-import { mergeCloses, holdReleases, questionHolds } from '../core/units.mjs';
+import { mergeCloses, holdReleases, questionHolds, watchedPrs } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen, readCompare } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
@@ -181,7 +181,7 @@ async function githubTick() {
       for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
     }
     // PR states for the page and merge close: every PR a live record links.
-    const links = [...new Set([...Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean), ...holdReleases(store.state.work, owner).urls])];
+    const links = [...new Set([...watchedPrs(store.state.work, Object.fromEntries(sourceIndex(store.state))), ...holdReleases(store.state.work, owner).urls])];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
     healTick();
     try { const n = syncStandards(); if (n.length) log(`standards mirrored: ${n.join(', ')}`); } catch (e) { log(`standards: ${e.message}`); }

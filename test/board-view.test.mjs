@@ -141,3 +141,12 @@ test("a ready PR's card says what it really waits on: Alex's thread clicks, miss
   assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }, { 'RT-1': { work: id, status: 'requested' }, 'RT-2': { work: id, status: 'resolved' } }),
     { who: 'you', text: 'Waiting on you: resolve 1 review thread (Approvals, Review threads)' });
 });
+
+test('a parked record whose PR is open and ready waits on its reviewers, not in Parked (W-106: built-architecture #72)', async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:'), c = { now: '2026-11-09T22:00:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/72';
+  const id = s.append({ kind: 'create', payload: { title: 'Dev DB S3', links: { pr: PR } } }, c).id;
+  s.append({ kind: 'sync_intake', target: id, payload: { bucket: 'intake', note: 'Open #72, nothing for the factory' } }, c);
+  const v = boardView(s.state, { prs: new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'REVIEW_REQUIRED', approvedBy: [] }]]) }).find(x => x.id === id);
+  assert.deepEqual(v.waiting, { who: 'reviewers', text: 'Waiting for approvals on #72' });
+});

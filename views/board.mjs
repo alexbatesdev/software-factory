@@ -43,7 +43,8 @@ function personWait(w, state, prs, prApproval) {
     .find(x => x && /^Alex\b/.test(x[0]));
   if (onAlex) return { who: 'you', text: `Waiting on you: ${onAlex[1]} (${onAlex[0]})` };
   const pr = prs.get(w.links?.pr);
-  if (w.phase === 'awaiting_human_approval' && pr?.reviewDecision) {
+  const parkedOpen = w.phase === 'intake' && w.triage?.bucket === 'intake' && !(w.externalDeps || []).length && pr?.state === 'OPEN' && !pr.isDraft;
+  if ((w.phase === 'awaiting_human_approval' || parkedOpen) && pr?.reviewDecision) {
     const n = `#${w.links.pr.split('/pull/')[1]}`, by = pr.approvedBy || [];
     return pr.reviewDecision === 'APPROVED' ? { who: 'you', text: `Waiting on you: GitHub reviews approved on ${n} (${by.join(', ')}); final QA and merge checks need you` }
       : { who: 'reviewers', text: `Waiting for approvals on ${n}${by.length ? ` (approved so far: ${by.join(', ')})` : ''}` };

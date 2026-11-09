@@ -83,3 +83,12 @@ test('a question hold is released when Alex answers, and reported (never release
   assert.deepEqual(questionHolds(ws, qs('superseded')).closed, [{ id: 'W-1', question: 'TB-7' }]);
   assert.deepEqual(questionHolds(ws, qs('superseded')).released, []);
 });
+
+import { watchedPrs } from '../core/units.mjs';
+test("the poll reads every PR a live record's merge-close depends on, including a finished unit's (W-51: #8265's record was done, so the task never closed)", () => {
+  const PR = n => `https://github.com/builtforteams/built-rails/pull/${n}`;
+  const ws = { 'W-51': { id: 'W-51', phase: 'awaiting_human_approval', links: { pr: PR(8282) }, coverage: { state: 'open-pr', prs: [{ url: PR(8265) }, { url: PR(8282) }] } }, 'W-99': { id: 'W-99', phase: 'done', parent: 'W-51', links: { pr: PR(8282) }, source: { type: 'pr', key: 'built-rails-8282' } },
+    'W-101': { id: 'W-101', phase: 'done', parent: 'W-51', links: { pr: PR(8265) }, source: { type: 'pr', key: 'built-rails-8265' } }, 'W-7': { id: 'W-7', phase: 'done', links: { pr: PR(1) } } };
+  const bySource = { 'built-rails-8282': 'W-99', 'built-rails-8265': 'W-101' };
+  assert.deepEqual(watchedPrs(ws, bySource).sort(), [PR(8265), PR(8282)]);
+});

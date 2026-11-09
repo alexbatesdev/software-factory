@@ -72,3 +72,9 @@ export function questionHolds(works, questions) {
   const status = h => questions[h.question]?.status;
   return { released: holds.filter(h => ['answered', 'settled'].includes(status(h))), closed: holds.filter(h => status(h) === 'superseded') };
 }
+
+/** Every PR whose state a live record's merge-close needs: its own and its units', even a finished unit's (W-51). */
+export function watchedPrs(works, bySource) {
+  const g = groupIndex(works, bySource);
+  return [...new Set(Object.values(works).filter(w => !TERMINAL.includes(w.phase)).flatMap(w => [w.links?.pr, ...(g.unitsOf[w.id] || []).map(u => works[u].links?.pr)]).filter(Boolean))];
+}
