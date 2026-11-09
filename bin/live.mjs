@@ -19,7 +19,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { mergeCloses, holdReleases } from '../core/units.mjs';
-import { TERMINAL, trackOf, stranded, observeHealth, skipNotes } from '../core/work.mjs';
+import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen, readCompare } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
@@ -162,8 +162,8 @@ async function githubTick() {
     const mainGreen = await readMainGreen([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
-    for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
-    apply([...headCommands(s, heads, { owner, now: now(), ancestry }), ...healthCommands(s, health, { owner, now: now(), exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
+    if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, { exclude: config.autoDispatch?.exclude }), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {

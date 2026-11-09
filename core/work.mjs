@@ -200,7 +200,7 @@ function setHead(w, sha, ctx, via = 'report', ancestry = null) {
 }
 
 // Alex, 2026-11-09: one internal review per PR; a later head counts as reviewed while it descends from the reviewed one.
-const REVIEW_CAP_FROM = '2026-11-10T00:00:00.000Z';
+export const REVIEW_CAP_FROM = '2026-11-10T00:00:00.000Z';
 const DESCENDS = ['ahead', 'identical', 'assumed'];
 const lastReview = w => (w.reviews || []).filter(r => !r.forAlex).at(-1);
 /** The internal review the current head inherits through a descending push, if any. Lineage is only set from REVIEW_CAP_FROM. */
