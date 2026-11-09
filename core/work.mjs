@@ -42,7 +42,8 @@ export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['
   && (!repos || repos.includes(w.repo || 'built-rails')) && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
 
 /** An unstarted record a stream would take, held for Alex's new-PR go: the Approvals list and its card both read this. */
-export const awaitsPrApproval = (w, cfg) => ['ready', 'queued'].includes(w.phase) && !(w.assignments || []).length && (!w.owner || /^sup: /.test(w.owner)) && needsPrApproval(w, cfg);
+export const wouldAwaitPrApproval = (w, cfg) => !(w.assignments || []).length && (!w.owner || /^sup: /.test(w.owner)) && needsPrApproval(w, cfg);
+export const awaitsPrApproval = (w, cfg) => ['ready', 'queued'].includes(w.phase) && wouldAwaitPrApproval(w, cfg);
 
 export function trackOf(w, cfg = {}) {
   if ((cfg.exclude || []).includes(w.id)) return 'excluded';
@@ -691,6 +692,10 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Review requested at ${w.head}. Evidence: ${e.evidence}.`);
       break;
     }
+    case 'proposal':
+      w.proposal = { prompted: e.prompted, addresses: e.addresses, whyThisFix: e.whyThisFix, since: e.since, customerImpact: e.customerImpact, by: ctx.by, at: ctx.now };
+      note(w, ctx, `New-PR breakdown recorded by ${ctx.by}.`);
+      break;
     case 'pr_approved': {
       if (w.links?.pr) fail(`${w.id} already has its PR.`);
       if (w.prApproval) fail(`${w.id} is already approved by ${w.prApproval.by}.`);

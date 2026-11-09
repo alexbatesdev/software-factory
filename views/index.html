@@ -26,6 +26,7 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .groups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 /* Support work (Alex's support week): a gold glow plus a tag, the same on cards, questions, threads and new PRs. */
 .support { box-shadow: 0 0 0 2px var(--gold), 0 0 14px 2px var(--gold-glow) !important; border-radius: 8px; }
+dl.bd { display: grid; grid-template-columns: 150px 1fr; gap: 4px 10px; margin: 6px 0 0; font-size: 13px; } dl.bd dt { color: var(--mute); } dl.bd dd { margin: 0; overflow-wrap: anywhere; }
 .appr { font-size: 12px; color: var(--link); cursor: pointer; margin-top: 2px; }
 .stag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--gold); border: 1px solid var(--gold); border-radius: 4px; padding: 0 4px; margin-right: 4px; }
 .group { background: var(--card); border: 1px solid var(--you); border-radius: 8px; padding: 6px 10px; }
@@ -250,7 +251,9 @@ function newPrsPanel(list) {
     const row = el('div', 'thread pr'), left = el('div'), acts = el('div', 'acts');
     if (p.support) { row.classList.add('support'); left.append(el('span', 'stag', 'Support')); }
     left.append(el('div', 'ask', `${p.id} · ${p.title}`), el('div', 'res', [p.repo, p.from && `from ${p.from}`].filter(Boolean).join(' · ')));
-    if (p.objective) left.append(el('div', 'res', p.objective.slice(0, 400)));
+    const BREAKDOWN = [['prompted', 'What prompted it'], ['addresses', 'What it addresses'], ['whyThisFix', 'Why this fix'], ['since', 'How long'], ['customerImpact', 'Change for customers']];
+    if (p.proposal) { const dl = el('dl', 'bd'); for (const [k, label] of BREAKDOWN) dl.append(el('dt', null, label), el('dd', null, p.proposal[k])); left.append(dl); }
+    else { left.append(el('div', 'fail', 'No breakdown yet: the board lead adds it at triage.')); if (p.objective) left.append(el('div', 'res', p.objective.slice(0, 400))); }
     const ok = el('button', null, 'Approve'), no = el('button', null, 'Decline');
     ok.onclick = () => decidePrs([p.id], 'approve', ok); no.onclick = () => decidePrs([p.id], 'decline', no);
     acts.append(ok, no); row.append(left, acts); box.append(row);

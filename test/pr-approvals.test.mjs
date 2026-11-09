@@ -55,3 +55,21 @@ test('support work glows everywhere it shows: its card, questions, threads and n
     assert.equal(b.questions[0].support, true);
   } finally { server.close(); }
 });
+
+test("a record can't be marked ready into New PRs without its breakdown, and the panel shows it", async () => {
+  const store = openStore(':memory:', { supervisors: [S1] }), c = { now: T, by: 'test' };
+  store.append({ kind: 'create', payload: { title: 'Unasked fix', kind: 'build', source: { type: 'manual' } } }, c);
+  const cfg = { ...config, roles: { 'board lead': 'board-lead' } };
+  const server = http.createServer(createApi({ store, config: cfg, now: () => T }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const triage = async args => { const r = await fetch(`${base}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1', 'x-seat': 'board lead' }, body: JSON.stringify({ action: 'triage', args: { work: 'W-1', bucket: 'ready', note: 'rule and evidence', ...args } }) }); return [r.status, await r.json()]; };
+  try {
+    const [code, body] = await triage({});
+    assert.equal(code, 409); assert.match(body.error, /proposal/);
+    const proposal = { prompted: 'p', addresses: 'a', whyThisFix: 'w', since: 's', customerImpact: 'none' };
+    assert.equal((await triage({ proposal }))[0], 200);
+    const b = await (await fetch(`${base}/api/board`)).json();
+    assert.deepEqual(b.newPrs[0].proposal, { ...proposal, by: 'board lead', at: T });
+  } finally { server.close(); }
+});

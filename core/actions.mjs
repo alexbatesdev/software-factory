@@ -1,6 +1,7 @@
 // The board actions (capabilities.mjs) as log commands. Each action yields only its own command kinds and event types,
 // so a role granted `progress` can't send an `await_approval` by naming it.
 const fail = msg => { throw new Error(msg); };
+export const PROPOSAL_FIELDS = ['prompted', 'addresses', 'whyThisFix', 'since', 'customerImpact'];
 const ev = (target, payload) => ({ kind: 'event', target, payload });
 const need = (args, ...keys) => { for (const k of keys) if (args[k] === undefined || args[k] === '') fail(`Missing "${k}".`); };
 
@@ -56,10 +57,14 @@ const BUILD = {
     // W-292: a hold "until #N merges" is structured, so the poller can release it.
     const prs = a.untilMerged ? String(a.untilMerged).split(/[\s,]+/).filter(Boolean) : [];
     if (prs.some(p => !/^#\d+$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(p))) fail('untilMerged takes PRs as #N or PR URLs.');
+    // The breakdown Alex reads before approving a new PR (11-09).
+    const missing = a.proposal ? PROPOSAL_FIELDS.filter(k => !String(a.proposal[k] || '').trim()) : [];
+    if (missing.length) fail(`A new-PR breakdown needs ${missing.join(', ')}.`);
+    const proposal = a.proposal ? [ev(a.work, { type: 'proposal', ...Object.fromEntries(PROPOSAL_FIELDS.map(k => [k, String(a.proposal[k]).trim()])) })] : [];
     // A hold on a question (Alex, 11-09) shows on his list and releases when he answers.
     const questions = a.untilAnswered ? String(a.untilAnswered).split(/[\s,]+/).filter(Boolean) : [];
     if (questions.some(q => !/^TB-\d+$/.test(q))) fail('untilAnswered takes questions as TB-n.');
-    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(prs.length ? [ev(a.work, { type: 'hold', prs })] : []), ...(questions.length ? [ev(a.work, { type: 'hold', questions })] : []), ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : [])];
+    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(prs.length ? [ev(a.work, { type: 'hold', prs })] : []), ...(questions.length ? [ev(a.work, { type: 'hold', questions })] : []), ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...proposal];
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   resolve_thread: a => [{ kind: 'thread_request', payload: { work: a.work, threadId: a.threadId, url: a.url, reviewer: a.reviewer, ask: a.ask, resolution: a.resolution } }],
