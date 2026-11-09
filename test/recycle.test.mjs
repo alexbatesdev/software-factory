@@ -148,5 +148,10 @@ test("a codex sandbox's baseline is its AGENTS.md (standards plus the 🤖 rule)
   assert.match(wrote['/home/agent/.codex/AGENTS.md'], /^# Team standards/);
   assert.match(wrote['/home/agent/.codex/AGENTS.md'], /line '🤖' alone at the start and a line '🤖' alone at the end/);
   assert.match(wrote['/home/agent/.codex/config.toml'], /"x-sandbox" = "box"/);
+  assert.match(wrote['/home/agent/.codex/config.toml'], /^check_for_update_on_startup = false$/m, 'no "Update available" dialog parks the worker at start');
   assert.ok(wrote['/home/agent/standards/internal-review-codex.md'], 'the review prompt the brief names');
+  const again = {};
+  await restoreBaseline('box', 'codex', { put: async (p, t) => { again[p] = t; }, read: async () => 'model = "gpt"\ncheck_for_update_on_startup = true\n', secret: 's' });
+  assert.equal((again['/home/agent/.codex/config.toml'].match(/check_for_update_on_startup/g) || []).length, 1);
+  assert.match(again['/home/agent/.codex/config.toml'], /^check_for_update_on_startup = false$/m);
 });

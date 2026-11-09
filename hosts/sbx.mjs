@@ -155,7 +155,7 @@ const sbxRead = sandbox => path => run('sbx', ['exec', sandbox, 'cat', path], { 
 export async function restoreBaseline(sandbox, agent = 'claude', { put = sbxPut(sandbox), read = sbxRead(sandbox), secret } = {}) {
   if (agent === 'codex') {
     await installStandards(sandbox, put, agent);
-    await put(CODEX_CONFIG, withBoardMcpToml(await read(CODEX_CONFIG), boardMcp(sandbox, { secret })));
+    await put(CODEX_CONFIG, withBoardMcpToml(noUpdateCheck(await read(CODEX_CONFIG)), boardMcp(sandbox, { secret })));
     return;
   }
   await put(HOOK_PATH, readFileSync(join(homedir(), '.claude/hooks/require-robot-wrapper.sh'), 'utf8'));
@@ -173,6 +173,8 @@ export function boardMcp(sandbox, { port = 4849, secret = readFileSync(new URL('
 
 const CODEX_CONFIG = '/home/agent/.codex/config.toml';
 const BOARD_TABLE = /^\[mcp_servers\.(software-factory|"software-factory")(\.[^\]]*)?\]\s*$/;
+// The version is pinned; Codex's "Update available" dialog would park the worker at every start.
+const noUpdateCheck = (toml = '') => `check_for_update_on_startup = false\n${String(toml).split('\n').filter(l => !/^check_for_update_on_startup\s*=/.test(l)).join('\n')}`;
 /** Codex's config.toml with the software-factory server (and its subtables) replaced by one block; the rest kept. Pure. */
 export function withBoardMcpToml(toml = '', { url, headers }) {
   let mine = false;
