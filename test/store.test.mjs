@@ -307,3 +307,18 @@ test('the board developer settles a finding by hand with a note (resolved or acc
   assert.deepEqual(c.payload, { type: 'finding', findingId: 'F2', status: 'resolved', note: 'fixed in 97dcf04' });
   assert.throws(() => commandsFor('settle_finding', { work: 'W-1', findingId: 'F2', status: 'open', note: 'x' }), /resolved or accepted/);
 });
+
+test('a scout is created ready, proposes build work linked back to it, and closes with no change', () => {
+  const s = openStore(':memory:', { supervisors: ['sup: stream-1'] });
+  const { id } = s.append({ kind: 'create', payload: { title: 'Sentry scout', kind: 'scout', owner: 'sup: stream-1', phase: 'ready', priority: 4 } }, ctx());
+  assert.deepEqual([s.state.work[id].phase, s.state.work[id].stream], ['ready', 'sup: stream-1']);
+  s.append(ev(id, { type: 'transition', to: 'queued' }), ctx());
+  s.append(ev(id, { type: 'request', request: 'dispatch' }), ctx());
+  s.append(ev(id, { type: 'ack', requestId: 'R1', outcome: 'received', by: 'sup: stream-1' }), ctx());
+  s.append(ev(id, { type: 'assign', assignmentId: 'A1', kind: 'discovery', status: 'started', owner: 'sup: stream-1', evidence: 'scout brief' }), ctx());
+  s.append(ev(id, { type: 'discovery', text: 'NoMethodError in people_controller.rb:88', objective: 'Sentry link, reproduced' }), ctx());
+  const proposed = Object.values(s.state.work).find(x => x.proposedFrom === id);
+  assert.deepEqual([proposed.kind, proposed.phase], ['build', 'proposed']);
+  s.append(ev(id, { type: 'assignment_done', assignmentId: 'A1', expectedVersion: 1, noChange: { verifiedOn: 'abc1234', evidence: '1 filed, 2 skipped' } }), ctx());
+  assert.equal(s.state.work[id].phase, 'done');
+});

@@ -39,6 +39,13 @@
     "model": "sonnet",
     "concurrency": 2
   },
+  "scout": {
+    "_doc": "Sentry scout (Alex, 11-09): a free sbx stream with nothing to dispatch scans these projects. At most maxProposals per run, gapHours between runs, paused while maxUntriaged proposals wait for triage. Remove to turn it off.",
+    "projects": ["built", "built-rails-eu"],
+    "maxProposals": 3,
+    "gapHours": 6,
+    "maxUntriaged": 5
+  },
   "buckets": {
     "order": [
       "untriaged",

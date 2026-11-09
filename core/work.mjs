@@ -65,7 +65,8 @@ function note(w, ctx, text) {
 }
 
 export function createWork(f, ctx) {
-  const phase = f.phase === 'proposed' ? 'proposed' : 'intake';
+  // Ready: only the factory creates work pre-triaged (its Sentry scout); agents' creates are proposed or intake.
+  const phase = ['proposed', 'ready'].includes(f.phase) ? f.phase : 'intake';
   const w = {
     id: f.id, title: String(f.title || '').trim() || fail('A work item needs a title.'),
     objective: f.objective || '', kind: f.kind || 'build', repo: f.repo || null,
@@ -405,7 +406,7 @@ export function applyEvent(work, e, ctx) {
         w.findings.push({ id: nextId(w.findings, 'F'), text: e.text, severity: e.severity || null, status: 'open', reviewHead: null, note: null });
         note(w, ctx, `In-scope discovery recorded as a finding: ${e.text}`);
       } else {
-        spawn = { title: e.text, objective: e.objective || '', kind: e.kind || w.kind, repo: w.repo, phase: 'proposed', proposedFrom: w.id };
+        spawn = { title: e.text, objective: e.objective || '', kind: e.kind || (w.kind === 'scout' ? 'build' : w.kind), repo: w.repo, phase: 'proposed', proposedFrom: w.id };
         note(w, ctx, `Out-of-scope discovery proposed as separate work: ${e.text}`);
       }
       break;
