@@ -36,6 +36,10 @@ export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
  * @param cfg {exclude} from config.json: records listed in autoDispatch.exclude are never routed, dispatched or drafted
  * @returns {'excluded'|'trusted-review'|'stream'}
  */
+// A new PR nobody asked for waits for Alex's go (Alex, 11-09): work that will open one, from a source he hasn't trusted.
+export const needsPrApproval = (w, trusted = ['teamwork']) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval
+  && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
+
 export function trackOf(w, cfg = {}) {
   if ((cfg.exclude || []).includes(w.id)) return 'excluded';
   if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '') || isTrustedReviewSeat(w.owner)) return 'trusted-review';
@@ -679,6 +683,13 @@ export function applyEvent(work, e, ctx) {
       if (!e.evidence) fail('request_review needs evidence.');
       w.requests.push({ id: nextId(w.requests, 'R'), type: 'review', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
       note(w, ctx, `Review requested at ${w.head}. Evidence: ${e.evidence}.`);
+      break;
+    }
+    case 'pr_approved': {
+      if (w.links?.pr) fail(`${w.id} already has its PR.`);
+      if (w.prApproval) fail(`${w.id} is already approved by ${w.prApproval.by}.`);
+      w.prApproval = { by: ctx.by, at: ctx.now };
+      note(w, ctx, `${ctx.by} approved opening a new PR for this.`);
       break;
     }
     case 'withdraw': {

@@ -1,7 +1,7 @@
 // Auto-dispatch (Alex, 2026-10-28): which ready or queued records start themselves this tick, and why the rest wait.
 // Pure: the server applies the plan through ordinary events and logs each one on its record.
 import { routeOf } from './notifier.mjs';
-import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder } from './work.mjs';
+import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder, needsPrApproval } from './work.mjs';
 
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
 const pendingDispatch = w => (w.requests || []).some(r => r.type === 'dispatch' && !r.ack);
@@ -94,6 +94,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (w.openQuestions > 0) { wait(`${w.openQuestions} open question(s)`); continue; }
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); continue; }
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); continue; }
+    if (needsPrApproval(w, cfg.prApproval?.trusted)) { wait("needs Alex's go to open a new PR (dashboard: New PRs)"); continue; }
     const bound = boundStream(w, byId, labels);
     // A stream that declined this record isn't sent it again unless someone pins it there (W-217).
     const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));

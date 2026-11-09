@@ -6,7 +6,7 @@ import { commandsFor } from './actions.mjs';
 import { readFileSync } from 'node:fs';
 import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
-import { escapes } from './work.mjs';
+import { escapes, needsPrApproval } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
 
@@ -44,6 +44,8 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       const miss = ['changed', 'proven', 'unverified', 'risk'].filter(k => !args.report?.[k]);
       if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
     }
+    // A new PR nobody asked for starts only after Alex's dashboard click (Alex, 11-09), whoever assigns it.
+    if (action === 'assign' && args.kind !== 'review' && s.work[args.work] && needsPrApproval(s.work[args.work], config.prApproval?.trusted)) return [409, { error: `${args.work} would open a new PR that no Teamwork task asked for: it waits for Alex's go on the dashboard (New PRs). Don't ask it as a question.` }];
     if (action === 'route' && args.setOwner) args = { ...args, setOwnerOf: s.questions[args.id]?.work || undefined };
     // An ack or a create names the calling seat, never a claimed name.
     if (['ack', 'create'].includes(action)) args = { ...args, by: seat };
@@ -83,6 +85,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
         const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend, amendments }) => ({ id, title, work, recommend, amendments: amendments || [] }));
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
+          newPrs: Object.values(s.work).filter(w => ['ready', 'queued'].includes(w.phase) && needsPrApproval(w, config.prApproval?.trusted)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null })),
           threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null })),
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }) });
       }
@@ -98,6 +101,17 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
         if (readOnly || !gh) return send(res, 405, { error: 'This factory does not write to GitHub.' });
         const { ids = [] } = await readBody(req);
         return send(res, 200, { results: await resolveThreads(store, ids, gh, now) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/pr-approvals') {
+        if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
+        if (readOnly) return send(res, 405, { error: 'This factory is read-only (shadow mode).' });
+        const { ids = [], decision } = await readBody(req);
+        if (!['approve', 'decline'].includes(decision)) return send(res, 400, { error: 'decision is approve or decline.' });
+        const results = ids.map(id => { try {
+          store.append({ kind: 'event', target: id, payload: decision === 'approve' ? { type: 'pr_approved' } : { type: 'withdraw', note: 'Alex declined opening a new PR for it (dashboard).' } }, { now: now(), by: 'Alex (dashboard)' });
+          return { id, ok: true };
+        } catch (e) { return { id, error: e.message }; } });
+        return send(res, 200, { results });
       }
       if (req.method === 'POST' && url.pathname === '/api/actions') {
         // A custom header a web page can't send cross-origin without a preflight this server never answers.

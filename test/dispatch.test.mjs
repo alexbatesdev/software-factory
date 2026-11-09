@@ -201,3 +201,13 @@ test('a running scout never holds its stream: real work dispatches to it', () =>
 test('Sentry citations: issue URLs in either form and short ids for the scanned projects', () => {
   assert.deepEqual(sentryCited([{ title: 'BUILT-1A2 crash', objective: 'https://sentry.io/organizations/builtapp/issues/42/ and BUILT-IN things', links: {}, updates: [] }], SC.projects), ['42', 'BUILT-1A2']);
 });
+
+test('a new PR nobody asked for waits for Alex: agent-filed build work with no PR holds until approved; Teamwork tasks and existing PRs go (Alex, 11-09)', () => {
+  const p = plan([w('W-1', { kind: 'build', source: { type: 'manual' }, proposedFrom: 'W-9' }), w('W-2', { kind: 'build', source: { type: 'teamwork' }, owner: S2 }),
+    w('W-3', { kind: 'pr-feedback', source: { type: 'agent', by: 'board lead' }, links: { pr: 'https://github.com/o/r/pull/1' }, streamPin: null, owner: null })]);
+  assert.equal(p['W-1'].action, null); assert.match(p['W-1'].reason, /Alex's go to open a new PR/);
+  assert.deepEqual([p['W-2'].action, p['W-3'].action], ['queue', 'queue']);
+  assert.equal(plan([w('W-1', { kind: 'build', source: { type: 'manual' }, prApproval: { by: 'Alex (dashboard)' } })])['W-1'].action, 'queue');
+  const trusted = autoDispatchPlan([w('W-4', { kind: 'build', source: { type: 'agent', by: 'local-head' } })], { ...cfg, prApproval: { trusted: ['teamwork', 'agent:local-head'] } });
+  assert.equal(trusted[0].action, 'queue', 'a source in config.prApproval.trusted needs no click');
+});

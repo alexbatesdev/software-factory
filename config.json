@@ -110,6 +110,10 @@
       "quote": "So long as a PR goes through internal review im good with it being marked ready"
     }
   },
+  "prApproval": {
+    "_why": "A new PR no Teamwork task asked for waits for Alex's go on the dashboard (Alex, 11-09). A source here needs no click: a type (teamwork) or type:by (agent:local-head).",
+    "trusted": ["teamwork"]
+  },
   "autoDispatch": {
     "enabled": true,
     "exclude": []

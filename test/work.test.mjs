@@ -759,3 +759,11 @@ test('a ready PR never internally reviewed gets a review: no waiver route after 
   const next = ghHead(approved, 'bbb2222', 'ahead', false);
   assert.deepEqual([next.phase, next.approvalWait?.head], ['awaiting_human_approval', 'bbb2222']);
 });
+
+test('Alex approving a new PR records it on the record once; a record that already has its PR has nothing to approve', () => {
+  const r = build({ source: { type: 'manual' } });
+  const ok = applyEvent(r, { type: 'pr_approved' }, ctx({ by: 'Alex (dashboard)' })).work;
+  assert.equal(ok.prApproval.by, 'Alex (dashboard)');
+  assert.throws(() => applyEvent(ok, { type: 'pr_approved' }, ctx()), /already approved/);
+  assert.throws(() => applyEvent(build({ links: { pr: PR } }), { type: 'pr_approved' }, ctx()), /already has its PR/);
+});
