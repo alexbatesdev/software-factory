@@ -61,6 +61,7 @@ details summary { cursor: pointer; }
 #side .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 #side .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 #approvalsBtn { margin-left: auto; } #approvalsBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
+details.msgs { margin-top: 4px; font-size: 13px; } .msg { border-left: 2px solid var(--line); padding: 4px 0 4px 10px; margin: 6px 0; } .msg .mbody { white-space: pre-wrap; overflow-wrap: anywhere; }
 .thread .acts { display: flex; flex-direction: column; gap: 4px; } .thread > button, .thread .acts { align-self: start; }
 .thread { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 6px 0; }
 .thread .ask { font-weight: 600; overflow-wrap: anywhere; } .thread .res { font-size: 12px; color: var(--mute); overflow-wrap: anywhere; }
@@ -198,6 +199,7 @@ function threadsPanel(list) {
       link.href = t.url; link.target = '_blank'; link.rel = 'noopener';
       left.append(link, el('div', 'ask', t.ask), el('div', 'res', `Resolution: ${t.resolution}`));
       if (t.status === 'failed') left.append(el('div', 'fail', `Failed: ${t.detail}`));
+      left.append(threadMessages(t.id));
       const b = el('button', null, t.status === 'approved' ? 'Resolving…' : t.status === 'failed' ? 'Retry' : 'Resolve');
       b.disabled = t.status === 'approved'; b.onclick = () => resolveThreads([t.id], b);
       row.append(left, b); sec.append(row);
@@ -205,6 +207,22 @@ function threadsPanel(list) {
     box.append(sec);
   }
   if (!list.length) box.append(el('div', 'mute', 'None.'));
+}
+// The last five messages on a thread, read from GitHub when first opened; open state and replies survive the 15s redraw.
+const openMsgs = new Set(), msgCache = new Map();
+function threadMessages(id) {
+  const d = el('details', 'msgs'), body = el('div');
+  d.append(el('summary', 'mute', 'Last 5 messages'), body); d.open = openMsgs.has(id);
+  const fill = list => body.replaceChildren(...(list.error ? [el('div', 'fail', list.error)] : list.map(c => {
+    const m = el('div', 'msg'), h = el('div', 'mute', `${c.by} · ${new Date(c.at).toLocaleString()}`);
+    m.append(h, el('div', 'mbody', c.body)); return m; })));
+  const load = async () => {
+    if (!msgCache.has(id)) { body.replaceChildren(el('div', 'mute', 'Loading…')); const r = await (await fetch(`/api/threads/${id}/comments`)).json(); msgCache.set(id, r.comments || r); }
+    fill(msgCache.get(id));
+  };
+  d.ontoggle = () => { if (d.open) { openMsgs.add(id); load(); } else openMsgs.delete(id); };
+  if (d.open) load();
+  return d;
 }
 async function decidePrs(ids, decision, btn) {
   btn.disabled = true;

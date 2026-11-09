@@ -17,6 +17,11 @@ export const gh = {
     const n = JSON.parse(stdout).data?.node;
     return n?.pullRequest ? { pr: n.pullRequest.url, isResolved: n.isResolved } : null;
   },
+  /** A review thread's last five comments, oldest first. */
+  threadComments: async id => {
+    const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{comments(last:5){nodes{author{login} body createdAt url}}}}}', '-f', `id=${id}`], { timeout: 20000 });
+    return (JSON.parse(stdout).data?.node?.comments?.nodes || []).map(c => ({ by: c.author?.login || 'ghost', at: c.createdAt, body: c.body, url: c.url }));
+  },
   resolveThread: async id => { await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', '-f', `id=${id}`], { timeout: 20000 }); },
   /** Submitted reviews on a PR; a pending draft has no submitted time. */
   reviews: async url => {

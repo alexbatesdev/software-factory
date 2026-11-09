@@ -96,6 +96,13 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (req.method === 'GET' && url.pathname === '/api/tools') return send(res, 200, toolsFor(roleOf(config, seat)));
       if (req.method === 'GET' && url.pathname === '/api/whoami') return send(res, 200, { ip: req.socket.remoteAddress, headers: req.headers });
       if (req.method === 'GET' && url.pathname === '/api/inbox') return send(res, 200, { seat, messages: Object.values(store.state.messages).filter(m => m.to === seat && !m.ackedAt) });
+      const tc = req.method === 'GET' && url.pathname.match(/^\/api\/threads\/(RT-\d+)\/comments$/);
+      if (tc) {
+        const t = store.state.threads?.[tc[1]];
+        if (!t) return send(res, 404, { error: `There is no thread request ${tc[1]}.` });
+        if (!gh?.threadComments) return send(res, 405, { error: 'This factory does not read GitHub.' });
+        return send(res, 200, { comments: await gh.threadComments(t.threadId) });
+      }
       if (req.method === 'POST' && url.pathname === '/api/threads/resolve') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
         if (readOnly || !gh) return send(res, 405, { error: 'This factory does not write to GitHub.' });

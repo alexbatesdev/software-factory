@@ -19,7 +19,7 @@ async function serve(gh) {
   await new Promise(ok => server.listen(0, '127.0.0.1', ok));
   const base = `http://127.0.0.1:${server.address().port}`;
   const post = async (path, body, seat = S1) => { const r = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1', 'x-seat': seat }, body: JSON.stringify(body) }); return [r.status, await r.json()]; };
-  return { store, act: (action, args, seat) => post('/api/actions', { action, args }, seat), resolve: ids => post('/api/threads/resolve', { ids }, 'Alex (dashboard)'), board: async () => (await fetch(`${base}/api/board`)).json(), close: () => server.close() };
+  return { store, act: (action, args, seat) => post('/api/actions', { action, args }, seat), resolve: ids => post('/api/threads/resolve', { ids }, 'Alex (dashboard)'), board: async () => (await fetch(`${base}/api/board`)).json(), comments: async id => (await fetch(`${base}/api/threads/${id}/comments`)).json(), close: () => server.close() };
 }
 
 test('a resolve request carries what GitHub needs, and only for a thread the poll reported on that record', async () => {
@@ -93,5 +93,18 @@ test('a request whose thread Alex resolved on GitHub himself closes as resolved 
     isResolved = true;
     await syncResolvedThreads(f.store, { thread: async () => ({ pr: PR, isResolved }) }, () => T);
     assert.deepEqual([f.store.state.threads['RT-1'].status, f.store.state.threads['RT-1'].detail], ['resolved', 'Resolved on GitHub directly.']);
+  } finally { f.close(); }
+});
+
+test("a thread request's last five messages are read from GitHub on demand, only for a thread the board holds", async () => {
+  const asked = [];
+  const msgs = [{ by: 'jmcdonald-ut', at: T, body: 'What if the pay type is deleted?', url: `${PR}#discussion_r1` }];
+  const f = await serve({ threadComments: async id => { asked.push(id); return msgs; } });
+  try {
+    await f.act('resolve_thread', request);
+    const [rt] = Object.keys(f.store.state.threads);
+    assert.deepEqual(await f.comments(rt), { comments: msgs });
+    assert.deepEqual(asked, ['PRRT_abc'], 'asks GitHub for the thread the request names');
+    assert.equal((await f.comments('RT-99')).error, 'There is no thread request RT-99.');
   } finally { f.close(); }
 });
