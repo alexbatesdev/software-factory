@@ -19,7 +19,6 @@ const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
 const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
 const [cmd = 'status', ...flags] = process.argv.slice(2);
 const home = p => String(p || '~/Code').replace(/^~/, os.homedir());
-const pause = ms => new Promise(r => setTimeout(r, ms));
 // Each worker's sandbox, kept while its pane exists, so a worker whose pane herdr lost can be adopted into a new one.
 const SANDBOXES = path.join(ROOT, 'data/sandboxes.json');
 const known = (() => { try { return JSON.parse(fs.readFileSync(SANDBOXES, 'utf8')); } catch { return {}; } })();
