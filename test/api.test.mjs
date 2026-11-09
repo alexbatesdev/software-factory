@@ -77,15 +77,16 @@ const started = f => f.store.appendAll([
   { kind: 'event', target: 'W-1', payload: { type: 'assign', assignmentId: 'R2', kind: 'implementation', status: 'started', owner: S1, evidence: 'brief' } },
 ], { now: 'n', by: 'test' });
 const PRURL = 'https://github.com/builtforteams/built-rails/pull/1';
+const REPORT = { changed: 'c', proven: 'p', unverified: 'nothing', risk: 'none' };
 
 test('done is checked against a fresh GitHub read of the PR head', async () => {
   const f = await serveWith({ readPr: async url => ({ url, head: 'bbb2222', state: 'OPEN', isDraft: true }) });
   try {
     started(f);
     const a = f.store.state.work['W-1'].assignments.find(x => x.status === 'started');
-    const [code, body] = await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'aaa1111' });
+    const [code, body] = await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'aaa1111', report: REPORT });
     assert.equal(code, 400); assert.match(body.error, /GitHub shows bbb2222/);
-    assert.equal((await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'bbb2222' }))[0], 200);
+    assert.equal((await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'bbb2222', report: REPORT }))[0], 200);
   } finally { f.close(); }
 });
 
@@ -176,7 +177,7 @@ test("a review at a head GitHub already shows but the board hasn't polled yet re
   try {
     started(f);
     const a = f.store.state.work['W-1'].assignments.find(x => x.status === 'started');
-    assert.equal((await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'aaa1111' }))[0], 200);
+    assert.equal((await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'aaa1111', report: REPORT }))[0], 200);
     remote.head = 'bbb2222';
     const [bad, err] = await f.act(S1, 'review', { work: 'W-1', head: 'ccc3333', result: 'clean', by: 'sbx: s1 internal-review' });
     assert.equal(bad, 400); assert.match(err.error, /current head/);
@@ -212,5 +213,19 @@ test('ask refuses a second open question on a record unless marked distinct, and
     assert.match((await f.act(S1, 'ask', { withdraw: 'TB-2', note: 'dup' }))[1].error, /only questions it asked/);
     assert.equal((await f.act('board lead', 'ask', { withdraw: 'TB-2', note: 'duplicate of TB-1' }))[0], 200);
     assert.equal(f.store.state.questions['TB-2'].status, 'superseded');
+  } finally { f.close(); }
+});
+
+test("code work is recorded done only with the Definition of Done's exit report, which lands on the record", async () => {
+  const f = await serveWith({ readPr: async url => ({ url, head: 'bbb2222', state: 'OPEN', isDraft: true }) });
+  try {
+    started(f);
+    const a = f.store.state.work['W-1'].assignments.find(x => x.status === 'started');
+    const base = { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'bbb2222' };
+    const [code, body] = await f.act(S1, 'done', base);
+    assert.equal(code, 400); assert.match(body.error, /exit report.*DEFINITION_OF_DONE/s);
+    const report = { changed: 'guarded the export', proven: 'spec red then green', unverified: 'large-tenant timing', risk: 'none known' };
+    assert.equal((await f.act(S1, 'done', { ...base, report }))[0], 200);
+    assert.match(f.store.state.work['W-1'].updates.at(-1).text, /^Exit report.*Unverified: large-tenant timing/s);
   } finally { f.close(); }
 });

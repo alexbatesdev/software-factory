@@ -9,6 +9,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { sandboxToken } from '../core/sandbox-seat.mjs';
+import { STANDARDS, MIRROR, IN_SANDBOX } from './standards.mjs';
 
 const run = promisify(execFile);
 // The herdr sbx plugin owns the pane ↔ sandbox mapping; its bridge's start mode recreates a missing sandbox from it.
@@ -132,6 +133,7 @@ export async function restoreBaseline(sandbox) {
   await put(HOOK_PATH, readFileSync(join(homedir(), '.claude/hooks/require-robot-wrapper.sh'), 'utf8'));
   const cur = await run('sbx', ['exec', sandbox, 'cat', '/home/agent/.claude/settings.json'], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
   await put('/home/agent/.claude/settings.json', JSON.stringify(withBaseline(cur), null, 2) + '\n');
+  for (const name of STANDARDS) await put(`${IN_SANDBOX}/${name}`, readFileSync(join(MIRROR, name), 'utf8'));
   await installBoardMcp(sandbox);
   await markNudgeSeen(sandbox);
 }

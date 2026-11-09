@@ -29,6 +29,7 @@ import { createLogWake } from '../wake/log.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles } from '../core/recycle.mjs';
 import { gh as liveGh } from '../effects/github.mjs';
+import { syncStandards } from '../hosts/standards.mjs';
 
 // Dry run (FACTORY_DRY=1, FACTORY_DB=<a copy of data/factory.db>): reads are real, nothing is typed, marked or moved.
 const DRY = process.env.FACTORY_DRY === '1';
@@ -172,6 +173,7 @@ async function githubTick() {
     const links = [...new Set([...Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean), ...holdReleases(store.state.work, owner).urls])];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
     healTick();
+    try { const n = syncStandards(); if (n.length) log(`standards mirrored: ${n.join(', ')}`); } catch (e) { log(`standards: ${e.message}`); }
     apply(skipNotes(store.state.work, config), 'board (skip)');
     await mergeTick();
     holdTick();

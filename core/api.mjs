@@ -35,6 +35,12 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       const open = Object.entries(s.questions).filter(([, q]) => q.work === args.work && q.status === 'open');
       if (open.length) return [409, { error: `${args.work} already has an open question: ${open.map(([id, q]) => `${id} "${q.title}" (from ${q.from})`).join('; ')}. Add to it instead, or pass distinct: true if this is a separate decision.` }];
     }
+    // Code work is done only against Benny's Definition of Done (Alex, 11-09): the worker's exit report, checked by the supervisor.
+    const exitReport = action === 'done' && !args.noChange && s.work[args.work]?.assignments?.find(x => x.id === args.assignmentId)?.kind !== 'review';
+    if (exitReport) {
+      const miss = ['changed', 'proven', 'unverified', 'risk'].filter(k => !args.report?.[k]);
+      if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
+    }
     if (action === 'route' && args.setOwner) args = { ...args, setOwnerOf: s.questions[args.id]?.work || undefined };
     // An ack or a create names the calling seat, never a claimed name.
     if (['ack', 'create'].includes(action)) args = { ...args, by: seat };
@@ -57,6 +63,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
     // PR work whose PR was closed unmerged (Alex's call, e.g. TB-126 a) resolves once GitHub confirms it closed.
     if (action === 'resolve' && rec?.links?.pr && (await readPr(rec.links.pr))?.state === 'CLOSED')
       cmds = cmds.map(c => c.payload?.type === 'resolve' ? { ...c, payload: { ...c.payload, prClosed: rec.links.pr } } : c);
+    if (exitReport) { const r = args.report; cmds = [...cmds, { kind: 'event', target: args.work, payload: { type: 'note', text: `Exit report. Changed: ${r.changed} Proven: ${r.proven} Unverified: ${r.unverified} Risk: ${r.risk}` } }]; }
     return [200, { ok: true, results: store.appendAll(cmds, ctx) }];
   }
 
