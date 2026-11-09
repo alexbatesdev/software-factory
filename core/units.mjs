@@ -58,9 +58,10 @@ export function mergeCloses(works, bySource, { prState, openQuestions, track }) 
   return out;
 }
 
-/** Merge holds (W-292): `urls` to read, and with prState the {id, pr} holds whose PR merged. A bare #N is in the record's repo. */
+/** Merge holds (W-292): `urls` to read, and with prState the {id, pr} holds whose PR merged (`released`) or closed unmerged (`closed`). A bare #N is in the record's repo. */
 export function holdReleases(works, owner, prState = () => null) {
   const url = (w, pr) => (pr.startsWith('#') ? `https://github.com/${owner}/${w.repo || 'built-rails'}/pull/${pr.slice(1)}` : pr);
   const holds = Object.values(works).filter(w => !TERMINAL.includes(w.phase)).flatMap(w => (w.externalDeps || []).filter(d => d.pr).map(d => ({ id: w.id, pr: d.pr, url: url(w, d.pr) })));
-  return { urls: [...new Set(holds.map(h => h.url))], released: holds.filter(h => prState(h.url) === 'MERGED').map(({ id, pr }) => ({ id, pr })) };
+  return { urls: [...new Set(holds.map(h => h.url))], released: holds.filter(h => prState(h.url) === 'MERGED').map(({ id, pr }) => ({ id, pr })),
+    closed: holds.filter(h => prState(h.url) === 'CLOSED').map(({ id, pr }) => ({ id, pr })) };
 }

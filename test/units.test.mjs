@@ -70,4 +70,6 @@ test('a merge hold is released when its PR merges, and only then', () => {
   assert.deepEqual(holdReleases(ws, 'builtforteams').urls, [url]);
   assert.deepEqual(holdReleases(ws, 'builtforteams', u => (u === url ? 'MERGED' : null)).released, [{ id: 'W-1', pr: '#8606' }]);
   assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'OPEN').released, []);
+  assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'CLOSED').released, []);
+  assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'CLOSED').closed, [{ id: 'W-1', pr: '#8606' }], 'a PR closed unmerged is reported, never released');
 });

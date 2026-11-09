@@ -202,7 +202,13 @@ async function mergeTick() {
 // A record held until a PR merges (W-292) is released on the merge, and the board lead re-triages it.
 function holdTick() {
   const lead = Object.entries(config.roles || {}).find(([, r]) => r === 'board-lead')?.[0];
-  for (const { id, pr } of holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null).released)
+  const { released, closed } = holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null);
+  for (const { id, pr } of closed) {
+    const key = `${id}/${pr}`;
+    if (lead && !Object.values(store.state.messages).some(m => m.about?.holdClosed === key))
+      apply([{ kind: 'message', payload: { to: lead, work: id, about: { holdClosed: key }, text: `[software factory, automated, not Alex] ${id}: ${pr} closed without merging, so its hold will never release; re-triage it.` } }], 'poller (hold)');
+  }
+  for (const { id, pr } of released)
     apply([{ kind: 'event', target: id, payload: { type: 'hold_released', pr } },
       ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: ${pr} merged, so its hold is released. Re-triage it.` } }] : [])], 'poller (hold)');
 }
