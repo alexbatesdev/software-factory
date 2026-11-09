@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const TW_DIR = join(homedir(), 'Code/teamwork mini mcp');
+const TW_DIR = join(homedir(), 'Code/repos/teamwork mini mcp');
 
 const client = async () => {
   const { TeamworkClient } = await import(pathToFileURL(join(TW_DIR, 'dist/teamwork/client.js')));

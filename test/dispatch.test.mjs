@@ -131,7 +131,7 @@ test('a record parked on someone, owned by a non-stream seat, or declined by a s
 
 test('a host stream takes only records in its repos; the sbx streams take everything else', () => {
   const H = 'sup: host';
-  const hcfg = { ...cfg, supervisors: { ...cfg.supervisors, [H]: { repos: { 'teamwork-mini-mcp': '~/Code/teamwork mini mcp' } } } };
+  const hcfg = { ...cfg, supervisors: { ...cfg.supervisors, [H]: { repos: { 'teamwork-mini-mcp': '~/Code/repos/teamwork mini mcp' } } } };
   const p = Object.fromEntries(autoDispatchPlan([
     loose('W-1', { owner: null, repo: 'teamwork-mini-mcp' }), loose('W-2', { owner: null, repo: 'built-rails' }), loose('W-3', { owner: null }),
   ], hcfg).map(x => [x.id, x]));
@@ -144,7 +144,7 @@ test('a host stream takes only records in its repos; the sbx streams take everyt
 
 test('a host stream also takes records on the branches it names, so Mutation work runs on the host', () => {
   const H = 'sup: host';
-  const hcfg = { ...cfg, mutationBranch: undefined, supervisors: { ...cfg.supervisors, [H]: { repos: { 'built-customer-implementations': '~/Code/built-customer-implementations' }, branches: 'alex/(mutation-tester|test-quality/mutation-gaps)' } } };
+  const hcfg = { ...cfg, mutationBranch: undefined, supervisors: { ...cfg.supervisors, [H]: { repos: { 'built-customer-implementations': '~/Code/repos/built-customer-implementations' }, branches: 'alex/(mutation-tester|test-quality/mutation-gaps)' } } };
   const p = Object.fromEntries(autoDispatchPlan([
     loose('W-1', { owner: null, repo: 'built-rails', links: { branch: 'alex/test-quality/mutation-gaps-3' } }),
     loose('W-2', { owner: null, repo: 'built-customer-implementations' }),

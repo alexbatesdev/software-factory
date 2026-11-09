@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// stdio MCP entrypoint. Configure per seat: { "command": "node", "args": ["~/Code/software-factory/bin/mcp.mjs"] }.
+// stdio MCP entrypoint. Configure per seat: { "command": "node", "args": ["~/Code/repos/software-factory/bin/mcp.mjs"] }.
 // The seat is the label of the herdr pane this process runs in (HERDR_PANE_ID), read on every call.
 import { readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';

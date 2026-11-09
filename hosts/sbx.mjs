@@ -36,7 +36,7 @@ export function parsePreflight(out) {
 // Workers push by HTTPS URL (SSH is blocked in the VM), which never updates origin/* refs, so "pushed" is asked of GitHub:
 // HEAD is a branch tip there, inside its branch, or inside main (merged, branch deleted). Build output and spamton-* don't count.
 // Prints `<path>\t<dirty>\t<ok|replaced|unpushed>\t<days since HEAD's commit>` per worktree.
-const PREFLIGHT = `cd "$WORKSPACE_DIR" 2>/dev/null || cd /Users/alex.bates/Code/built-rails-a
+const PREFLIGHT = `cd "$WORKSPACE_DIR" 2>/dev/null || cd /Users/alex.bates/Code/repos/built-rails-a
 url=$(git remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#')
 heads=$(git ls-remote --heads "$url" 2>/dev/null)
 git fetch -q "$url" main:refs/factory/main </dev/null 2>/dev/null
@@ -150,7 +150,7 @@ export async function restoreBaseline(sandbox) {
 
 /** The worker's way onto the board: the factory's sandbox port, with this sandbox's name and token (sbx-workers-on-the-board). */
 export async function installBoardMcp(sandbox, { port = 4849 } = {}) {
-  const secret = readFileSync(join(homedir(), 'Code/software-factory/data/sandbox-secret'), 'utf8').trim();
+  const secret = readFileSync(new URL('../data/sandbox-secret', import.meta.url), 'utf8').trim();
   const add = ['claude', 'mcp', 'add', '-s', 'user', '--transport', 'http', 'software-factory', `http://host.docker.internal:${port}/mcp`,
     '-H', `x-sandbox: ${sandbox}`, '-H', `x-sandbox-token: ${sandboxToken(secret, sandbox)}`];
   const sh = a => a.map(x => `'${x.replace(/'/g, `'\\''`)}'`).join(' ');

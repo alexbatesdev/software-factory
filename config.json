@@ -15,8 +15,8 @@
         "workspace": "Host",
         "howTo": "~/Code/plans/software-factory-v2/host-streams.md",
         "repos": {
-          "teamwork-mini-mcp": "~/Code/teamwork mini mcp",
-          "built-customer-implementations": "~/Code/built-customer-implementations"
+          "teamwork-mini-mcp": "~/Code/repos/teamwork mini mcp",
+          "built-customer-implementations": "~/Code/repos/built-customer-implementations"
         },
         "branches": "alex/(mutation-tester|test-quality/mutation-gaps)"
       }
@@ -122,8 +122,8 @@
         "kind": "shell",
         "workspace": "Services",
         "tab": "Board",
-        "cwd": "~/Code/software-factory",
-        "run": "FACTORY_MODE=live node --env-file=\"$HOME/Code/teamwork mini mcp/.env\" bin/live.mjs",
+        "cwd": "~/Code/repos/software-factory",
+        "run": "FACTORY_MODE=live node --env-file=\"$HOME/Code/repos/teamwork mini mcp/.env\" bin/live.mjs",
         "expect": "live.mjs"
       },
       {
