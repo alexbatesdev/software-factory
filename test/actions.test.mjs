@@ -80,3 +80,13 @@ test('triage untilAnswered holds the record on a question, and the release clear
   w = applyEvent(w, { type: 'hold_released', question: 'TB-176' }, c).work;
   assert.deepEqual(w.externalDeps.map(d => d.ref), ['#1']);
 });
+
+test('triage releaseHold clears a settled hold by its text, so a free-text hold from before W-292 can be cleared', async () => {
+  const { applyEvent, createWork } = await import('../core/work.mjs');
+  const cs = commandsFor('triage', { work: 'W-3', bucket: 'ready', note: 'Alex released it (TB-188 a)', releaseHold: '#8050 merges, then "go build" from code-e1' });
+  assert.deepEqual(cs.at(-1).payload, { type: 'hold_released', text: '#8050 merges, then "go build" from code-e1' });
+  const c = { now: '2026-11-09T22:00:00.000Z', by: 'board lead' };
+  const w = applyEvent(createWork({ id: 'W-3', title: 'x', externalDeps: [{ text: '#8050 merges, then "go build" from code-e1' }, { text: 'other' }] }, c), cs.at(-1).payload, c).work;
+  assert.deepEqual(w.externalDeps, [{ text: 'other' }]);
+  assert.throws(() => applyEvent(w, cs.at(-1).payload, c), /no hold/);
+});
