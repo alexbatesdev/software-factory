@@ -144,8 +144,12 @@ export function inboxCommands(state, cfg, fleet = null) {
   if (cfg.triage?.since) for (const w of Object.values(state.work))
     if (['intake', 'proposed'].includes(w.phase) && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`))
       cmds.push(msg(cfg.triage.seat, w.id, { intake: w.id }, `${w.id} ${quote(w.title)} is in intake: triage it (ready, clarify with a question for Alex, or leave in intake with a note).${dupeNote(w, state.work)}`));
-  // The board lead's hourly check-in (Alex, 2026-11-04): one message per hour, delivered like any other.
+  // The board lead's hourly check-in (Alex, 2026-11-04): at most one message per hour, delivered like any other.
   const hour = cfg.checkIn?.now?.slice(0, 13);
-  if (hour && !told.has(`checkIn:${hour}`)) cmds.push(msg(cfg.checkIn.seat, null, { checkIn: hour }, `Hourly check-in ${hour}:00Z: run your role file's check-in, file what you find as factory records, then ack this message.`));
+  // Only when the board changed since the last one, plus a daily one at 09Z (11-09: 53 of 65 weekend check-ins found nothing).
+  const last = Object.values(state.messages).filter(m => m.about?.checkIn).map(m => m.at).sort().at(-1);
+  const changed = !last || hour?.endsWith('T09') || Object.values(state.work).some(w => (w.updatedAt || '') > last)
+    || Object.values(state.questions).some(q => (q.at || '') > last || (q.answer?.at || '') > last);
+  if (hour && changed && !told.has(`checkIn:${hour}`)) cmds.push(msg(cfg.checkIn.seat, null, { checkIn: hour }, `Hourly check-in ${hour}:00Z: run your role file's check-in, file what you find as factory records, then ack this message.`));
   return { cmds, watches };
 }

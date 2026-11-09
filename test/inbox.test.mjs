@@ -73,14 +73,18 @@ test('a worker reported working whose pane has not changed for quietMs messages 
   assert.deepEqual(q(0), [], 'told once for this quiet stretch');
 });
 
-test('the board lead gets one check-in message per hour', () => {
+test('the board lead gets an hourly check-in only when the board changed since the last one, and a daily one regardless', () => {
   const s = store({});
-  const at = iso => inboxCommands(s.state, { ...cfg, checkIn: { seat: 'board lead', now: iso } }).cmds;
-  const [c] = at('2026-11-05T09:10:00.000Z');
-  assert.deepEqual([c.payload.to, c.payload.about], ['board lead', { checkIn: '2026-11-05T09' }]);
-  s.append(c, ctx('board'));
-  assert.deepEqual(at('2026-11-05T09:50:00.000Z'), []);
-  assert.equal(at('2026-11-05T10:00:00.000Z').length, 1);
+  const at = iso => inboxCommands(s.state, { ...cfg, checkIn: { seat: 'board lead', now: iso } }).cmds.filter(c => c.payload.about.checkIn);
+  const [c] = at('2026-11-05T08:10:00.000Z');
+  assert.deepEqual([c.payload.to, c.payload.about], ['board lead', { checkIn: '2026-11-05T08' }], 'the first one always goes');
+  s.append(c, { now: '2026-11-05T08:10:00.000Z', by: 'board' });
+  assert.deepEqual(at('2026-11-05T08:50:00.000Z'), [], 'one per hour');
+  assert.deepEqual(at('2026-11-05T11:00:00.000Z'), [], 'nothing changed');
+  s.state.work['W-1'] = work({ updatedAt: '2026-11-05T10:30:00.000Z' });
+  assert.equal(at('2026-11-05T11:00:00.000Z').length, 1, 'a record changed');
+  s.state.work['W-1'] = work({ updatedAt: '2026-11-05T07:00:00.000Z' });
+  assert.equal(at('2026-11-06T09:00:00.000Z').length, 1, 'the daily check-in');
 });
 
 test('a record that lands in intake after intakeSince messages the triage seat once', () => {
