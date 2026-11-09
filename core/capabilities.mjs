@@ -4,7 +4,7 @@ export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', '
 export const ROLES = {
   'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner'],
   'questions-router': ['read', 'ack', 'route', 'create', 'set_owner'],
-  'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread'],
+  'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread', 'settle_finding'],
   'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify', 'cancel'],
   'board-developer': ACTIONS,
   'trusted-reviewer': [], // PR review carve-out (Alex, 11-06): trusted reviews run off the board
