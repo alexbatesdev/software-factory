@@ -179,6 +179,11 @@
     "triage board worker": "board-developer"
   },
   "_comment": "V2 owns its config (V1 is frozen, 10-30). Streams have no topic words (decision 8). roles maps a seat label to its role; every routing.supervisors label is a stream-supervisor.",
+  "seatRecycle": {
+    "_doc": "Restart idle Claude seats (not stays) fresh once a day in this UTC hour; sbx workers use recycle instead.",
+    "hourUtc": 10,
+    "enabled": true
+  },
   "recycle": {
     "enabled": true,
     "threshold": 0.75,

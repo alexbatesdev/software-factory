@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { herdrRaw as herdr } from '../fleet/herdr.mjs';
-import { seatsOf, planFactory, planStop, slotFor } from '../fleet/factory.mjs';
+import { seatsOf, planFactory, planStop, slotFor, startSeat, stopSeat, argvOf as argvIn } from '../fleet/factory.mjs';
 import { bridgeLine, adoptSandbox, sandboxOf, restoreBaseline } from '../hosts/sbx.mjs';
 import { openStore } from '../core/store.mjs';
 import { syncStandards } from '../hosts/standards.mjs';
@@ -19,15 +19,13 @@ const ROOT = path.dirname(path.dirname(new URL(import.meta.url).pathname));
 const config = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
 const [cmd = 'status', ...flags] = process.argv.slice(2);
 const home = p => String(p || '~/Code').replace(/^~/, os.homedir());
-const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-const pause = ms => new Promise(r => setTimeout(r, ms));
 // Each worker's sandbox, kept while its pane exists, so a worker whose pane herdr lost can be adopted into a new one.
 const SANDBOXES = path.join(ROOT, 'data/sandboxes.json');
 const known = (() => { try { return JSON.parse(fs.readFileSync(SANDBOXES, 'utf8')); } catch { return {}; } })();
 const seats = seatsOf(config).map(s => s.kind === 'sbx' && known[s.label] ? { ...s, sandbox: known[s.label] } : s);
 const serverLabel = seats.find(s => s.expect === 'live.mjs')?.label;
 
-const argvOf = async pane => ((await herdr('pane', 'process-info', '--pane', pane).catch(() => null))?.process_info?.foreground_processes || []).map(x => (x.argv || []).join(' ')).join(' | ');
+const argvOf = pane => argvIn(herdr, pane);
 
 async function observe() {
   const [{ panes }, { agents }, { tabs }, { workspaces }] = await Promise.all(['pane', 'agent', 'tab', 'workspace'].map(k => herdr(k, 'list')));
@@ -38,13 +36,6 @@ async function observe() {
       argv: await argvOf(p.pane_id) };
   }));
   return { panes: out, tabs, workspaces };
-}
-
-async function start(seat, pane) {
-  if (seat.kind === 'shell') return herdr('pane', 'run', pane, `cd ${JSON.stringify(home(seat.cwd))} && ${seat.run.replace(/~\//g, `${os.homedir()}/`)}`);
-  const args = seat.kind === 'codex' ? ['resume', seat.resume] : seat.role ? ['--agent', seat.role] : [];
-  await pause(4000); // a fresh shell isn't ready for agent start straight away
-  return herdr('agent', 'start', slug(seat.label), '--kind', seat.kind, '--pane', pane, '--', ...args);
 }
 
 async function remember(seen) {
@@ -86,7 +77,7 @@ async function up(apply) {
         await adoptSandbox(s.seat.sandbox, pane, panes.find(p => p.pane_id === pane).workspace_id, { livePanes: panes.map(p => p.pane_id) });
         await restoreBaseline(s.seat.sandbox);
       }
-      if (['reconnect', 'adopt'].includes(s.action)) await attach(pane); else await start(s.seat, pane);
+      if (['reconnect', 'adopt'].includes(s.action)) await attach(pane); else await startSeat(s.seat, pane, herdr);
       console.log(`  done: ${pane}`);
     } catch (e) { console.log(`  failed: ${e.message}`); }
   }
@@ -109,10 +100,7 @@ async function down() {
   }
   const failed = [];
   for (const s of plan.filter(x => x.action === 'stop')) {
-    if (s.seat.kind === 'shell') await herdr('pane', 'send-keys', s.pane, 'ctrl+c');
-    else { await herdr('pane', 'send-keys', s.pane, 'esc'); await pause(1000); await herdr('pane', 'send-text', s.pane, s.seat.kind === 'codex' ? '/quit' : '/exit'); await herdr('pane', 'send-keys', s.pane, 'enter'); }
-    let stopped = false;
-    for (let i = 0; i < 30 && !stopped; i++) { await pause(1000); stopped = planStop([s.seat], [{ pane: s.pane, label: s.seat.label, argv: await argvOf(s.pane) }], { all: true })[0].action !== 'stop'; }
+    const stopped = await stopSeat(s.seat, s.pane, herdr);
     console.log(`${stopped ? 'stopped' : 'STILL UP'.padEnd(7)} ${s.seat.label}${stopped ? '' : ' (look for a dialog in its pane)'}`);
     if (!stopped) failed.push(s.seat.label);
   }

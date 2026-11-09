@@ -1,4 +1,9 @@
-// The software factory's seats, and what it takes to bring each one up. Planners are pure; slotFor takes herdr as an argument.
+// The software factory's seats, and what it takes to bring each one up. Planners are pure; the effects take herdr as an argument.
+import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { streamBusy } from '../core/recycle.mjs';
+import { exitChoice } from '../hosts/sbx.mjs';
 export const ORCHESTRATOR_TAB = 'Orchestrator', WORKER_TAB = 'Worker', TERMINALS = 'Terminals';
 
 /** Fixed seats from `config.factory.seats`, plus a supervisor and sbx worker per stream in `routing.supervisors`. */
@@ -78,4 +83,52 @@ export async function slotFor(seat, herdr, cwd = seat.cwd) {
   const label = tabs.some(x => x.workspace_id === w.workspace_id && x.label === seat.tab) ? `${seat.tab} 2` : seat.tab;
   const created = await herdr('tab', 'create', '--workspace', w.workspace_id, '--label', label, '--cwd', cwd, ...QUIET_SHELL, '--no-focus');
   return firstPane(created.tab.tab_id);
+}
+
+/**
+ * Claude seats due their daily fresh start (Alex, 11-09: seats that ran 3 to 4 days got expensive). sbx workers recycle
+ * between jobs instead (core/recycle.mjs).
+ * @param agents [{label, ref, status}] from the fleet read @param state {messages, work}
+ * @param opts {now, hourUtc, enabled, done: {label: 'YYYY-MM-DD' last restarted}} @returns [{seat, pane}]
+ */
+export function planSeatRestarts(seats, agents, state, { now, hourUtc = 10, enabled = false, done = {} }) {
+  const day = String(now).slice(0, 10);
+  if (!enabled || new Date(now).getUTCHours() !== hourUtc) return [];
+  return seats.filter(s => s.kind === 'claude' && !s.stays && done[s.label] !== day).flatMap(seat => {
+    const a = agents.find(x => x.label === seat.label);
+    if (!a || !['idle', 'done'].includes(a.status)) return [];
+    if (Object.values(state.messages).some(m => m.to === seat.label && !m.ackedAt)) return [];
+    if (seat.role === 'stream-supervisor' && streamBusy(state.work, seat.label)) return [];
+    return [{ seat, pane: a.ref }];
+  });
+}
+
+const pause = ms => new Promise(r => setTimeout(r, ms));
+const home = p => String(p || '~/Code').replace(/^~/, os.homedir());
+const slug = s => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+/** The pane's foreground command lines, joined. */
+export const argvOf = async (herdr, pane) => ((await herdr('pane', 'process-info', '--pane', pane).catch(() => null))?.process_info?.foreground_processes || []).map(x => (x.argv || []).join(' ')).join(' | ');
+
+/** Start a seat's process in its pane, as `factory.mjs up` does. */
+export async function startSeat(seat, pane, herdr) {
+  if (seat.kind === 'shell') return herdr('pane', 'run', pane, `cd ${JSON.stringify(home(seat.cwd))} && ${seat.run.replace(/~\//g, `${os.homedir()}/`)}`);
+  const args = seat.kind === 'codex' ? ['resume', seat.resume] : seat.role ? ['--agent', seat.role] : [];
+  await pause(4000); // a fresh shell isn't ready for agent start straight away
+  return herdr('agent', 'start', slug(seat.label), '--kind', seat.kind, '--pane', pane, '--', ...args);
+}
+
+/** Stop a seat's process, keeping its pane; true once it is down within 30 s. */
+export async function stopSeat(seat, pane, herdr) {
+  if (seat.kind === 'shell') await herdr('pane', 'send-keys', pane, 'ctrl+c');
+  else { await herdr('pane', 'send-keys', pane, 'esc'); await pause(1000); await herdr('pane', 'send-text', pane, seat.kind === 'codex' ? '/quit' : '/exit'); await herdr('pane', 'send-keys', pane, 'enter'); }
+  for (let i = 0; i < 30; i++) {
+    await pause(1000);
+    if (!running(seat, await argvOf(herdr, pane))) return true;
+    // Claude's "Background work is running" dialog: Exit and stop tasks (Alex, 11-06).
+    if (seat.kind !== 'claude') continue;
+    const screen = await promisify(execFile)('herdr', ['pane', 'read', pane, '--source', 'visible'], { timeout: 5000 }).then(r => r.stdout, () => '');
+    const key = exitChoice(screen);
+    if (key) await herdr('pane', 'send-keys', pane, key);
+  }
+  return false;
 }

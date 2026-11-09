@@ -22,7 +22,8 @@ import { mergeCloses, holdReleases } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
-import { list as readFleet } from '../fleet/herdr.mjs';
+import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
+import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
@@ -325,6 +326,21 @@ async function recycleTick() {
   }
 }
 
+// Long-lived seats restart fresh once a day at a quiet hour (Alex, 11-09); each starts cold from its handoff file.
+// ponytail: the once-a-day mark is in memory, so a live restart inside the hour may restart an idle seat twice.
+const restartedOn = {};
+async function seatRestartTick() {
+  if (!fleet) return;
+  const agents = [...fleet.others, ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))];
+  for (const { seat, pane } of planSeatRestarts(seatsOf(config), agents, store.state, { now: now(), ...config.seatRecycle, done: restartedOn })) {
+    restartedOn[seat.label] = now().slice(0, 10);
+    if (DRY) { once(`dry run: would restart ${seat.label}`); continue; }
+    const stopped = await stopSeat(seat, pane, herdrRaw).catch(e => { log(`seat restart ${seat.label}: ${e.message}`); return false; });
+    const started = stopped && await startSeat(seat, pane, herdrRaw).then(() => true, e => { log(`seat restart ${seat.label}: start failed: ${e.message}`); return false; });
+    log(`seat restart ${seat.label}: ${started ? 'fresh session' : stopped ? 'STOPPED, NOT STARTED: run factory.mjs up' : 'did not exit; left running'}`);
+  }
+}
+
 // A tick still running skips the next; one slower than a minute is logged so a stalled loop names itself.
 const every = (ms, fn) => { let running = false; const run = async () => { if (running) return; running = true; const t0 = Date.now(); try { await fn(); } catch (e) { log(e.message); } finally { running = false; if (Date.now() - t0 > 60000) log(`slow tick: ${fn.name || 'tick'} took ${Math.round((Date.now() - t0) / 1000)}s`); } }; run(); setInterval(run, ms); };
 await fleetTick();
@@ -334,3 +350,4 @@ every(config.notify?.intervalMs ?? 15000, readyTick);
 every(config.poll.githubMs, githubTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);
+every(60000, seatRestartTick);

@@ -19,9 +19,12 @@ const seatOf = async () => {
 };
 const api = {
   get: async (path, seat) => (await fetch(BASE + path, { headers: { 'x-seat': seat } })).json(),
+  tools: async seat => (await fetch(`${BASE}/api/tools`, { headers: { 'x-seat': seat } })).json(),
   post: async (action, args, seat) => (await fetch(`${BASE}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1', 'x-seat': seat }, body: JSON.stringify({ action, args }) })).json(),
 };
 const handle = createMcp({ config, seatOf, api });
+// A schema change on the server reaches this session without a restart: Claude Code refetches on list_changed.
+setInterval(async () => { if (await handle.changed().catch(() => false)) process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' }) + '\n'); }, 60000).unref();
 createInterface({ input: process.stdin }).on('line', async line => {
   let msg; try { msg = JSON.parse(line); } catch { return; }
   const out = await handle(msg);
