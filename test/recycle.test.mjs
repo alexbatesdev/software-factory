@@ -143,9 +143,10 @@ test("Codex's board server block is written once, with the sandbox's headers, ke
 test("a codex sandbox's baseline is its AGENTS.md (standards plus the 🤖 rule), its board server and the review prompt; nothing of Claude's", async () => {
   const { restoreBaseline } = await import('../hosts/sbx.mjs');
   const wrote = {};
-  const gems = [];
-  await restoreBaseline('box', 'codex', { put: async (p, t) => { wrote[p] = t; }, read: async () => '', secret: 's', secrets: async sb => gems.push(sb) });
+  const gems = [], loaded = [];
+  await restoreBaseline('box', 'codex', { put: async (p, t) => { wrote[p] = t; }, read: async () => '', secret: 's', secrets: async sb => gems.push(sb), mcpLoad: async (name, sb) => loaded.push([name, sb]) });
   assert.deepEqual(gems, ['box'], 'the private-gem credentials go in with the baseline, so bundle install works after a recreate');
+  assert.deepEqual(loaded, [['sentry', 'box']], 'Codex reads Sentry through the sandbox gateway (W-306); Claude has the claude.ai connector');
   assert.deepEqual(Object.keys(wrote).filter(p => p.includes('.claude')), []);
   assert.match(wrote['/home/agent/.codex/AGENTS.md'], /^# Team standards/);
   assert.match(wrote['/home/agent/.codex/AGENTS.md'], /line '🤖' alone at the start and a line '🤖' alone at the end/);
@@ -153,7 +154,7 @@ test("a codex sandbox's baseline is its AGENTS.md (standards plus the 🤖 rule)
   assert.match(wrote['/home/agent/.codex/config.toml'], /^check_for_update_on_startup = false$/m, 'no "Update available" dialog parks the worker at start');
   assert.ok(wrote['/home/agent/standards/internal-review-codex.md'], 'the review prompt the brief names');
   const again = {};
-  await restoreBaseline('box', 'codex', { put: async (p, t) => { again[p] = t; }, read: async () => 'model = "gpt"\ncheck_for_update_on_startup = true\n', secret: 's', secrets: async () => {} });
+  await restoreBaseline('box', 'codex', { put: async (p, t) => { again[p] = t; }, read: async () => 'model = "gpt"\ncheck_for_update_on_startup = true\n', secret: 's', secrets: async () => {}, mcpLoad: async () => {} });
   assert.equal((again['/home/agent/.codex/config.toml'].match(/check_for_update_on_startup/g) || []).length, 1);
   assert.match(again['/home/agent/.codex/config.toml'], /^check_for_update_on_startup = false$/m);
 });
