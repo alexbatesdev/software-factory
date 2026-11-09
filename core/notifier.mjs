@@ -125,8 +125,8 @@ const stopped = a => !a || ['done', 'idle'].includes(a.status);
 /** What keeps a stream from starting its next queued assignment, as a phrase, or null when it's free. */
 export function streamHold(u, works) {
   const to = u.supervisor?.label;
-  // Work blocked on a person doesn't hold the stream (Alex: keep workers on unblocked work while a part waits).
-  const started = Object.values(works).flatMap(r => r.stream === to ? (r.assignments || []).filter(a => a.status === 'started').map(a => `${r.id} ${a.id}`) : [])[0];
+  // Work blocked on a person doesn't hold the stream (Alex: keep workers on unblocked work while a part waits); nor does a scout.
+  const started = Object.values(works).flatMap(r => r.stream === to && r.kind !== 'scout' ? (r.assignments || []).filter(a => a.status === 'started').map(a => `${r.id} ${a.id}`) : [])[0];
   if (started) return `behind ${started} (started)`;
   const busy = [u.supervisor, u.worker].find(a => !stopped(a));
   return busy ? `${busy.label} is ${busy.status}` : null;

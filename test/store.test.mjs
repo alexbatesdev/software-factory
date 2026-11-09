@@ -307,3 +307,22 @@ test('the board developer settles a finding by hand with a note (resolved or acc
   assert.deepEqual(c.payload, { type: 'finding', findingId: 'F2', status: 'resolved', note: 'fixed in 97dcf04' });
   assert.throws(() => commandsFor('settle_finding', { work: 'W-1', findingId: 'F2', status: 'open', note: 'x' }), /resolved or accepted/);
 });
+
+test('a scout is created ready, its dispatch reaches its stream, it proposes build work linked back, and closes with no change', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const { eligibleRequests } = await import('../core/notifier.mjs');
+  const S = 'sup: stream-1', s = openStore(':memory:', { supervisors: [S] });
+  const act = (action, args) => s.appendAll(commandsFor(action, args), ctx({ by: S }));
+  const { id } = s.append({ kind: 'create', payload: { title: 'Sentry scout', kind: 'scout', owner: S, phase: 'ready', priority: 4 } }, ctx());
+  assert.deepEqual([s.state.work[id].phase, s.state.work[id].stream], ['ready', S]);
+  s.append(ev(id, { type: 'transition', to: 'queued' }), ctx());
+  s.append(ev(id, { type: 'request', request: 'dispatch' }), ctx());
+  assert.deepEqual(eligibleRequests(s.state.work, null, [S]).map(e => [e.key, e.to]), [[`${id}/R1`, S]]);
+  act('ack', { ref: `${id}/R1`, outcome: 'received', by: S });
+  act('assign', { work: id, assignmentId: 'A1', kind: 'discovery', status: 'started', owner: 'sbx: stream-1', evidence: 'scout brief' });
+  act('progress', { work: id, discovery: 'NoMethodError in people_controller.rb:88', text: 'Sentry link, reproduced' });
+  const proposed = Object.values(s.state.work).find(x => x.proposedFrom === id);
+  assert.deepEqual([proposed.kind, proposed.phase], ['build', 'proposed']);
+  act('done', { work: id, assignmentId: 'A1', expectedVersion: 1, noChange: { verifiedOn: 'abc1234', evidence: '1 filed, 2 skipped' } });
+  assert.equal(s.state.work[id].phase, 'done');
+});

@@ -154,3 +154,50 @@ test('a host stream also takes records on the branches it names, so Mutation wor
   assert.match(p['W-2'].reason, /sup: host with W-1/, 'waits for the host, never an sbx stream');
   assert.notEqual(p['W-3'].to, H);
 });
+
+import { scoutPlan, sentryCited } from '../core/scout.mjs';
+const SC = { maxProposals: 3, gapHours: 6, maxUntriaged: 5, projects: ['built', 'built-rails-eu'] };
+const scfg = { ...cfg, scout: SC };
+const NOW = '2026-11-09T12:00:00.000Z';
+const scout = (id, over = {}) => w(id, { kind: 'scout', phase: 'done', completion: { at: '2026-11-09T05:00:00.000Z' }, ...over });
+
+test('an idle stream with nothing to dispatch gets a Sentry scout that skips issues the board already cites', () => {
+  const works = [w('W-1', { phase: 'implementation' }), loose('W-2', { owner: null, phase: 'done', links: { sentry: 'https://builtapp.sentry.io/issues/6012345678/' }, updates: [{ text: 'Seen as BUILT-RAILS-EU-2K4 too' }] })];
+  const p = scoutPlan(works, autoDispatchPlan(works, scfg), scfg, NOW);
+  assert.equal(p.to, S2, 'the free stream, not the one building W-1');
+  assert.deepEqual([p.create.kind, p.create.owner, p.create.phase, p.create.title], ['scout', S2, 'ready', 'Sentry scout 2026-11-09 12:00Z']);
+  assert.match(p.create.objective, /6012345678, BUILT-RAILS-EU-2K4/);
+  assert.match(p.create.objective, /built, built-rails-eu/);
+  assert.match(p.create.objective, /at most 3/);
+  assert.match(p.create.objective, /actually broken and actually matters/);
+});
+
+test('no scout while work dispatches, a scout is open, the last closed under 6 h ago, or 5 of its proposals wait for triage', () => {
+  const none = (works, now = NOW) => scoutPlan(works, autoDispatchPlan(works, scfg), scfg, now).to;
+  assert.equal(none([w('W-1')]), undefined, 'a ready record takes the stream instead');
+  assert.equal(none([scout('W-1', { phase: 'queued' })]), undefined);
+  assert.equal(none([scout('W-1')], '2026-11-09T10:59:00.000Z'), undefined);
+  assert.equal(none([scout('W-1')]), S1);
+  const proposals = n => Array.from({ length: n }, (_, i) => loose(`W-${i + 2}`, { owner: null, phase: i % 2 ? 'intake' : 'proposed', proposedFrom: 'W-1' }));
+  assert.equal(none([scout('W-1'), ...proposals(5)]), undefined);
+  assert.equal(none([scout('W-1'), ...proposals(4)]), S1);
+});
+
+test('a host stream never scouts: scout work is built-rails', () => {
+  const H = 'sup: host';
+  const hcfg = { ...scfg, supervisors: { [H]: { repos: { x: '~/x' } }, [S1]: {} } };
+  const works = [w('W-1', { phase: 'implementation' })];
+  assert.equal(scoutPlan(works, autoDispatchPlan(works, hcfg), hcfg, NOW).to, undefined);
+});
+
+test('a running scout never holds its stream: real work dispatches to it', () => {
+  const one = { ...scfg, supervisors: { [S1]: {} } };
+  const running = scout('W-1', { phase: 'queued', completion: null, requests: [{ type: 'dispatch', ack: { outcome: 'received' } }], assignments: [{ id: 'R1', kind: 'discovery', status: 'started' }] });
+  const p = Object.fromEntries(autoDispatchPlan([running, w('W-2')], one).map(x => [x.id, x]));
+  assert.equal(p['W-2'].action, 'queue');
+  assert.equal(p['W-1'], undefined, 'the scout itself is left to finish');
+});
+
+test('Sentry citations: issue URLs in either form and short ids for the scanned projects', () => {
+  assert.deepEqual(sentryCited([{ title: 'BUILT-1A2 crash', objective: 'https://sentry.io/organizations/builtapp/issues/42/ and BUILT-IN things', links: {}, updates: [] }], SC.projects), ['42', 'BUILT-1A2']);
+});

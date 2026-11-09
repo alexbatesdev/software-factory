@@ -16,6 +16,25 @@ export function canTake(w, label, supervisors) {
   return supervisors[label]?.repos || supervisors[label]?.branches ? has(supervisors[label]) : !Object.values(supervisors).some(has);
 }
 
+// Work blocked on a person holds no stream (Alex: keep workers on unblocked work while a part waits), unless an agent is on it.
+const onAlex = w => w.openQuestions > 0 && !(w.assignments || []).some(a => ['started', 'blocked'].includes(a.status));
+// Work parked on a named blocker holds no stream either; once the blocker clears it resumes ahead of new work.
+const parkedOnly = w => (w.assignments || []).some(parked) && !(w.assignments || []).some(a => ['queued', 'started'].includes(a.status));
+// A Sentry scout never holds a stream either: real work always wins (Alex, 11-09); the scout just finishes.
+const holdsNone = w => w.kind === 'scout' || onAlex(w) || parkedOnly(w);
+// An internal review runs on the stream's own worker (Alex, 10-28), so it holds the stream; a reviewer pane's doesn't.
+const running = workers => w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => (a.kind !== 'review' || workers.has(a.owner)) && ['started', 'blocked'].includes(a.status));
+const workersOf = cfg => new Set(Object.values(cfg.supervisors || {}).map(s => s?.worker).filter(Boolean));
+
+/** Busy streams and what holds each: running work first, then queued assignments and unacked dispatches, then draining. */
+export function busyStreams(works, cfg) {
+  const labels = Object.keys(cfg.supervisors || {}), busy = new Map();
+  for (const pass of [running(workersOf(cfg)), active]) for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
+  // A draining stream (its worker is due a recycle) takes nothing new, priority work included.
+  for (const [to, why] of cfg.drain || []) busy.set(to, why);
+  return busy;
+}
+
 const worked = w => (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked', 'done'].includes(a.status));
 const STREAM_LOAD = ['queued', ...BUILDING, ...REVIEWING];
 
@@ -34,7 +53,7 @@ export function boundStream(w, byId, labels) {
 /** Load per stream: its records holding or waiting for its worker. */
 export function streamLoad(works, labels) {
   const load = Object.fromEntries(labels.map(l => [l, 0]));
-  for (const w of works) { const to = routeOf(w, labels); if (to && STREAM_LOAD.includes(w.phase)) load[to]++; }
+  for (const w of works) { const to = routeOf(w, labels); if (to && w.kind !== 'scout' && STREAM_LOAD.includes(w.phase)) load[to]++; }
   return load;
 }
 
@@ -46,22 +65,10 @@ export function streamLoad(works, labels) {
  */
 export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   const labels = Object.keys(cfg.supervisors || {});
-  const busy = new Map();
-  // Running work names the busy stream first; queued assignments and unacked dispatches still hold the slot.
-  // An internal review runs on the stream's own worker (Alex, 10-28), so it holds the stream; a reviewer pane's doesn't.
-  const workers = new Set(labels.map(l => cfg.supervisors[l]?.worker).filter(Boolean));
-  const running = w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => (a.kind !== 'review' || workers.has(a.owner)) && ['started', 'blocked'].includes(a.status));
-  // Work blocked on a person holds no stream (Alex: keep workers on unblocked work while a part waits), unless an agent is on it.
-  const onAlex = w => w.openQuestions > 0 && !(w.assignments || []).some(a => ['started', 'blocked'].includes(a.status));
-  // Work parked on a named blocker holds no stream either; once the blocker clears it resumes ahead of new work.
-  const parkedOnly = w => (w.assignments || []).some(parked) && !(w.assignments || []).some(a => ['queued', 'started'].includes(a.status));
-  const holdsNone = w => onAlex(w) || parkedOnly(w);
-  for (const pass of [running, active]) for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
-  // A draining stream (its worker is due a recycle) takes nothing new, priority work included.
-  for (const [to, why] of cfg.drain || []) busy.set(to, why);
+  const busy = busyStreams(works, cfg), workers = workersOf(cfg), isRunning = running(workers);
   // Priority work (priority 1) cuts in behind whatever a stream is running, ahead of anything queued there.
   const runningOn = new Map();
-  for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && running(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
+  for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && isRunning(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
   for (const [to, why] of cfg.drain || []) runningOn.set(to, why);
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
   for (const w of works.filter(parkedOnly)) {

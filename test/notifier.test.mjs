@@ -82,6 +82,8 @@ test('a stream left idle with an acked, queued assignment wakes its supervisor o
   assert.deepEqual(plan(plan({}, {}, T0, u('done', 'blocked')).watch, {}, T0 + 301000, u('done', 'blocked')).due, [], 'the worker is at a dialog');
   const running = { ...works, 'W-32': { id: 'W-32', stream: SUP, assignments: [{ id: 'R3', kind: 'fixes', status: 'started' }] } };
   assert.deepEqual(plan(plan({}, {}, T0, u('done', 'done'), running).watch, {}, T0 + 301000, u('done', 'done'), running).due, [], 'the stream has started work');
+  const scouting = { ...works, 'W-40': { id: 'W-40', kind: 'scout', stream: SUP, assignments: [{ id: 'R1', kind: 'discovery', status: 'started' }] } };
+  assert.deepEqual(plan(plan({}, {}, T0, u('done', 'done'), scouting).watch, {}, T0 + 301000, u('done', 'done'), scouting).due.map(d => d.work), ['W-111'], 'a running scout never holds the stream');
   const parked = { ...works, 'W-32': { id: 'W-32', stream: SUP, assignments: [{ id: 'R5', kind: 'fixes', status: 'blocked' }] } };
   assert.equal(plan(plan({}, {}, T0, u('done', 'done'), parked).watch, {}, T0 + 301000, u('done', 'done'), parked).due.length, 1, 'work blocked on a person does not hold the stream');
 });
