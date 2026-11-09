@@ -19,7 +19,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
-import { mergeCloses, holdReleases } from '../core/units.mjs';
+import { mergeCloses, holdReleases, questionHolds } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen, readCompare } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
@@ -225,6 +225,20 @@ function holdTick() {
       ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: ${pr} merged, so its hold is released. Re-triage it.` } }] : [])], 'poller (hold)');
 }
 
+// A record held on a question is released when Alex answers it; one closed unanswered goes back to the board lead.
+function questionHoldTick() {
+  const lead = Object.entries(config.roles || {}).find(([, r]) => r === 'board-lead')?.[0];
+  const { released, closed } = questionHolds(store.state.work, store.state.questions);
+  for (const { id, question } of closed) {
+    const key = `${id}/${question}`;
+    if (lead && !Object.values(store.state.messages).some(m => m.about?.holdClosed === key))
+      apply([{ kind: 'message', payload: { to: lead, work: id, about: { holdClosed: key }, text: `[software factory, automated, not Alex] ${id}: ${question} was closed without an answer, so its hold will never release. Re-point it (triage untilAnswered: the question that replaced it) or re-triage.` } }], 'board (hold)');
+  }
+  for (const { id, question } of released)
+    apply([{ kind: 'event', target: id, payload: { type: 'hold_released', question } },
+      ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: Alex answered ${question}, so its hold is released. Re-triage it.` } }] : [])], 'board (hold)');
+}
+
 // A trusted review of someone else's PR finishes on Alex's own submitted review, or the PR closing first.
 async function alexReviewTick() {
   for (const w of Object.values(store.state.work).filter(x => x.reviews?.some(r => r.forAlex) && !TERMINAL.includes(x.phase) && x.links?.pr)) {
@@ -360,6 +374,7 @@ await fleetTick();
 every(config.poll.fleetMs, fleetTick);
 every(config.notify?.intervalMs ?? 15000, inboxTick);
 every(config.notify?.intervalMs ?? 15000, readyTick);
+every(config.notify?.intervalMs ?? 15000, questionHoldTick);
 every(config.poll.githubMs, githubTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);

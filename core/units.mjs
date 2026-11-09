@@ -65,3 +65,10 @@ export function holdReleases(works, owner, prState = () => null) {
   return { urls: [...new Set(holds.map(h => h.url))], released: holds.filter(h => prState(h.url) === 'MERGED').map(({ id, pr }) => ({ id, pr })),
     closed: holds.filter(h => prState(h.url) === 'CLOSED').map(({ id, pr }) => ({ id, pr })) };
 }
+
+/** Question holds (Alex, 11-09): the {id, question} holds whose question Alex answered (`released`) or that closed unanswered (`closed`). */
+export function questionHolds(works, questions) {
+  const holds = Object.values(works).filter(w => !TERMINAL.includes(w.phase)).flatMap(w => (w.externalDeps || []).filter(d => d.question).map(d => ({ id: w.id, question: d.question })));
+  const status = h => questions[h.question]?.status;
+  return { released: holds.filter(h => ['answered', 'settled'].includes(status(h))), closed: holds.filter(h => status(h) === 'superseded') };
+}

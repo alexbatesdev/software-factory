@@ -94,3 +94,16 @@ test('a card shows what the exit report says is unverified, and nothing when it 
   report('nothing.');
   assert.equal(card(s, 'W-1').unverified, null);
 });
+
+test('a record held on an open question waits on Alex, not in Parked', async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:'), c = { now: '2026-11-09T21:00:00.000Z', by: 'test' };
+  s.append({ kind: 'create', payload: { title: 'Decide the rule' } }, c);
+  s.append({ kind: 'ask', payload: { title: 'Read access on every req?', options: [], work: 'W-1', wwbd: 'none' } }, { ...c, by: 'sup: stream-1' });
+  s.append({ kind: 'create', payload: { title: 'Five more mutations' } }, c);
+  s.append({ kind: 'sync_intake', target: 'W-2', payload: { bucket: 'intake', note: 'Held on TB-1' } }, c);
+  s.append({ kind: 'event', target: 'W-2', payload: { type: 'hold', questions: ['TB-1'] } }, c);
+  const card = boardView(s.state).find(x => x.id === 'W-2');
+  assert.equal(card.heldOn, 'TB-1');
+  assert.deepEqual(card.waiting, { who: 'you', text: 'Waiting on you: TB-1 (Read access on every req?)' });
+});

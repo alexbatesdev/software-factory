@@ -73,3 +73,13 @@ test('a merge hold is released when its PR merges, and only then', () => {
   assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'CLOSED').released, []);
   assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'CLOSED').closed, [{ id: 'W-1', pr: '#8606' }], 'a PR closed unmerged is reported, never released');
 });
+
+import { questionHolds } from '../core/units.mjs';
+test('a question hold is released when Alex answers, and reported (never released) when the question is closed unanswered', () => {
+  const ws = { 'W-1': { id: 'W-1', phase: 'intake', externalDeps: [{ question: 'TB-7' }] }, 'W-2': { id: 'W-2', phase: 'intake', externalDeps: [{ question: 'TB-8' }] } };
+  const qs = status => ({ 'TB-7': { status }, 'TB-8': { status: 'open' } });
+  assert.deepEqual(questionHolds(ws, qs('answered')).released, [{ id: 'W-1', question: 'TB-7' }]);
+  assert.deepEqual(questionHolds(ws, qs('open')).released, []);
+  assert.deepEqual(questionHolds(ws, qs('superseded')).closed, [{ id: 'W-1', question: 'TB-7' }]);
+  assert.deepEqual(questionHolds(ws, qs('superseded')).released, []);
+});

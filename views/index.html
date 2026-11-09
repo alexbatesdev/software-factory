@@ -94,6 +94,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
 // Support work that isn't finished is always on top, never folded away (Alex's support week).
 const tierOf = c => c.support && c.category !== 'history' ? 'support'
+  : c.heldOn ? 'you'
   : c.category === 'parked' ? 'parked' : c.category === 'history' ? 'done'
   : c.needs?.me || c.waiting?.who === 'you' ? 'you'
   : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others' : 'factory';
@@ -156,7 +157,7 @@ async function render() {
     const c = byId.get(q.work), key = q.support ? 'Support' : q.project || c?.project || 'Not on a project yet';
     groups.set(key, [...(groups.get(key) || []), q.id]);
   }
-  const extra = b.cards.filter(c => tierOf(c) === 'you' && !b.questions.some(q => q.work === c.id));
+  const extra = b.cards.filter(c => tierOf(c) === 'you' && !c.heldOn && !b.questions.some(q => q.work === c.id));
   if (extra.length) groups.set('Cards without a question', extra.map(c => c.id));
   const total = b.questions.length + extra.length;
   document.getElementById('youCount').textContent = total;

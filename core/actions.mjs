@@ -56,7 +56,10 @@ const BUILD = {
     // W-292: a hold "until #N merges" is structured, so the poller can release it.
     const prs = a.untilMerged ? String(a.untilMerged).split(/[\s,]+/).filter(Boolean) : [];
     if (prs.some(p => !/^#\d+$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(p))) fail('untilMerged takes PRs as #N or PR URLs.');
-    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(prs.length ? [ev(a.work, { type: 'hold', prs })] : [])];
+    // A hold on a question (Alex, 11-09) shows on his list and releases when he answers.
+    const questions = a.untilAnswered ? String(a.untilAnswered).split(/[\s,]+/).filter(Boolean) : [];
+    if (questions.some(q => !/^TB-\d+$/.test(q))) fail('untilAnswered takes questions as TB-n.');
+    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(prs.length ? [ev(a.work, { type: 'hold', prs })] : []), ...(questions.length ? [ev(a.work, { type: 'hold', questions })] : [])];
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   resolve_thread: a => [{ kind: 'thread_request', payload: { work: a.work, threadId: a.threadId, url: a.url, reviewer: a.reviewer, ask: a.ask, resolution: a.resolution } }],

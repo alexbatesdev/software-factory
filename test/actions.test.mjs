@@ -67,3 +67,16 @@ test('a question names the WWBD passage it checked, or that none applies, and ke
   const [c] = commandsFor('ask', { title: 'Which rule?', promptedBy: 'x', wwbd: 'no passage applies: a product rule' });
   assert.equal(c.payload.wwbd, 'no passage applies: a product rule');
 });
+
+test('triage untilAnswered holds the record on a question, and the release clears only that hold', async () => {
+  const { applyEvent, createWork } = await import('../core/work.mjs');
+  const cs = commandsFor('triage', { work: 'W-1', bucket: 'intake', note: 'held', untilAnswered: 'TB-176' });
+  assert.deepEqual(cs.at(-1).payload, { type: 'hold', questions: ['TB-176'] });
+  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'intake', untilAnswered: 'the ATS question' }), /untilAnswered/);
+  const c = { now: '2026-11-09T21:00:00.000Z', by: 'board lead' };
+  let w = applyEvent(createWork({ id: 'W-1', title: 'x' }, c), { type: 'hold', prs: ['#1'] }, c).work;
+  w = applyEvent(w, { type: 'hold', questions: ['TB-176'] }, c).work;
+  assert.deepEqual(w.externalDeps.map(d => d.ref), ['#1', 'TB-176']);
+  w = applyEvent(w, { type: 'hold_released', question: 'TB-176' }, c).work;
+  assert.deepEqual(w.externalDeps.map(d => d.ref), ['#1']);
+});

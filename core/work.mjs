@@ -729,6 +729,12 @@ export function applyEvent(work, e, ctx) {
       break;
     }
     case 'hold': {
+      if (e.questions?.length) {
+        const add = e.questions.filter(q => !w.externalDeps.some(d => d.question === q));
+        w.externalDeps = [...w.externalDeps, ...add.map(q => ({ ref: q, question: q, text: `Alex answers ${q}` }))];
+        note(w, ctx, `Held until Alex answers ${e.questions.join(', ')}.`);
+        break;
+      }
       if (!e.prs?.length) fail('A hold needs PRs.');
       const add = e.prs.filter(pr => !w.externalDeps.some(d => d.pr === pr));
       w.externalDeps = [...w.externalDeps, ...add.map(pr => ({ ref: pr, pr, text: `${pr} merges` }))];
@@ -736,6 +742,7 @@ export function applyEvent(work, e, ctx) {
       break;
     }
     case 'hold_released':
+      if (e.question) { w.externalDeps = w.externalDeps.filter(d => d.question !== e.question); note(w, ctx, `Alex answered ${e.question}, so its hold is released.`); break; }
       w.externalDeps = w.externalDeps.filter(d => d.pr !== e.pr);
       note(w, ctx, `${e.pr} merged, so its hold is released.`);
       break;
