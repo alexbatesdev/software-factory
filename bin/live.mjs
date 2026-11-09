@@ -108,7 +108,8 @@ function autoDispatchTick() {
   }
   // Nothing to dispatch and a stream free: send it scouting Sentry (Alex, 11-09). Next tick dispatches the record.
   const scout = scoutPlan(views, plan, { supervisors: config.routing.supervisors, drain, scout: config.scout }, now());
-  if (scout.create) try { const { id } = store.append({ kind: 'create', payload: scout.create }, by('board (scout)')); log(`scout ${id} for ${scout.to}`); } catch (e) { log(`scout refused: ${e.message}`); }
+  if (!scout.create) once(`scout: ${scout.reason}`);
+  else try { const { id } = store.append({ kind: 'create', payload: scout.create }, by('board (scout)')); log(`scout ${id} for ${scout.to}`); } catch (e) { log(`scout refused: ${e.message}`); }
 }
 
 async function inboxTick() {
