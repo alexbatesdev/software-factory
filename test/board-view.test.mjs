@@ -227,3 +227,14 @@ test('a stale GitHub read never shows a PR as ready to merge (W-317 phase 4)', a
   assert.equal(v(at - 20 * 60000).section, 'others');
   assert.match(v(at - 20 * 60000).waiting.text, /not ready to merge: GitHub not read since/);
 });
+
+test('a task folded into a ready PR unit is not a second Ready to merge card (review of b7b5392)', async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/builtforteams/built-rails/pull/8641';
+  const unit = s.append({ kind: 'create', payload: { title: 'Unit', source: { type: 'pr', key: 'built-rails-8641' }, links: { pr: PR } } }, c).id;
+  const task = s.append({ kind: 'create', payload: { title: 'Task', links: { pr: PR } } }, c).id;
+  for (const id of [unit, task]) s.state.work[id].phase = 'awaiting_human_approval';
+  const prs = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0 }]]);
+  const v = boardView(s.state, { prs });
+  assert.equal(v.filter(x => [unit, task].includes(x.id) && x.section === 'merge' && x.category !== 'in-unit').length, 1);
+  assert.notEqual(v.find(x => x.id === task && x.category === 'in-unit')?.section, 'merge', 'the folded member stays folded');
+});

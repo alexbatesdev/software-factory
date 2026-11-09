@@ -96,7 +96,7 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 // The server decides each card's section (views/board.mjs sectionOf).
 const tierOf = c => c.section;
 // Cards folded into a PR's card show only when they need Alex; otherwise the PR's card speaks for them.
-const shown = (c, order) => order.includes(c.category) || ['you', 'support', 'merge'].includes(tierOf(c));
+const shown = (c, order) => order.includes(c.category) || ['you', 'support'].includes(tierOf(c));
 const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['merge', 'Ready to merge (final QA is yours)'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['parked', 'Parked'], ['done', 'Done or closed']];
 // Folded sections, each opened on its own; the open state survives the 15s redraw.
 const FOLDED = ['parked', 'done'], unfolded = new Set();
