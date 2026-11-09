@@ -99,7 +99,7 @@ const tierOf = c => c.support && c.category !== 'history' ? 'support'
   : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others' : 'factory';
 // Cards folded into a PR's card show only when they need Alex; otherwise the PR's card speaks for them.
 const shown = (c, order) => order.includes(c.category) || ['you', 'support'].includes(tierOf(c));
-const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['parked', 'Parked: to unpark someday'], ['done', 'Done or closed']];
+const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['parked', 'Parked'], ['done', 'Done or closed']];
 // Folded sections, each opened on its own; the open state survives the 15s redraw.
 const FOLDED = ['parked', 'done'], unfolded = new Set();
 
