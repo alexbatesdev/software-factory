@@ -30,11 +30,13 @@ function needsOf(w, open) {
   return { me, triage, delivery };
 }
 
-function labelOf(w, view) {
+function labelOf(w, view, open = []) {
   if (view === 'next' && w.currentAssignment?.status === 'queued') return `Queued for ${w.currentAssignment.kind} · ${w.currentAssignment.id}`;
   const [type, label] = REQUESTED[w.phase] || [];
   const active = (w.liveAssignments || []).find(a => ['started', 'blocked'].includes(a.status));
   if (active) return active.status === 'blocked' ? `Blocked · ${active.id}` : active.kind === 'review' ? `Independent review running · ${active.id}` : PHASE_LABEL[w.phase] || w.phase;
+  // A clean review the ready gate holds back only for open questions (W-225): say which, not "In review".
+  if (open.length && W.REVIEWING.includes(w.phase) && W.gate(w, { openQuestions: 0, openDeps: w.openDeps }).ok) return `Waiting on ${open[0].id}`;
   const r = w.phaseRequest;
   if (type === 'review' && w.reviews.some(x => x.head === w.head)) return PHASE_LABEL[w.phase];
   if (r && !r.ack) return `${label} · ${r.delivery === 'written' ? 'supervisor not notified' : r.delivery}`;
@@ -65,7 +67,7 @@ export function statusOf(w, { questions = [], rec = {}, item = null, held = fals
   // A PR unit with no lifecycle of its own (the poll just made its record) shows where its lead task is: the lifecycle
   // was recorded on that task, so it's the one source. A unit with its own phase, assignments or reviews keeps its own.
   const hollow = group.isUnit && group.lead && W.PRE_QUEUE.includes(w.phase) && !(w.assignments || []).length && !(w.reviews || []).length;
-  const label = hollow ? `${group.lead.label} · ${group.lead.id}` : labelOf(w, view);
+  const label = hollow ? `${group.lead.label} · ${group.lead.id}` : labelOf(w, view, open);
   const waiting = hollow ? (group.lead.waiting ? { ...group.lead.waiting, text: `${group.lead.id}: ${group.lead.waiting.text}` } : null) : waitingOn(w, { questions });
   return { needs, view, label, waiting, category: c.category, categoryReason: c.reason, categoryDerived: c.derived,
     triageable: needs.triage && !needs.me && !triageSkip, triageSkip };

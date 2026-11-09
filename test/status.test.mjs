@@ -69,3 +69,12 @@ test('a stream pane parked at a dialog while the record has started work reaches
   assert.equal(s.waiting.who, 'you');
   assert.match(s.waiting.text, /sbx: stream-conf-stack is waiting at a prompt/);
 });
+
+test('a record whose clean review is held only by an open question is labelled by that question, not "In review"', () => {
+  const clean = { phase: 'review', head: 'abc1234', headVerified: { sha: 'abc1234' }, reviews: [{ head: 'abc1234', result: 'clean' }], findings: [], checks: [], links: { pr: 'https://github.com/o/r/pull/1' } };
+  const q = { id: 'TB-189', title: 'Which approach?', status: 'open', verification: 'verified' };
+  const s = statusOf(base(clean), { questions: [q] });
+  assert.equal(s.label, 'Waiting on TB-189');
+  assert.equal(s.waiting.who, 'you');
+  assert.equal(statusOf(base({ ...clean, findings: [{ status: 'open' }] }), { questions: [q] }).label, 'In review', 'open findings also block it, so the question is not the whole story');
+});
