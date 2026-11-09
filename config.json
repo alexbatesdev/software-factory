@@ -127,14 +127,14 @@
         "expect": "live.mjs"
       },
       {
-        "label": "local-head",
+        "label": "local-head", "stays": true,
         "kind": "claude",
         "role": "local-head",
         "workspace": "Main",
         "tab": "Local head"
       },
       {
-        "label": "triage board worker",
+        "label": "triage board worker", "stays": true,
         "kind": "claude",
         "role": "board-developer",
         "workspace": "Main",
@@ -155,14 +155,14 @@
         "tab": "Factory"
       },
       {
-        "label": "agent-unblocker",
+        "label": "agent-unblocker", "stays": true,
         "kind": "codex",
         "resume": "01a135e3-f926-7140-956a-32527db91cf6",
         "workspace": "Main",
         "tab": "Agent Unblocker"
       },
       {
-        "label": "script: blocked-alert",
+        "label": "script: blocked-alert", "stays": true,
         "kind": "shell",
         "workspace": "Main",
         "tab": "Agent Unblocker",

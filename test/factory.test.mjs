@@ -6,8 +6,8 @@ const config = {
   routing: { supervisors: { 'sup: s1': { workspace: 'Stream 1', worker: 'sbx: s1' } } },
   factory: { seats: [
     { label: 'board', kind: 'shell', workspace: 'Terminals', tab: 'Triage board', run: './start.sh', expect: 'server.mjs' },
-    { label: 'local-head', kind: 'claude', role: 'local-head', workspace: 'Main', tab: 'Local head' },
-    { label: 'unblocker', kind: 'codex', resume: 'abc', workspace: 'Main', tab: 'Agent Unblocker' },
+    { label: 'local-head', kind: 'claude', role: 'local-head', workspace: 'Main', tab: 'Local head', stays: true },
+    { label: 'unblocker', kind: 'codex', resume: 'abc', workspace: 'Main', tab: 'Agent Unblocker', stays: true },
     { label: 'router', kind: 'claude', role: 'questions-router', workspace: 'Main', tab: 'Assistants', enabled: false },
   ] },
 };
@@ -43,19 +43,20 @@ test('a seat found outside its workspace is reported, not moved or restarted', (
   assert.equal(actionsOf(plan)['local-head'], 'report-misplaced');
 });
 
-test('tear-down stops workers first and the board server last, skips what is stopped, and keeps local-head unless asked', () => {
+test('tear-down stops workers first and the board server last, skips what is stopped, and keeps the seats marked stays unless asked for all', () => {
   const seats = [{ label: 'server', kind: 'shell', expect: 'live.mjs' }, ...seatsOf(config)];
   const panes = [
     pane('server', 'Services', 'Board', 'node bin/live.mjs'),
     pane('local-head', 'Main', 'Local head', 'claude --agent local-head'),
-    pane('unblocker', 'Main', 'Agent Unblocker', 'zsh'),
+    pane('unblocker', 'Main', 'Agent Unblocker', 'codex resume abc'),
     pane('sup: s1', 'Stream 1', 'Orchestrator', 'claude --agent stream-supervisor'),
     pane('sbx: s1', 'Stream 1', 'Worker', 'sbx exec -it s1 claude'),
   ];
   const order = s => s.map(x => [x.seat.label, x.action]);
   assert.deepEqual(order(planStop(seats, panes, { serverLabel: 'server' })),
-    [['sbx: s1', 'stop'], ['sup: s1', 'stop'], ['board', 'skip-missing'], ['unblocker', 'skip-stopped'], ['server', 'stop']]);
-  assert.equal(planStop(seats, panes, { serverLabel: 'server', withLocalHead: true }).at(-1).seat.label, 'local-head');
+    [['sbx: s1', 'stop'], ['sup: s1', 'stop'], ['board', 'skip-missing'], ['server', 'stop']]);
+  const all = order(planStop(seats, panes, { serverLabel: 'server', all: true }));
+  assert.deepEqual([all.find(([l]) => l === 'unblocker'), all.at(-1)], [['unblocker', 'stop'], ['local-head', 'stop']]);
 });
 
 test('a seat still under its old label is found, stopped and relabelled, never doubled', () => {

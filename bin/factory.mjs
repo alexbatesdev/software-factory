@@ -2,7 +2,7 @@
 // The software factory's seats. Run from a Terminals shell, outside the factory:
 //   node bin/factory.mjs                         show each seat and what `up` would do
 //   node bin/factory.mjs up                      sync skills and standards, then start what's stopped, create what's missing (never restarts a running pane)
-//   node bin/factory.mjs down [--with-local-head] [--yes]   stop every seat's process, keep its pane for `up`
+//   node bin/factory.mjs down [--all] [--yes]    stop every seat's process except those marked stays (--all: those too), keep its pane for `up`
 //   node bin/factory.mjs rename                  with the server down: move the board's records to routing.renamed's new labels
 import fs from 'node:fs';
 import os from 'node:os';
@@ -97,7 +97,7 @@ async function up(apply) {
 async function down() {
   const seen = await observe();
   await remember(seen);
-  const plan = planStop(seats, seen.panes, { serverLabel, withLocalHead: flags.includes('--with-local-head') });
+  const plan = planStop(seats, seen.panes, { serverLabel, all: flags.includes('--all') || flags.includes('--with-local-head') });
   const status = l => seen.panes.find(p => p.label === l)?.status || '-';
   for (const s of plan) console.log(`${s.action.padEnd(14)} ${s.seat.label.padEnd(28)} ${s.seat.kind.padEnd(6)} ${status(s.seat.label)}`);
   const busy = plan.filter(s => s.action === 'stop' && status(s.seat.label) === 'working').map(s => s.seat.label);
@@ -112,7 +112,7 @@ async function down() {
     if (s.seat.kind === 'shell') await herdr('pane', 'send-keys', s.pane, 'ctrl+c');
     else { await herdr('pane', 'send-keys', s.pane, 'esc'); await pause(1000); await herdr('pane', 'send-text', s.pane, s.seat.kind === 'codex' ? '/quit' : '/exit'); await herdr('pane', 'send-keys', s.pane, 'enter'); }
     let stopped = false;
-    for (let i = 0; i < 30 && !stopped; i++) { await pause(1000); stopped = planStop([s.seat], [{ pane: s.pane, label: s.seat.label, argv: await argvOf(s.pane) }], { withLocalHead: true })[0].action !== 'stop'; }
+    for (let i = 0; i < 30 && !stopped; i++) { await pause(1000); stopped = planStop([s.seat], [{ pane: s.pane, label: s.seat.label, argv: await argvOf(s.pane) }], { all: true })[0].action !== 'stop'; }
     console.log(`${stopped ? 'stopped' : 'STILL UP'.padEnd(7)} ${s.seat.label}${stopped ? '' : ' (look for a dialog in its pane)'}`);
     if (!stopped) failed.push(s.seat.label);
   }
