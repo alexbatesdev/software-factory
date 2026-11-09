@@ -780,7 +780,9 @@ export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
 export function observeHealth(work, { head, conflict, failing = [], changesRequested = [], threads = [], comments = [], mainGreen = null }, ctx) {
-  if (TERMINAL.includes(work.phase) || !head || !sameSha(head, work.head)) return work;
+  const atHead = !!head && sameSha(head, work.head);
+  if (TERMINAL.includes(work.phase) || !head || (!atHead && ctx.now < FEEDBACK_ANY_HEAD_FROM)) return work;
+  if (!atHead) { conflict = false; failing = []; mainGreen = null; } // CI and conflicts are judged at the record's head only
   const seen = type => (work.findings || []).some(f => f.source?.type === type && sameSha(f.source.head, head));
   const fresh = [conflict && 'conflict', failing.length && 'ci'].filter(t => t && !seen(t));
   // Reviewer feedback (W-207) is news once per review and per thread, whatever the head.
@@ -865,6 +867,8 @@ const FINDINGS_FOLLOW_HEAD_FROM = '2026-11-05T22:00:00.000Z';
 const FEEDBACK_NO_CHANGE_FROM = '2026-11-05T22:30:00.000Z';
 // W-210: a clean review settles open review findings recorded at its own head as well as earlier ones.
 const SAME_HEAD_CLEAN_FROM = '2026-11-05T22:45:00.000Z';
+// From here reviewer feedback lands even before the record learns GitHub's newer head (#8640 waited on its report).
+const FEEDBACK_ANY_HEAD_FROM = '2026-11-09T20:00:00.000Z';
 const HEAL_WAIVER_FROM = '2026-11-06T21:18:00.000Z';
 const DECLINE_SETTLES_FROM = '2026-11-06T20:38:00.000Z';
 /** Fixes with nothing pending strands a record: queue the request unless one is already open for this head. */

@@ -634,6 +634,16 @@ test('a reviewer asking for changes or opening threads on a tracked PR reopens i
   assert.equal(observeHealth(w, { head: H, conflict: false, failing: [] }, ctx()), w, 'a read with no review data changes nothing (older rows)');
 });
 
+test("reviewer feedback is news even while GitHub's head is ahead of the record's; CI and conflicts still wait for the head (#8640, W-285)", () => {
+  const H = 'aaaaaaa1', NEW = 'bbbbbbb2', after = ctx({ now: '2026-11-10T00:00:00.000Z' });
+  let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
+  const read = { head: NEW, conflict: true, failing: ['ci/circleci: test'], changesRequested: [], threads: [{ id: 'T9', by: 'jmcdonald-ut', url: 'u' }], comments: [{ id: 'PRR_9', by: 'jmcdonald-ut', url: 'u2' }] };
+  const fb = observeHealth(w, read, after);
+  assert.deepEqual(fb.findings.map(f => f.source.type).sort(), ['comments', 'threads']);
+  assert.equal(observeHealth(w, read, ctx({ now: '2026-11-09T00:00:00.000Z' })), w, 'rows logged before the change replay as before');
+});
+
 test('W-160 shape: findings given as plain text keep their text, and a later clean review at the same head settles them', () => {
   const H = 'aaaaaaa1', later = ctx({ now: '2026-11-06T00:00:00.000Z' });
   let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
