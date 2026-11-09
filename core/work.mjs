@@ -698,7 +698,9 @@ export function applyEvent(work, e, ctx) {
     case 'withdraw': {
       // Work that shouldn't be on the board at all (filed by mistake, or a rule moved it off), before anyone started it.
       if (!e.note) fail('Withdrawing needs the reason.');
-      if (TERMINAL.includes(w.phase) || (w.assignments || []).length) fail(`${w.id} has started or finished; it can't be withdrawn.`);
+      // From WITHDRAW_CANCELLED_FROM, work whose every assignment was cancelled and that has no PR is withdrawable too (W-298).
+      const onlyCancelled = ctx.now >= WITHDRAW_CANCELLED_FROM && !w.links?.pr && (w.assignments || []).every(a => a.status === 'cancelled');
+      if (TERMINAL.includes(w.phase) || ((w.assignments || []).length && !onlyCancelled)) fail(`${w.id} has started or finished; it can't be withdrawn.`);
       w.phase = 'cancelled';
       w.completion = { withdrawn: e.note, at: ctx.now, by: ctx.by };
       note(w, ctx, `Withdrawn: ${e.note}`);
@@ -891,6 +893,7 @@ const FEEDBACK_NO_CHANGE_FROM = '2026-11-05T22:30:00.000Z';
 // W-210: a clean review settles open review findings recorded at its own head as well as earlier ones.
 const SAME_HEAD_CLEAN_FROM = '2026-11-05T22:45:00.000Z';
 // From here reviewer feedback lands even before the record learns GitHub's newer head (#8640 waited on its report).
+const WITHDRAW_CANCELLED_FROM = '2026-11-09T22:00:00.000Z';
 const FEEDBACK_ANY_HEAD_FROM = '2026-11-09T20:00:00.000Z';
 const HEAL_WAIVER_FROM = '2026-11-06T21:18:00.000Z';
 const DECLINE_SETTLES_FROM = '2026-11-06T20:38:00.000Z';

@@ -767,3 +767,13 @@ test('Alex approving a new PR records it on the record once; a record that alrea
   assert.throws(() => applyEvent(ok, { type: 'pr_approved' }, ctx()), /already approved/);
   assert.throws(() => applyEvent(build({ links: { pr: PR } }), { type: 'pr_approved' }, ctx()), /already has its PR/);
 });
+
+test("a record whose only work was cancelled, with no PR, can still be withdrawn (W-298: Alex chose status quo after R1 was cancelled)", () => {
+  let w = run(build(), { type: 'assign', assignmentId: 'R1', kind: 'implementation', owner: 'sup: s', status: 'started', evidence: 'x' });
+  w = run(w, { type: 'cancel_assignment', assignmentId: 'R1', expectedVersion: 1, evidence: 'Alex: status quo (TB-195 d)' });
+  const later = ctx({ now: '2026-11-10T00:00:00.000Z' });
+  assert.equal(applyEvent(w, { type: 'withdraw', note: "Won't build: TB-195 d" }, later).work.phase, 'cancelled');
+  assert.throws(() => applyEvent(w, { type: 'withdraw', note: 'x' }, ctx({ now: '2026-11-09T00:00:00.000Z' })), /can't be withdrawn/, 'rows logged before the change replay as before');
+  const done = run(build(), { type: 'assign', assignmentId: 'R1', kind: 'implementation', owner: 'sup: s', status: 'started', evidence: 'x' });
+  assert.throws(() => applyEvent(done, { type: 'withdraw', note: 'x' }, later), /can't be withdrawn/, 'live work still can not');
+});
