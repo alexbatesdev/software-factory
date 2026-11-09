@@ -30,7 +30,7 @@ export function projectPrs(lines, own = null) {
 }
 
 /** Projected Teamwork tasks → Map(tw-id → task item). An epic (undated, top-level, with subtasks listed) is not work. */
-export function projectTasks(tasks, site) {
+export function projectTasks(tasks, site, supportProjects = []) {
   const parents = new Set(tasks.map(t => t.parentTaskId).filter(Boolean));
   const out = new Map();
   for (const t of tasks) {
@@ -39,6 +39,7 @@ export function projectTasks(tasks, site) {
       id: `tw-${t.id}`, kind: 'task', ref: String(t.id), title: t.name, status: t.status, due: t.dueDate,
       url: `https://${String(site || 'teamwork.invalid').replace(/^https?:\/\//, '')}/app/tasks/${t.id}`,
       description: stripHtml(t.description), parentTaskId: t.parentTaskId, updatedAt: t.updatedAt,
+      ...(supportProjects.includes(t.projectId) ? { support: true } : {}),
     });
   }
   return out;

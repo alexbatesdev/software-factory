@@ -6,6 +6,7 @@ import { commandsFor } from './actions.mjs';
 import { readFileSync } from 'node:fs';
 import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
+import { supportOf } from './store.mjs';
 import { escapes, needsPrApproval } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -82,12 +83,12 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (req.method === 'GET' && url.pathname === '/api/board') {
         const s = store.state, inbox = {};
         for (const m of Object.values(s.messages)) if (!m.ackedAt) inbox[m.to] = (inbox[m.to] || 0) + 1;
-        const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend, amendments }) => ({ id, title, work, recommend, amendments: amendments || [] }));
+        const questions = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(reachesAlex).map(({ id, title, work, recommend, amendments }) => ({ id, title, work, recommend, amendments: amendments || [], support: supportOf(s, work) }));
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
-          newPrs: Object.values(s.work).filter(w => ['ready', 'queued'].includes(w.phase) && needsPrApproval(w, config.prApproval)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null })),
-          threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null })),
-          drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }) });
+          newPrs: Object.values(s.work).filter(w => ['ready', 'queued'].includes(w.phase) && needsPrApproval(w, config.prApproval)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null, support: supportOf(s, w.id) })),
+          threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
+          drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }).map(c => ({ ...c, support: supportOf(s, c.id) })) });
       }
       if (req.method === 'GET' && url.pathname === '/api/escapes') {
         const items = Object.values(store.state.work).flatMap(escapes), count = k => items.reduce((m, e) => ({ ...m, [e[k]]: (m[e[k]] || 0) + 1 }), {});

@@ -37,7 +37,9 @@ export async function readTasks() {
   const tw = new TeamworkClient({ site: process.env.TEAMWORK_SITE, apiKey: process.env.TEAMWORK_API_KEY });
   const me = await tw.getCurrentUser();
   const { tasks, users } = await tw.listTasksAssignedTo(me.id);
-  return tasks.map(t => projectTask(t, users));
+  const lists = [...new Set(tasks.map(t => t.tasklistId).filter(Boolean))];
+  const projectOf = new Map(lists.length ? (await tw.get(`/projects/api/v3/tasklists.json?ids=${lists.join(',')}&pageSize=500`)).tasklists.map(l => [l.id, l.projectId]) : []);
+  return tasks.map(t => ({ ...projectTask(t, users), projectId: projectOf.get(t.tasklistId) ?? null }));
 }
 
 // Teamwork Sync's mirror of a GitHub event ("**login** submitted a review to the PR: ... github.com/.../pull/n"): GitHub is read directly.

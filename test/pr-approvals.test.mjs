@@ -35,3 +35,23 @@ test('a new PR nobody asked for is Alex\'s click on the dashboard: listed, unass
     assert.deepEqual((await f.board()).newPrs, []);
   } finally { f.close(); }
 });
+
+test('support work glows everywhere it shows: its card, questions, threads and new PRs, and records filed from it inherit it', async () => {
+  const { supportOf } = await import('../core/store.mjs');
+  const store = openStore(':memory:', { supervisors: [S1] }), c = { now: T, by: 'test' };
+  store.append({ kind: 'observe_source', payload: { id: 'tw-5', kind: 'task', ref: '5', title: 'Carrix | INVESTIGATE', url: 'u', description: 'd', support: true } }, c);
+  store.append({ kind: 'event', target: 'W-1', payload: { type: 'discovery', text: 'A find while investigating', objective: 'x' } }, c);
+  const kid = Object.values(store.state.work).find(w => w.proposedFrom === 'W-1');
+  assert.deepEqual([supportOf(store.state, 'W-1'), supportOf(store.state, kid.id)], [true, true]);
+  store.append({ kind: 'create', payload: { title: 'Ordinary' } }, c);
+  assert.equal(supportOf(store.state, 'W-3'), false);
+  store.append({ kind: 'ask', payload: { title: 'Which customer?', options: [], work: 'W-1', wwbd: 'none' } }, { ...c, by: S1 });
+  const server = http.createServer(createApi({ store, config, now: () => T }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  try {
+    const b = await (await fetch(`http://127.0.0.1:${server.address().port}/api/board`)).json();
+    assert.equal(b.cards.find(x => x.id === 'W-1').support, true);
+    assert.equal(b.cards.find(x => x.id === 'W-3').support, false);
+    assert.equal(b.questions[0].support, true);
+  } finally { server.close(); }
+});

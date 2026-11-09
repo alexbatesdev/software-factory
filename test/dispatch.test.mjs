@@ -219,3 +219,10 @@ test("only a company repo's work needs Alex's go for a new PR; Alex's own toolin
   assert.match(at('built-customer-implementations').reason, /Alex's go/);
   assert.match(at(undefined).reason, /Alex's go/, 'no repo means built-rails');
 });
+
+test('support work queues ahead of ordinary work; priority-1 work still cuts in first (Alex, 11-09)', () => {
+  const order = autoDispatchPlan([loose('W-1'), loose('W-2', { support: true }), loose('W-3', { priority: 1 })], { ...cfg, supervisors: { [S1]: {} } }).filter(p => p.action).map(p => p.id);
+  assert.deepEqual(order, ['W-3']);
+  const two = autoDispatchPlan([loose('W-1'), loose('W-2', { support: true })], { ...cfg, supervisors: { [S1]: {} } }).filter(p => p.action).map(p => p.id);
+  assert.deepEqual(two, ['W-2']);
+});

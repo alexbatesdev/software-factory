@@ -166,3 +166,9 @@ test('a new head on a reviewed PR carries GitHub ancestry from the reviewed head
   const after = applyEvent(w, { type: 'head', sha: 'aaa1111' }, c).work;
   assert.deepEqual(ancestryWanted({ work: { 'W-1': after } }, new Map([['built-rails:1', { sha: 'aaa1111' }]]), OWNER), [], 'the reviewed head itself needs no read');
 });
+
+test("a task from a support project is support work; others carry no flag (Alex's support week, 11-09)", () => {
+  const t = projectTasks([{ id: 5, name: 'Carrix | INVESTIGATE', projectId: 1010115 }, { id: 6, name: 'Sprint task', projectId: 555099 }], 'x.teamwork.com', [1010115]);
+  assert.equal(t.get('tw-5').support, true);
+  assert.equal('support' in t.get('tw-6'), false, 'no flag, so records outside support never change');
+});

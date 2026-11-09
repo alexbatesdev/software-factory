@@ -14,6 +14,14 @@ const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiv
 export const emptyState = () => ({ work: {}, questions: {}, threads: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, nextQuestion: 1, nextThread: 1, seq: 0 });
 
 // What the reducer needs to know about other records, computed from the fold so far.
+/** Support work (Alex's support week, 11-09): a support task's record, or one filed from, under or as the same work as one. */
+export function supportOf(state, id, seen = new Set()) {
+  const w = state.work[id];
+  if (!w || seen.has(id)) return false;
+  seen.add(id);
+  return !!w.support || [w.proposedFrom, w.parent, ...(w.related || []).filter(r => r.kind === 'same-work').map(r => r.to)].some(r => r && supportOf(state, r, seen));
+}
+
 export function derivedCtx(state, id) {
   const rec = d => state.work[d];
   const w = rec(id), keys = new Set([w?.source?.key, ...(w?.aliases || [])].filter(Boolean));

@@ -70,6 +70,7 @@ export function refresh(w, item, parseAcs, now = '') {
   const next = { ...w, title: item.title, upstream: item.noFeedback ? 'gone' : 'open', repo: item.repo || w.repo,
     links: { ...w.links, source: item.url, ...(item.kind === 'pr' ? { pr: item.url, branch: item.branch } : {}) } };
   if (item.kind === 'task' && item.description && !w.objective && now >= OBJECTIVE_FROM) next.objective = item.description;
+  if (item.support) next.support = true;
   if (acs.length && JSON.stringify(acs) !== JSON.stringify(w.acs?.items)) next.acs = { items: acs, source: `TW ${item.ref}` };
   return next;
 }

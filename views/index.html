@@ -7,11 +7,11 @@
 <style>
 :root {
   --bg: #f4f4f1; --card: #fff; --ink: #1d1d1b; --mute: #6b6b66; --line: #e2e1dc; --link: #1a5fd0;
-  --you: #c2261b; --you-bg: #fdecea; --others: #9a6200; --others-bg: #fdf3e1; --factory: #3d6b8f; --factory-bg: #eef3f7; --done: #8a8a84;
+  --you: #c2261b; --you-bg: #fdecea; --others: #9a6200; --others-bg: #fdf3e1; --factory: #3d6b8f; --factory-bg: #eef3f7; --done: #8a8a84; --gold: #c9930a; --gold-glow: rgba(201,147,10,.45);
 }
 @media (prefers-color-scheme: dark) { :root {
   --bg: #161615; --card: #22221f; --ink: #ecebe6; --mute: #9b9a94; --line: #34332f; --link: #7fb0ff;
-  --you: #ff8a7e; --you-bg: #3a1d1a; --others: #e9b65c; --others-bg: #33291a; --factory: #8fb6d6; --factory-bg: #1c262e; --done: #77766f;
+  --you: #ff8a7e; --you-bg: #3a1d1a; --others: #e9b65c; --others-bg: #33291a; --factory: #8fb6d6; --factory-bg: #1c262e; --done: #77766f; --gold: #f2c94c; --gold-glow: rgba(242,201,76,.4);
 } }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
@@ -24,6 +24,9 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .you .big { font-size: 34px; font-weight: 800; color: var(--you); line-height: 1; margin-right: 10px; }
 .you .head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 0; }
 .groups { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+/* Support work (Alex's support week): a gold glow plus a tag, the same on cards, questions, threads and new PRs. */
+.support { box-shadow: 0 0 0 2px var(--gold), 0 0 14px 2px var(--gold-glow) !important; border-radius: 8px; }
+.stag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--gold); border: 1px solid var(--gold); border-radius: 4px; padding: 0 4px; margin-right: 4px; }
 .group { background: var(--card); border: 1px solid var(--you); border-radius: 8px; padding: 6px 10px; }
 .group b { color: var(--you); margin-right: 6px; } .group .ids { font-size: 12px; color: var(--mute); }
 
@@ -98,6 +101,7 @@ function cardEl(c, labels) {
   const d = el('div', 'card');
   const t = el('div', 't', `${c.id} · ${c.title}`); t.title = c.title;
   if (c.priority) t.prepend(el('span', 'badge', 'Priority'));
+  if (c.support) { d.classList.add('support'); t.prepend(el('span', 'stag', 'Support')); }
   if (c.queue?.position) t.prepend(el('span', 'pos', `#${c.queue.position}`));
   d.append(t);
   if (c.running) { d.classList.add('now'); d.append(el('div', 'run', `▶ ${c.running.id} ${c.running.kind}${c.running.owner ? ` · ${c.running.owner}` : ''}`)); }
@@ -143,7 +147,7 @@ async function render() {
   // Questions grouped by the record's project; records don't carry one yet, so they land in one group.
   const groups = new Map();
   for (const q of b.questions) {
-    const c = byId.get(q.work), key = q.project || c?.project || 'Not on a project yet';
+    const c = byId.get(q.work), key = q.support ? 'Support' : q.project || c?.project || 'Not on a project yet';
     groups.set(key, [...(groups.get(key) || []), q.id]);
   }
   const extra = b.cards.filter(c => tierOf(c) === 'you' && !b.questions.some(q => q.work === c.id));
@@ -151,8 +155,8 @@ async function render() {
   const total = b.questions.length + extra.length;
   document.getElementById('youCount').textContent = total;
   const g = document.getElementById('youGroups'); g.replaceChildren();
-  for (const [name, ids] of [...groups].sort((x, y) => y[1].length - x[1].length)) {
-    const box = el('div', 'group'); box.append(el('b', null, ids.length), el('span', null, name + ' '), el('span', 'ids', ids.join(', ')));
+  for (const [name, ids] of [...groups].sort((x, y) => (y[0] === 'Support') - (x[0] === 'Support') || y[1].length - x[1].length)) {
+    const box = el('div', name === 'Support' ? 'group support' : 'group'); box.append(el('b', null, ids.length), el('span', null, name + ' '), el('span', 'ids', ids.join(', ')));
     g.append(box);
   }
   document.getElementById('you').hidden = !total;
@@ -191,6 +195,7 @@ function threadsPanel(list) {
     const sec = el('div', 'pr'), h = el('div', 'prh'), a = el('a', null, `#${pr.split('/pull/')[1]}`);
     a.href = pr; a.target = '_blank'; a.rel = 'noopener';
     h.append(a, el('span', 'mute', `${ts[0].work} · ${ts[0].title || ''}`));
+    if (ts[0].support) { sec.classList.add('support'); h.prepend(el('span', 'stag', 'Support')); }
     const open = ts.filter(t => t.status !== 'approved');
     if (open.length > 1) { const all = el('button', null, `Resolve all ${open.length}`); all.onclick = () => resolveThreads(open.map(t => t.id), all); h.append(all); }
     sec.append(h);
@@ -233,6 +238,7 @@ function newPrsPanel(list) {
   const box = document.getElementById('prList'); box.replaceChildren();
   for (const p of list) {
     const row = el('div', 'thread pr'), left = el('div'), acts = el('div', 'acts');
+    if (p.support) { row.classList.add('support'); left.append(el('span', 'stag', 'Support')); }
     left.append(el('div', 'ask', `${p.id} · ${p.title}`), el('div', 'res', [p.repo, p.from && `from ${p.from}`].filter(Boolean).join(' · ')));
     if (p.objective) left.append(el('div', 'res', p.objective.slice(0, 400)));
     const ok = el('button', null, 'Approve'), no = el('button', null, 'Decline');

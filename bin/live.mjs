@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import http from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openStore, derivedCtx } from '../core/store.mjs';
+import { openStore, derivedCtx, supportOf } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 import { createMcp } from '../mcp/server.mjs';
 import { sandboxSeat } from '../core/sandbox-seat.mjs';
@@ -89,7 +89,7 @@ function ingestInbox() {
 function autoDispatchTick() {
   if (!config.autoDispatch?.enabled) return;
   const s = store.state;
-  const views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id) }));
+  const views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id), support: supportOf(s, w.id) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
   const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], drain, prApproval: config.prApproval }, { terminals });
   lastPlan = plan;
@@ -239,7 +239,7 @@ async function alexReviewTick() {
 
 const parents = new Map();
 async function teamworkTick() {
-  try { apply(sourceCommands(store.state, projectTasks(await readTasks(), process.env.TEAMWORK_SITE), 'teamwork', parseAcs), 'poller'); }
+  try { apply(sourceCommands(store.state, projectTasks(await readTasks(), process.env.TEAMWORK_SITE, config.support?.projects), 'teamwork', parseAcs), 'poller'); }
   catch (e) { log(`teamwork: ${e.message}`); }
   // Each record's project, for the page's "waiting on you" breakdown.
   try {
