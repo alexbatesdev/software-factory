@@ -233,3 +233,10 @@ test('queued support work takes a free stream before a parked job resumes there 
   assert.equal(p['W-2'].action, 'queue');
   assert.equal(p['W-1'].action, null); assert.match(p['W-1'].reason, /busy with W-2/);
 });
+
+import { scoutBrief } from '../core/scout.mjs';
+test("the scout reproduces on an origin/main worktree, never the clone's base checkout, which may sit on production (W-327)", () => {
+  const b = scoutBrief({ projects: ['p'], maxProposals: 2 }, []);
+  assert.match(b, /fresh worktree off origin\/main/);
+  assert.match(b, /never the clone's base checkout/);
+});
