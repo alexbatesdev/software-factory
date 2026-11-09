@@ -7,11 +7,11 @@
 <style>
 :root {
   --bg: #f4f4f1; --card: #fff; --ink: #1d1d1b; --mute: #6b6b66; --line: #e2e1dc; --link: #1a5fd0;
-  --you: #c2261b; --you-bg: #fdecea; --others: #9a6200; --others-bg: #fdf3e1; --factory: #3d6b8f; --factory-bg: #eef3f7; --done: #8a8a84; --gold: #c9930a; --gold-glow: rgba(201,147,10,.45);
+  --you: #c2261b; --you-bg: #fdecea; --others: #9a6200; --others-bg: #fdf3e1; --factory: #3d6b8f; --factory-bg: #eef3f7; --done: #8a8a84; --gold: #c9930a; --gold-glow: rgba(201,147,10,.45); --merge: #2e7d32; --merge-bg: #e8f5e9;
 }
 @media (prefers-color-scheme: dark) { :root {
   --bg: #161615; --card: #22221f; --ink: #ecebe6; --mute: #9b9a94; --line: #34332f; --link: #7fb0ff;
-  --you: #ff8a7e; --you-bg: #3a1d1a; --others: #e9b65c; --others-bg: #33291a; --factory: #8fb6d6; --factory-bg: #1c262e; --done: #77766f; --gold: #f2c94c; --gold-glow: rgba(242,201,76,.4);
+  --you: #ff8a7e; --you-bg: #3a1d1a; --others: #e9b65c; --others-bg: #33291a; --factory: #8fb6d6; --factory-bg: #1c262e; --done: #77766f; --gold: #f2c94c; --gold-glow: rgba(242,201,76,.4); --merge: #81c784; --merge-bg: #1b2e1c;
 } }
 * { box-sizing: border-box; }
 body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
@@ -37,6 +37,7 @@ dl.bd { display: grid; grid-template-columns: 150px 1fr; gap: 4px 10px; margin: 
 .tier > .h { display: flex; gap: 8px; align-items: baseline; margin-bottom: 8px; }
 .tier.you-t { background: var(--you-bg); } .tier.you-t h2 { color: var(--you); }
 .tier.others-t { background: var(--others-bg); } .tier.others-t h2 { color: var(--others); }
+.tier.merge-t { background: var(--merge-bg); } .tier.merge-t h2 { color: var(--merge); } .merge-t .card { border-left-color: var(--merge); }
 .tier.factory-t { background: var(--factory-bg); } .tier.factory-t h2 { color: var(--factory); }
 .tier.done-t h2 { color: var(--done); }
 .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -95,8 +96,8 @@ const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls)
 // The server decides each card's section (views/board.mjs sectionOf).
 const tierOf = c => c.section;
 // Cards folded into a PR's card show only when they need Alex; otherwise the PR's card speaks for them.
-const shown = (c, order) => order.includes(c.category) || ['you', 'support'].includes(tierOf(c));
-const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['parked', 'Parked'], ['done', 'Done or closed']];
+const shown = (c, order) => order.includes(c.category) || ['you', 'support', 'merge'].includes(tierOf(c));
+const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['merge', 'Ready to merge (final QA is yours)'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['parked', 'Parked'], ['done', 'Done or closed']];
 // Folded sections, each opened on its own; the open state survives the 15s redraw.
 const FOLDED = ['parked', 'done'], unfolded = new Set();
 

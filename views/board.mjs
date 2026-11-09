@@ -12,6 +12,7 @@ const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board l
 export const sectionOf = c => c.support && c.category !== 'history' ? 'support'
   : c.category === 'history' ? 'done'
   : c.heldOn || c.needs?.me || c.waiting?.who === 'you' ? 'you'
+  : c.mergeReady ? 'merge'
   : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others'
   : c.category === 'parked' ? 'parked' : 'factory';
 
@@ -51,6 +52,21 @@ function approvalNote(w, state, prApproval) {
   return W.awaitsPrApproval(w, prApproval) ? 'approve opening a new PR' : null;
 }
 
+const MERGE_STATE = { DIRTY: 'merge conflicts', BEHIND: 'behind main', BLOCKED: 'failing or pending checks', UNSTABLE: 'failing or pending checks', DRAFT: 'still a draft' };
+// The one readiness check (W-318): the first gate an APPROVED PR misses, or null. An unread field is a miss, never a pass.
+function mergeMiss(w, pr) {
+  const coming = (w.assignments || []).find(a => ['queued', 'started'].includes(a.status));
+  if (pr.state !== 'OPEN') return pr.state ? `PR is ${pr.state.toLowerCase()}` : 'PR state not read yet';
+  if (pr.isDraft) return 'still a draft';
+  if (!pr.base) return 'base branch not read yet';
+  if (pr.base !== 'main') return `stacked on ${pr.base}`;
+  if (!pr.mergeState) return 'merge state not read yet';
+  if (pr.mergeState !== 'CLEAN') return MERGE_STATE[pr.mergeState] || `GitHub merge state ${pr.mergeState}`;
+  if (pr.unresolvedThreads == null) return 'review threads not read yet';
+  if (pr.unresolvedThreads) return `${pr.unresolvedThreads} unresolved review thread${pr.unresolvedThreads > 1 ? 's' : ''}`;
+  return coming ? `a change is coming (${coming.id})` : null;
+}
+
 // What a card waits on when a person must act: Alex's decisions first, then a ready PR's approvals and merge.
 function personWait(w, state, prs) {
   const stated = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what, w.waitingOn.actor], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`, a.waitingActor])].filter(Boolean);
@@ -62,8 +78,12 @@ function personWait(w, state, prs) {
   const parkedOpen = w.phase === 'intake' && w.triage?.bucket === 'intake' && !(w.externalDeps || []).length && pr?.state === 'OPEN' && !pr.isDraft;
   if ((w.phase === 'awaiting_human_approval' || parkedOpen) && pr?.reviewDecision) {
     const n = `#${w.links.pr.split('/pull/')[1]}`, by = pr.approvedBy || [];
-    return pr.reviewDecision === 'APPROVED' ? { who: 'you', text: `Waiting on you: GitHub reviews approved on ${n} (${by.join(', ')}); final QA and merge checks need you` }
-      : { who: 'reviewers', text: `Waiting for approvals on ${n}${by.length ? ` (approved so far: ${by.join(', ')})` : ''}` };
+    if (pr.reviewDecision === 'APPROVED') {
+      const miss = mergeMiss(w, pr);
+      return miss ? { who: 'github', text: `GitHub reviews approved on ${n} (${by.join(', ')}); not ready to merge: ${miss}` }
+        : { who: 'github', ready: true, text: `Ready to merge: ${n} approved (${by.join(', ')}), checks clean, no open threads; final QA is yours` };
+    }
+    return { who: 'reviewers', text: `Waiting for approvals on ${n}${by.length ? ` (approved so far: ${by.join(', ')})` : ''}` };
   }
   return null;
 }
@@ -125,7 +145,7 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     const heldOn = (w.externalDeps || []).map(d => d.question).find(id => state.questions[id]?.status === 'open') || null;
     if (heldOn) st.waiting = { who: 'you', text: `Waiting on you: ${heldOn} (${state.questions[heldOn].title})` };
     const c = { id: w.id, title: w.title, kind: w.kind, running: started ? { id: started.id, kind: started.kind, owner: started.owner } : null, queue: q || null, priority: w.priority === 1, phase: w.phase, phaseLabel: PHASE_LABEL[w.phase], stream: w.stream || null, pr: w.links?.pr || null,
-      label: st.label, heldOn, approval: approvalNote(w, state, prApproval), waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null), support: supportOf(state, w.id) };
+      label: st.label, heldOn, approval: approvalNote(w, state, prApproval), waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, mergeReady: !!st.waiting?.ready, category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null), support: supportOf(state, w.id) };
     return { ...c, section: sectionOf(c) };
   });
 }

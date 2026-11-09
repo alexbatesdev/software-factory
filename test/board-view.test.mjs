@@ -138,7 +138,7 @@ test("a ready PR's card says what it really waits on: Alex's thread clicks, miss
   s.state.work[id].phase = 'awaiting_human_approval';
   const view = (prs, threads = {}) => { s.state.threads = threads; return boardView(s.state, { prs: new Map([[PR, prs]]) }).find(x => x.id === id).waiting; };
   assert.deepEqual(view({ reviewDecision: 'REVIEW_REQUIRED', approvedBy: ['qa-pat'] }), { who: 'reviewers', text: 'Waiting for approvals on #7 (approved so far: qa-pat)' });
-  assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }), { who: 'you', text: 'Waiting on you: GitHub reviews approved on #7 (qa-pat, dev-sam); final QA and merge checks need you' });
+  assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }), { who: 'github', text: 'GitHub reviews approved on #7 (qa-pat, dev-sam); not ready to merge: PR state not read yet' }, 'APPROVED alone is never merge-ready (W-318)');
   s.state.threads = { 'RT-1': { work: id, status: 'requested' }, 'RT-2': { work: id, status: 'resolved' } };
   const withRt = boardView(s.state, { prs: new Map([[PR, { reviewDecision: 'REVIEW_REQUIRED', approvedBy: [] }]]) }).find(x => x.id === id);
   assert.equal(withRt.approval, 'resolve 1 review thread');
@@ -191,4 +191,27 @@ test("each card carries its section from the server, and the page holds no secon
   const id = s.append({ kind: 'create', payload: { title: 'Plain' } }, c).id;
   s.append({ kind: 'event', target: id, payload: { type: 'wait', who: 'product', what: 'pick a layout', evidence: 'x', actor: 'other' } }, c);
   assert.equal(boardView(s.state).find(x => x.id === id).section, 'others');
+});
+
+test('Ready to merge needs every gate, not APPROVED alone; a miss is named and waits on others (W-318)', async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/8641';
+  const id = s.append({ kind: 'create', payload: { title: 'Ready', links: { pr: PR } } }, c).id;
+  s.state.work[id].phase = 'awaiting_human_approval';
+  const ok = { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa', 'dev'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0 };
+  const card = pr => boardView(s.state, { prs: new Map([[PR, pr]]) }).find(x => x.id === id);
+  assert.equal(card(ok).section, 'merge');
+  assert.match(card(ok).waiting.text, /^Ready to merge: #8641 approved \(qa, dev\), checks clean, no open threads; final QA is yours/);
+  const miss = (pr, re) => { const v = card({ ...ok, ...pr }); assert.equal(v.section, 'others', JSON.stringify(pr)); assert.match(v.waiting.text, re); };
+  miss({ base: 'alex/hcp-export-1' }, /not ready to merge: stacked on alex\/hcp-export-1/);
+  miss({ mergeState: 'UNSTABLE' }, /failing or pending checks/);
+  miss({ mergeState: 'BLOCKED' }, /failing or pending checks/);
+  miss({ mergeState: 'DIRTY' }, /merge conflicts/);
+  miss({ mergeState: 'BEHIND' }, /behind main/);
+  miss({ unresolvedThreads: 2 }, /2 unresolved review threads/);
+  miss({ isDraft: true }, /still a draft/);
+  miss({ mergeState: undefined }, /merge state not read yet/);
+  s.appendAll([{ kind: 'event', target: id, payload: { type: 'assign', assignmentId: 'R1', kind: 'fixes', status: 'queued', owner: 'sup: s', evidence: 'b' } }], c);
+  assert.equal(card(ok).section, 'factory', 'a queued fix moves the record back to the factory, out of Ready to merge');
+  s.state.work[id].phase = 'awaiting_human_approval';
+  miss({}, /a change is coming \(R1\)/);
 });
