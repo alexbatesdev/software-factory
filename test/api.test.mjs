@@ -34,7 +34,7 @@ test('the router sends an answer on and sets the owner; the owner finds it in it
   const f = await serve();
   try {
     await f.act('local-head', 'create', { title: 'Unowned work' });
-    await f.act(S1, 'ask', { title: 'Which way?', options: [{ key: 'a', text: 'this' }], work: 'W-1' });
+    await f.act(S1, 'ask', { title: 'Which way?', options: [{ key: 'a', text: 'this' }], work: 'W-1', wwbd: 'no passage applies' });
     assert.equal((await f.act('local-head', 'answer', { id: 'TB-1', choice: 'a' }))[0], 200);
     const [code] = await f.act('questions router', 'route', { id: 'TB-1', to: S1, setOwner: true, note: 'stream 1 asked' });
     assert.equal(code, 200);
@@ -204,7 +204,7 @@ test('ask refuses a second open question on a record unless marked distinct, and
   const f = await serve();
   try {
     await f.act('local-head', 'create', { title: 'Fix it' });
-    const q = { title: 'Which rule?', promptedBy: 'review', work: 'W-1' };
+    const q = { title: 'Which rule?', promptedBy: 'review', work: 'W-1', wwbd: 'no passage applies' };
     assert.equal((await f.act(S1, 'ask', q))[0], 200);
     const [code, body] = await f.act('board lead', 'ask', q);
     assert.equal(code, 409);

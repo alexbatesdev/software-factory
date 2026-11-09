@@ -8,7 +8,7 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
     if (p.work && !state.work[p.work]) fail(`There is no work item ${p.work}.`);
     const id = `TB-${state.nextQuestion++}`;
     // Origin fields carry where the question came from (Alex, 10-22: every decision names what prompted it).
-    const origin = Object.fromEntries(['promptedBy', 'why', 'ac', 'recommendWhy', 'item'].map(k => [k, p[k] ?? null]));
+    const origin = Object.fromEntries(['promptedBy', 'why', 'ac', 'recommendWhy', 'item', 'wwbd'].map(k => [k, p[k] ?? null]));
     state.questions[id] = { title: p.title, options: p.options || [], recommend: p.recommend || null, work: p.work || null, ...origin, from: ctx.by, source: 'inbox', verification: 'verified', status: 'open', at: ctx.now };
     return id;
   }
