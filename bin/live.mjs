@@ -89,7 +89,8 @@ function ingestInbox() {
 function autoDispatchTick() {
   if (!config.autoDispatch?.enabled) return;
   const s = store.state;
-  const views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id), support: supportOf(s, w.id) }));
+  const prs = { owner: config.githubOwner, prState: u => openPrs.get(u)?.state || null };
+  const views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id, prs), support: supportOf(s, w.id) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
   const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], drain, prApproval: config.prApproval }, { terminals });
   lastPlan = plan;

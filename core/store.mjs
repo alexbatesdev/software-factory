@@ -6,6 +6,7 @@ import { parseAcs } from './derive.mjs';
 import { inferStream } from './notifier.mjs';
 import { sourceIndex, ownerOf, claimPr, refresh } from './correlate.mjs';
 import { foldQuestion } from './questions.mjs';
+import { PR_REF, prRefUrl } from './units.mjs';
 import { foldThread, THREAD_KINDS } from './threads.mjs';
 
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
@@ -22,7 +23,8 @@ export function supportOf(state, id, seen = new Set()) {
   return !!w.support || [w.proposedFrom, w.parent, ...(w.related || []).filter(r => r.kind === 'same-work').map(r => r.to)].some(r => r && supportOf(state, r, seen));
 }
 
-export function derivedCtx(state, id) {
+/** prState and owner come only from a live GitHub read; the reducer passes neither, so replay never sees PR state. */
+export function derivedCtx(state, id, { prState = () => null, owner } = {}) {
   const rec = d => state.work[d];
   const w = rec(id), keys = new Set([w?.source?.key, ...(w?.aliases || [])].filter(Boolean));
   return {
@@ -30,8 +32,11 @@ export function derivedCtx(state, id) {
     openDeps: (rec(id)?.deps || []).filter(d => !W.SATISFIES_DEPS.includes(rec(d)?.phase)),
     depPhase: d => rec(d)?.phase,
     depWorkerDone: d => [...(rec(d)?.assignments || [])].reverse().find(a => a.kind !== 'review')?.status === 'done',
-    parked: (w?.assignments || []).filter(W.parked).map(a => ({ assignmentId: a.id, version: a.version, waitingOn: a.waitingOn,
-      cleared: /^TB-\d+$/.test(a.waitingOn) ? state.questions[a.waitingOn]?.status !== 'open' : /^W-\d+$/.test(a.waitingOn) ? W.SATISFIES_DEPS.includes(rec(a.waitingOn)?.phase) : false })),
+    parked: (w?.assignments || []).filter(W.parked).map(a => {
+      const merged = PR_REF.test(a.waitingOn) && prState(prRefUrl(w, a.waitingOn, owner)) === 'MERGED';
+      return { assignmentId: a.id, version: a.version, waitingOn: a.waitingOn, ...(merged && { why: `${a.waitingOn} merged on GitHub` }),
+        cleared: /^TB-\d+$/.test(a.waitingOn) ? state.questions[a.waitingOn]?.status !== 'open' : /^W-\d+$/.test(a.waitingOn) ? W.SATISFIES_DEPS.includes(rec(a.waitingOn)?.phase) : merged };
+    }),
   };
 }
 

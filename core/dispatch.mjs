@@ -116,7 +116,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (!p || !to) continue;
     if (busy.has(to)) { out.push({ id: w.id, action: null, reason: `${p.waitingOn} cleared; ${to} is busy with ${busy.get(to)}, resumes next` }); continue; }
     busy.set(to, w.id); runningOn.set(to, w.id);
-    out.push({ id: w.id, action: 'resume', to, assignmentId: p.assignmentId, version: p.version, reason: `${p.waitingOn} cleared, ${to} is free` });
+    out.push({ id: w.id, action: 'resume', to, assignmentId: p.assignmentId, version: p.version, reason: `${p.why || `${p.waitingOn} cleared`}, ${to} is free` });
   }
   order.filter(w => !first(w)).forEach(place);
   return out;

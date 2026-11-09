@@ -92,3 +92,18 @@ test("the poll reads every PR a live record's merge-close depends on, including 
   const bySource = { 'built-rails-8282': 'W-99', 'built-rails-8265': 'W-101' };
   assert.deepEqual(watchedPrs(ws, bySource).sort(), [PR(8265), PR(8282)]);
 });
+
+import { derivedCtx } from '../core/store.mjs';
+test('a job parked on a PR clears only once that PR merges, and the PR is polled (W-317 phase 2)', () => {
+  const url = 'https://github.com/builtforteams/built-rails/pull/8606';
+  const job = waitingOn => ({ id: 'W-1', phase: 'implementation', assignments: [{ id: 'R1', kind: 'implementation', status: 'blocked', version: 2, waitingOn }] });
+  const state = waitingOn => ({ work: { 'W-1': job(waitingOn) }, questions: {} });
+  const cleared = (waitingOn, prState) => derivedCtx(state(waitingOn), 'W-1', { owner: 'builtforteams', prState })?.parked[0];
+  assert.equal(cleared('#8606', u => (u === url ? 'MERGED' : null)).cleared, true);
+  assert.match(cleared('#8606', u => (u === url ? 'MERGED' : null)).why, /#8606 merged/);
+  assert.equal(cleared(url, u => (u === url ? 'MERGED' : null)).cleared, true, 'a full PR URL works too');
+  assert.equal(cleared('#8606', () => 'OPEN').cleared, false, 'still open: stays parked');
+  assert.equal(cleared('#8606', () => 'CLOSED').cleared, false, 'closed unmerged never releases');
+  assert.equal(cleared('#8606').cleared, false, 'no fresh PR read: stays parked');
+  assert.deepEqual(holdReleases({ 'W-1': job('#8606') }, 'builtforteams').urls, [url], 'the poll reads the PR it waits on');
+});
