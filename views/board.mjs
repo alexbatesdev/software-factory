@@ -43,8 +43,8 @@ function approvalNote(w, state, prApproval) {
 
 // What a card waits on when a person must act: Alex's decisions first, then a ready PR's approvals and merge.
 function personWait(w, state, prs) {
-  const stated = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`])].filter(Boolean);
-  const onAlex = stated.find(x => /^Alex\b/.test(x[0]));
+  const stated = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what, w.waitingOn.actor], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`, a.waitingActor])].filter(Boolean);
+  const onAlex = stated.find(x => x[2] === 'alex');
   if (onAlex) return { who: 'you', text: `Waiting on you: ${onAlex[1]} (${onAlex[0]})` };
   // Someone else's stated wait is the real one; the PR's approval state is only the fallback.
   if (w.waitingOn) return null;

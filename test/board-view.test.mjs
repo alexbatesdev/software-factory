@@ -115,7 +115,7 @@ test("a card shows the record's real wait: Alex's actions are his, never masked 
   const prOk = make('New PR nobody asked for', { source: { type: 'manual' } });
   s.append({ kind: 'event', target: prOk, payload: { type: 'transition', to: 'ready' } }, c);
   const script = make('Waits on Alex running a script');
-  s.append({ kind: 'event', target: script, payload: { type: 'wait', who: 'Alex runs ~/Code/plans/x.sh', what: 'role-file edits', evidence: 'x' } }, c);
+  s.append({ kind: 'event', target: script, payload: { type: 'wait', who: 'Alex runs ~/Code/plans/x.sh', what: 'role-file edits', evidence: 'x', actor: 'alex' } }, c);
   const held = make('Held on two merges');
   s.append({ kind: 'sync_intake', target: held, payload: { bucket: 'intake', note: 'Held until #1 merges' } }, c);
   s.append({ kind: 'event', target: held, payload: { type: 'hold', prs: ['#1'] } }, c);
@@ -168,4 +168,16 @@ test("a stated wait on someone else outranks a ready PR's approvals line, and a 
     { kind: 'event', target: q, payload: { type: 'progress', assignmentId: 'R1', expectedVersion: 1, stage: 'blocked', waitingOn: 'TB-179', text: 'needs an answer' } }], c);
   const queue = [{ id: q, action: null, reason: 'TB-179 cleared; sup: s is busy with W-271, resumes next' }];
   assert.match(boardView(s.state, { queue }).find(x => x.id === q).waiting.text, /^In queue, #1/);
+});
+
+test("only a wait's stated actor makes it Alex's; prose that starts with \"Alex\" does not (W-317 phase 1)", async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:00:00.000Z', by: 'test' };
+  const a = s.append({ kind: 'create', payload: { title: 'prose only' } }, c).id;
+  s.append({ kind: 'event', target: a, payload: { type: 'wait', who: 'Alex runs the script', what: 'edits', evidence: 'x' } }, c);
+  const b = s.append({ kind: 'create', payload: { title: 'stated' } }, c).id;
+  s.append({ kind: 'event', target: b, payload: { type: 'wait', who: 'the replica EXPLAIN', what: 'query plan', evidence: 'x', actor: 'alex' } }, c);
+  const v = Object.fromEntries(boardView(s.state).map(x => [x.id, x]));
+  assert.notEqual(v[a].waiting.who, 'you');
+  assert.deepEqual(v[b].waiting, { who: 'you', text: 'Waiting on you: query plan (the replica EXPLAIN)' });
 });

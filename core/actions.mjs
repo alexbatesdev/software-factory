@@ -1,6 +1,7 @@
 // The board actions (capabilities.mjs) as log commands. Each action yields only its own command kinds and event types,
 // so a role granted `progress` can't send an `await_approval` by naming it.
 const fail = msg => { throw new Error(msg); };
+const TYPED_WAIT = /^(TB-\d+|W-\d+|#\d+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+)$/, ACTORS = ['alex', 'other'];
 export const PROPOSAL_FIELDS = ['prompted', 'addresses', 'whyThisFix', 'since', 'customerImpact'];
 const ev = (target, payload) => ({ kind: 'event', target, payload });
 const need = (args, ...keys) => { for (const k of keys) if (args[k] === undefined || args[k] === '') fail(`Missing "${k}".`); };
@@ -15,7 +16,14 @@ const BUILD = {
   },
   // A named branch is kept on the record, so the worker's PR joins it instead of becoming a record (W-180).
   assign: ({ work, branch, ...a }) => { need({ work, ...a }, 'work', 'assignmentId', 'kind', 'status'); return [...branchLink(work, branch), ev(work, { ...a, type: 'assign' })]; },
-  progress: a => { need(a, 'work'); if (a.discovery) need(a, 'text'); return [...branchLink(a.work, a.branch), ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text } : a.discovery ? { type: 'discovery', text: a.discovery, objective: a.text } : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn } : { type: 'note', text: a.text })]; },
+  progress: a => {
+    need(a, 'work'); if (a.discovery) need(a, 'text');
+    // A wait on prose states whose action it is; a typed reference (question, record, PR) already says (W-317).
+    const freeText = a.waitingOn && a.waitingOn !== 'clear' && !TYPED_WAIT.test(String(a.waitingOn).trim());
+    if ((a.actor !== undefined && !ACTORS.includes(a.actor)) || (freeText && !a.actor)) fail(`A wait on "${a.waitingOn}" needs actor: "alex" or "other" (or wait on a TB-n, W-n or PR instead).`);
+    const actor = a.actor ? { actor: a.actor } : {};
+    return [...branchLink(a.work, a.branch), ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text, ...actor } : a.discovery ? { type: 'discovery', text: a.discovery, objective: a.text } : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn, ...actor } : { type: 'note', text: a.text })];
+  },
   done: a => {
     need(a, 'work');
     const link = a.pr ? [{ kind: 'update', target: a.work, payload: { links: { pr: a.pr } } }] : [];

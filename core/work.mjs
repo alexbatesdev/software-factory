@@ -610,11 +610,11 @@ export function applyEvent(work, e, ctx) {
       const a = currentAssignment(w, e.assignmentId, e.expectedVersion);
       if (!['started', 'working', 'blocked'].includes(e.stage)) fail('A progress stage is started, working or blocked.');
       if (e.waitingOn !== undefined && (e.stage !== 'blocked' || typeof e.waitingOn !== 'string')) fail('waitingOn names what a blocked assignment waits on: TB-n, W-n or a short text.');
-      if (e.stage === 'started') { if (a.status !== 'queued' && a.status !== 'blocked') fail(`${a.id} is already ${a.status}.`); startAssignment(w, a, ctx); if (a.waitingOn) a.waitingOn = null; }
+      if (e.stage === 'started') { if (a.status !== 'queued' && a.status !== 'blocked') fail(`${a.id} is already ${a.status}.`); startAssignment(w, a, ctx); if (a.waitingOn) { a.waitingOn = null; a.waitingActor = null; } }
       else {
         if (e.stage === 'working' && a.status !== 'started') fail(`${a.id} is ${a.status}; report --stage started before working.`);
         a.history.push({ status: a.status, at: ctx.now, by: ctx.by }); a.status = e.stage === 'blocked' ? 'blocked' : a.status; a.version++;
-        if (e.stage === 'blocked') a.waitingOn = e.waitingOn?.trim() || null;
+        if (e.stage === 'blocked') { a.waitingOn = e.waitingOn?.trim() || null; a.waitingActor = e.actor || null; }
       }
       if (e.text) note(w, ctx, `${a.id} ${e.stage}: ${e.text}`);
       break;
@@ -734,7 +734,7 @@ export function applyEvent(work, e, ctx) {
       // Work that waits on someone outside this flow (e.g. a QA owner). Not an Alex decision, not done.
       if (e.clear) { if (!w.waitingOn) fail(`${w.id} isn't waiting on anyone.`); if (!e.evidence) fail('Clearing a wait needs evidence.'); note(w, ctx, `No longer waiting on ${w.waitingOn.who}. Evidence: ${e.evidence}.`); w.waitingOn = null; break; }
       if (!e.who || !e.what || !e.evidence) fail('A wait needs who, what and evidence.');
-      w.waitingOn = { who: e.who, what: e.what, evidence: e.evidence, at: ctx.now, by: ctx.by };
+      w.waitingOn = { who: e.who, what: e.what, evidence: e.evidence, at: ctx.now, by: ctx.by, ...(e.actor ? { actor: e.actor } : {}) };
       note(w, ctx, `Waiting on ${e.who}: ${e.what}. Evidence: ${e.evidence}.`);
       break;
     }

@@ -100,3 +100,11 @@ test('triage carries a new-PR breakdown as its own event (Alex, 11-09)', async (
   const c = { now: '2026-11-09T23:00:00.000Z', by: 'board lead' };
   assert.deepEqual(applyEvent(createWork({ id: 'W-1', title: 'x' }, c), cs.at(-1).payload, c).work.proposal, { ...proposal, by: 'board lead', at: c.now });
 });
+
+test('a free-text wait names its actor (alex or other); a typed reference needs none (W-317 phase 1)', () => {
+  assert.throws(() => commandsFor('progress', { work: 'W-1', waitingOn: 'Alex running the replica EXPLAIN', text: 'x' }), /actor: "alex" or "other"/);
+  assert.deepEqual(commandsFor('progress', { work: 'W-1', waitingOn: 'product and design', actor: 'other', text: 'x' }).at(-1).payload, { type: 'wait', who: 'product and design', what: 'x', evidence: 'x', actor: 'other' });
+  assert.equal(commandsFor('progress', { work: 'W-1', assignmentId: 'R1', stage: 'blocked', waitingOn: 'TB-9', text: 'x' }).at(-1).payload.actor, undefined);
+  assert.equal(commandsFor('progress', { work: 'W-1', assignmentId: 'R1', stage: 'blocked', waitingOn: 'run the EXPLAIN on the replica', actor: 'alex', text: 'x' }).at(-1).payload.actor, 'alex');
+  assert.throws(() => commandsFor('progress', { work: 'W-1', assignmentId: 'R1', stage: 'blocked', waitingOn: 'TB-9', actor: 'bob' }), /actor: "alex" or "other"/);
+});

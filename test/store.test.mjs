@@ -283,7 +283,7 @@ test('a seat parks a record with no assignment by naming what it waits on, and t
   const s = openStore();
   const id = s.append({ kind: 'create', payload: { title: 'Board bug', kind: 'factory', owner: 'dev' } }, ctx()).id;
   s.append({ kind: 'update', target: id, payload: { owner: 'dev', stream: 'dev' } }, ctx());
-  s.appendAll(commandsFor('progress', { work: id, waitingOn: 'Alex: role file edit', text: 'needs a tools line' }), ctx({ by: 'dev' }));
+  s.appendAll(commandsFor('progress', { work: id, waitingOn: 'Alex: role file edit', actor: 'alex', text: 'needs a tools line' }), ctx({ by: 'dev' }));
   assert.equal(s.state.work[id].waitingOn.who, 'Alex: role file edit');
   assert.deepEqual(planIdleOwners({ seats: [{ label: 'dev', status: 'idle' }], works: s.state.work, watch: { dev: { since: 0 } }, now: 1e9 }).due, []);
   s.appendAll(commandsFor('progress', { work: id, waitingOn: 'clear', text: 'Alex made the edit' }), ctx({ by: 'dev' }));
