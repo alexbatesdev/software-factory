@@ -44,7 +44,14 @@ const BUILD = {
   // Triage (Alex, 11-04; was V1's triage runs): an intake record is ready to queue, needs clarifying, or stays in intake.
   triage: a => {
     need(a, 'work', 'bucket');
-    if (!['ready', 'clarify', 'intake'].includes(a.bucket)) fail('Triage a record ready, clarify or intake.');
+    // close: a record already judged finished (11-09: duplicates and won't-builds piled up in intake).
+    if (a.bucket === 'close') {
+      const why = { duplicate: 'Duplicate', 'wont-build': "Won't build", 'no-code': 'No code to write' }[a.reason] || fail('Closing needs a reason: duplicate, wont-build or no-code.');
+      need(a, 'note');
+      if (a.reason === 'duplicate' && !/^W-\d+$/.test(a.of || '')) fail('A duplicate names the record it duplicates in "of".');
+      return [ev(a.work, { type: 'withdraw', note: `${why}${a.of ? ` of ${a.of}` : ''}: ${a.note}` })];
+    }
+    if (!['ready', 'clarify', 'intake'].includes(a.bucket)) fail('Triage a record ready, clarify, intake or close.');
     // W-292: a hold "until #N merges" is structured, so the poller can release it.
     const prs = a.untilMerged ? String(a.untilMerged).split(/[\s,]+/).filter(Boolean) : [];
     if (prs.some(p => !/^#\d+$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(p))) fail('untilMerged takes PRs as #N or PR URLs.');

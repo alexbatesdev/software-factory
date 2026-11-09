@@ -154,7 +154,7 @@ test('triage moves an intake record to ready, or to clarification while a questi
   s.appendAll(commandsFor('triage', { work: b, bucket: 'ready', note: 'clear ACs' }), ctx({ by: 'board lead' }));
   assert.deepEqual([s.state.work[a].phase, s.state.work[b].phase], ['ready', 'clarification']);
   assert.match(s.state.work[a].updates.at(-1).text, /Triaged ready by board lead: clear ACs/);
-  assert.throws(() => commandsFor('triage', { work: a, bucket: 'queued' }), /ready, clarify or intake/);
+  assert.throws(() => commandsFor('triage', { work: a, bucket: 'queued' }), /ready, clarify, intake or close/);
 });
 
 test('a review that finishes after a fixes round opened still lands, and the record stays in fixes', () => {
