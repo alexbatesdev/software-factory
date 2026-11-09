@@ -54,7 +54,8 @@ function approvalNote(w, state, prApproval) {
 
 const MERGE_STATE = { DIRTY: 'merge conflicts', BEHIND: 'behind main', BLOCKED: 'failing or pending checks', UNSTABLE: 'failing or pending checks', DRAFT: 'still a draft' };
 // The one readiness check (W-318): the first gate an APPROVED PR misses, or null. An unread field is a miss, never a pass.
-function mergeMiss(w, pr) {
+function mergeMiss(w, pr, stale) {
+  if (stale) return stale;
   const coming = (w.assignments || []).find(a => ['queued', 'started'].includes(a.status));
   if (pr.state !== 'OPEN') return pr.state ? `PR is ${pr.state.toLowerCase()}` : 'PR state not read yet';
   if (pr.isDraft) return 'still a draft';
@@ -68,7 +69,7 @@ function mergeMiss(w, pr) {
 }
 
 // What a card waits on when a person must act: Alex's decisions first, then a ready PR's approvals and merge.
-function personWait(w, state, prs) {
+function personWait(w, state, prs, stale) {
   const stated = [w.waitingOn && [w.waitingOn.who, w.waitingOn.what, w.waitingOn.actor], ...(w.assignments || []).filter(a => a.status === 'blocked' && a.waitingOn).map(a => [a.waitingOn, `${a.id} is blocked`, a.waitingActor])].filter(Boolean);
   const onAlex = stated.find(x => x[2] === 'alex');
   if (onAlex) return { who: 'you', text: `Waiting on you: ${onAlex[1]} (${onAlex[0]})` };
@@ -79,7 +80,7 @@ function personWait(w, state, prs) {
   if ((w.phase === 'awaiting_human_approval' || parkedOpen) && pr?.reviewDecision) {
     const n = `#${w.links.pr.split('/pull/')[1]}`, by = pr.approvedBy || [];
     if (pr.reviewDecision === 'APPROVED') {
-      const miss = mergeMiss(w, pr);
+      const miss = mergeMiss(w, pr, stale);
       return miss ? { who: 'github', text: `GitHub reviews approved on ${n} (${by.join(', ')}); not ready to merge: ${miss}` }
         : { who: 'github', ready: true, text: `Ready to merge: ${n} approved (${by.join(', ')}), checks clean, no open threads; final QA is yours` };
     }
@@ -88,7 +89,9 @@ function personWait(w, state, prs) {
   return null;
 }
 
-export function boardView(state, { supervisors = [], units = [], prs = new Map(), idleSince = {}, graceMs = 300000, queue = [], prApproval } = {}) {
+export function boardView(state, { supervisors = [], units = [], prs = new Map(), idleSince = {}, graceMs = 300000, queue = [], prApproval, prsReadAt = null, now = Date.now() } = {}) {
+  // A PR read older than three polls can't vouch for a merge (W-317): it never shows ready.
+  const stale = prsReadAt && now - prsReadAt > 15 * 60000 ? `GitHub not read since ${new Date(prsReadAt).toISOString().slice(11, 16)}Z` : null;
   // Auto-dispatch decides why ready work waits; its reason is the card's waiting line, and its order is the queue.
   const forStream = queue.filter(p => !p.action && /busy/.test(p.reason));
   const queued = new Map(queue.filter(p => !p.action).map(p => [p.id, { reason: p.reason, position: forStream.indexOf(p) + 1 || null }]));
@@ -138,7 +141,7 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     const st = statusOf(base, { ...ctx, group: groupOf(w) });
     const q = queued.get(w.id), started = (w.assignments || []).find(a => a.status === 'started');
     // The scheduler is the authority on queue place; only a record-level stated wait outranks it.
-    const person = personWait(w, state, prs);
+    const person = personWait(w, state, prs, stale);
     if (person && st.waiting?.who !== 'you') st.waiting = person;
     else if (q && st.waiting?.who !== 'you' && !w.waitingOn) st.waiting = { who: 'factory', text: q.position ? `In queue, #${q.position}: the next free stream takes #1` : `Not dispatched: ${q.reason}` };
     // Held on Alex's open question: it waits on him, wherever its triage parked it.

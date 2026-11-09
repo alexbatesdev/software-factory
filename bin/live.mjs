@@ -19,7 +19,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
-import { mergeCloses, holdReleases, questionHolds, watchedPrs } from '../core/units.mjs';
+import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen, readCompare } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
@@ -59,7 +59,7 @@ log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
-let fleet = null, watches = {}, woken = {}, openPrs = new Map(), lastPlan = [];
+let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [];
 // Worker hosts (Alex, 11-04): disk readings, cycles under way or failed, and the streams draining for one.
 const RC = { enabled: false, threshold: 0.75, host: 'sbx', healthMs: 300000, ...config.recycle };
 const host = RC.enabled ? await import(`../hosts/${RC.host}.mjs`) : null;
@@ -184,6 +184,8 @@ async function githubTick() {
     // PR states for the page and merge close: every PR a live record links.
     const links = [...new Set([...watchedPrs(store.state.work, Object.fromEntries(sourceIndex(store.state))), ...holdReleases(store.state.work, owner).urls])];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
+    prsReadAt = Date.now();
+    reviewTick();
     healTick();
     try { const n = syncStandards(); if (n.length) log(`standards mirrored: ${n.join(', ')}`); } catch (e) { log(`standards: ${e.message}`); }
     apply(skipNotes(store.state.work, config), 'board (skip)');
@@ -209,6 +211,15 @@ async function mergeTick() {
     const open = Object.entries(s.questions).filter(([, q]) => q.status === 'open' && q.work === c.id).map(([id]) => id);
     apply([{ kind: 'event', target: c.id, payload: { type: 'merged', prs, ...(c.outstanding.length && { outstanding: c.outstanding }) } },
       ...open.map(id => ({ kind: 'question_close', target: id, payload: { note: `${c.id}'s PR merged, which settles it` } }))], 'poller (merged)');
+  }
+}
+
+// A hold past its review date tells its reviewer once per date; the hold stays until someone triages it (W-317).
+function reviewTick() {
+  for (const d of reviewsDue(store.state.work, now())) {
+    const key = `${d.id}/${d.by}`;
+    if (Object.values(store.state.messages).some(m => m.about?.reviewDue === key)) continue;
+    apply([{ kind: 'message', payload: { to: d.reviewer, work: d.id, about: { reviewDue: key }, text: `[software factory, automated, not Alex] ${d.id}'s hold was due for review on ${d.by}. Look again: re-triage it (ready, a new reviewBy, untilMerged/untilAnswered, deferredTo, or close). The board has not released it.` } }], 'board (hold review)');
   }
 }
 
@@ -288,7 +299,7 @@ async function fleetTick() {
 }
 
 http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ units: fleet?.units || [], prs: openPrs, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
+  observed: () => ({ units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 
 // The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never

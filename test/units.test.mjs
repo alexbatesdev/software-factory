@@ -107,3 +107,10 @@ test('a job parked on a PR clears only once that PR merges, and the PR is polled
   assert.equal(cleared('#8606').cleared, false, 'no fresh PR read: stays parked');
   assert.deepEqual(holdReleases({ 'W-1': job('#8606') }, 'builtforteams').urls, [url], 'the poll reads the PR it waits on');
 });
+
+import { reviewsDue } from '../core/units.mjs';
+test('a hold whose review date passed is due for its reviewer; it is never released (W-317 phase 4)', () => {
+  const held = (id, by, phase = 'intake') => ({ id, phase, externalDeps: [{ ref: `review ${by}`, review: { by, reviewer: 'board lead' }, text: `review by ${by} (board lead)` }] });
+  const ws = { 'W-1': held('W-1', '2026-11-08'), 'W-2': held('W-2', '2026-11-20'), 'W-3': held('W-3', '2026-11-01', 'done') };
+  assert.deepEqual(reviewsDue(ws, '2026-11-09T10:00:00Z'), [{ id: 'W-1', by: '2026-11-08', reviewer: 'board lead' }]);
+});

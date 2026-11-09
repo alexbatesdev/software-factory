@@ -215,3 +215,15 @@ test('Ready to merge needs every gate, not APPROVED alone; a miss is named and w
   s.state.work[id].phase = 'awaiting_human_approval';
   miss({}, /a change is coming \(R1\)/);
 });
+
+test('a stale GitHub read never shows a PR as ready to merge (W-317 phase 4)', async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/8641';
+  const id = s.append({ kind: 'create', payload: { title: 'Ready', links: { pr: PR } } }, c).id;
+  s.state.work[id].phase = 'awaiting_human_approval';
+  const prs = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0 }]]);
+  const at = Date.parse('2026-11-09T23:40:00Z');
+  const v = readAt => boardView(s.state, { prs, prsReadAt: readAt, now: at }).find(x => x.id === id);
+  assert.equal(v(at - 60000).section, 'merge');
+  assert.equal(v(at - 20 * 60000).section, 'others');
+  assert.match(v(at - 20 * 60000).waiting.text, /not ready to merge: GitHub not read since/);
+});

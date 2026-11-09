@@ -82,3 +82,9 @@ export function watchedPrs(works, bySource) {
   const g = groupIndex(works, bySource);
   return [...new Set(Object.values(works).filter(w => !TERMINAL.includes(w.phase)).flatMap(w => [w.links?.pr, ...(g.unitsOf[w.id] || []).map(u => works[u].links?.pr)]).filter(Boolean))];
 }
+
+/** Review-dated holds whose date has passed (W-317): {id, by, reviewer}. The caller notifies; nothing here releases a hold. */
+export function reviewsDue(works, now) {
+  const today = String(now).slice(0, 10);
+  return Object.values(works).filter(w => !TERMINAL.includes(w.phase)).flatMap(w => (w.externalDeps || []).filter(d => d.review && d.review.by < today).map(d => ({ id: w.id, by: d.review.by, reviewer: d.review.reviewer })));
+}

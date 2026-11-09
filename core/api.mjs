@@ -45,6 +45,9 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       const miss = ['changed', 'proven', 'unverified', 'risk'].filter(k => !args.report?.[k]);
       if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
     }
+    const parking = action === 'triage' && args.bucket === 'intake' && s.work[args.work];
+    if (parking && !parking.externalDeps?.length && !parking.waitingOn && !['untilMerged', 'untilAnswered', 'reviewBy', 'deferredTo'].some(k => args[k]))
+      return [409, { error: `Parking ${args.work} in intake needs what releases it: untilMerged (#N), untilAnswered (TB-n), reviewBy (YYYY-MM-DD) with reviewer (the seat that looks again), or deferredTo (who decides, e.g. product).` }];
     // Ready into New PRs only with the breakdown Alex reads there (11-09).
     const tw = action === 'triage' && args.bucket === 'ready' && s.work[args.work];
     if (tw && !tw.proposal && !args.proposal && wouldAwaitPrApproval(tw, config.prApproval)) return [409, { error: `${args.work} will wait in Alex's New PRs list, so triage it ready with a proposal: {prompted (what made the agent file it), addresses (what the PR fixes), whyThisFix (why this is the right fix), since (how long the issue has existed, with evidence), customerImpact (what changes for existing customers, or "none")}.` }];

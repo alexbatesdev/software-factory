@@ -256,3 +256,14 @@ test("code work is recorded done only with the Definition of Done's exit report,
     assert.match(f.store.state.work['W-1'].updates.at(-1).text, /^Exit report.*Unverified: large-tenant timing/s);
   } finally { f.close(); }
 });
+
+test('parking a record in intake needs a release condition, a review date or a deferral, unless it is already held (W-317 phase 4)', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'Parked' });
+    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'nothing for now' });
+    assert.equal(code, 409); assert.match(body.error, /untilMerged.*untilAnswered.*reviewBy.*deferredTo/s);
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'n', untilMerged: '#5' }))[0], 200);
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'still held' }))[0], 200, 'already held: a re-triage note needs nothing new');
+  } finally { f.close(); }
+});

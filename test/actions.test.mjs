@@ -108,3 +108,17 @@ test('a free-text wait names its actor (alex or other); a typed reference needs 
   assert.equal(commandsFor('progress', { work: 'W-1', assignmentId: 'R1', stage: 'blocked', waitingOn: 'run the EXPLAIN on the replica', actor: 'alex', text: 'x' }).at(-1).payload.actor, 'alex');
   assert.throws(() => commandsFor('progress', { work: 'W-1', assignmentId: 'R1', stage: 'blocked', waitingOn: 'TB-9', actor: 'bob' }), /actor: "alex" or "other"/);
 });
+
+test('a hold with no release condition carries a review date and who reviews it, or names who it is deferred to (W-317 phase 4)', async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const cs = commandsFor('triage', { work: 'W-1', bucket: 'intake', note: 'parked', reviewBy: '2026-11-16', reviewer: 'board lead' });
+  assert.deepEqual(cs.at(-1).payload, { type: 'hold', review: { by: '2026-11-16', reviewer: 'board lead' } });
+  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'intake', reviewBy: 'next week', reviewer: 'board lead' }), /reviewBy/);
+  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'intake', reviewBy: '2026-11-16' }), /reviewer/);
+  assert.deepEqual(commandsFor('triage', { work: 'W-1', bucket: 'intake', note: 'n', deferredTo: 'product' }).at(-1).payload, { type: 'hold', deferred: 'product' });
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:59:00.000Z', by: 'test' };
+  const id = s.append({ kind: 'create', payload: { title: 'Parked' } }, c).id;
+  s.appendAll(commandsFor('triage', { work: id, bucket: 'intake', note: 'n', reviewBy: '2026-11-16', reviewer: 'board lead' }), c);
+  s.appendAll(commandsFor('triage', { work: id, bucket: 'intake', note: 'n', deferredTo: 'product' }), c);
+  assert.deepEqual(s.state.work[id].externalDeps.map(d => d.text), ['review by 2026-11-16 (board lead)', 'deferred to product']);
+});

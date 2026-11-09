@@ -745,6 +745,12 @@ export function applyEvent(work, e, ctx) {
         note(w, ctx, `Held until Alex answers ${e.questions.join(', ')}.`);
         break;
       }
+      if (e.review || e.deferred) {
+        const d = e.review ? { ref: `review ${e.review.by}`, review: e.review, text: `review by ${e.review.by} (${e.review.reviewer})` } : { ref: `deferred ${e.deferred}`, deferred: e.deferred, text: `deferred to ${e.deferred}` };
+        if (!w.externalDeps.some(x => x.text === d.text)) w.externalDeps = [...w.externalDeps, d];
+        note(w, ctx, `Held: ${d.text}.`);
+        break;
+      }
       if (!e.prs?.length) fail('A hold needs PRs.');
       const add = e.prs.filter(pr => !w.externalDeps.some(d => d.pr === pr));
       w.externalDeps = [...w.externalDeps, ...add.map(pr => ({ ref: pr, pr, text: `${pr} merges` }))];
