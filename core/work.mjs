@@ -698,7 +698,7 @@ export function applyEvent(work, e, ctx) {
     case 'withdraw': {
       // Work that shouldn't be on the board at all (filed by mistake, or a rule moved it off), before anyone started it.
       if (!e.note) fail('Withdrawing needs the reason.');
-      // From WITHDRAW_CANCELLED_FROM, work whose every assignment was cancelled and that has no PR is withdrawable too (W-298).
+      // Cancelled-only work with no PR left nothing behind to undo.
       const onlyCancelled = ctx.now >= WITHDRAW_CANCELLED_FROM && !w.links?.pr && (w.assignments || []).every(a => a.status === 'cancelled');
       if (TERMINAL.includes(w.phase) || ((w.assignments || []).length && !onlyCancelled)) fail(`${w.id} has started or finished; it can't be withdrawn.`);
       w.phase = 'cancelled';

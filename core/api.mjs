@@ -88,7 +88,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
           newPrs: Object.values(s.work).filter(w => ['ready', 'queued'].includes(w.phase) && needsPrApproval(w, config.prApproval)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null, support: supportOf(s, w.id) })),
           threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
-          drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), ...o }).map(c => ({ ...c, support: supportOf(s, c.id) })) });
+          drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, ...o }).map(c => ({ ...c, support: supportOf(s, c.id) })) });
       }
       if (req.method === 'GET' && url.pathname === '/api/escapes') {
         const items = Object.values(store.state.work).flatMap(escapes), count = k => items.reduce((m, e) => ({ ...m, [e[k]]: (m[e[k]] || 0) + 1 }), {});

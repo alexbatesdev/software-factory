@@ -107,3 +107,33 @@ test('a record held on an open question waits on Alex, not in Parked', async () 
   assert.equal(card.heldOn, 'TB-1');
   assert.deepEqual(card.waiting, { who: 'you', text: 'Waiting on you: TB-1 (Read access on every req?)' });
 });
+
+test("a card shows the record's real wait: Alex's actions are his, never masked by the queue's reason (audit 11-09)", async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:'), c = { now: '2026-11-09T22:00:00.000Z', by: 'test' };
+  const make = (title, extra = {}) => s.append({ kind: 'create', payload: { title, kind: 'build', ...extra } }, c).id;
+  const prOk = make('New PR nobody asked for', { source: { type: 'manual' } });
+  s.append({ kind: 'event', target: prOk, payload: { type: 'transition', to: 'ready' } }, c);
+  const script = make('Waits on Alex running a script');
+  s.append({ kind: 'event', target: script, payload: { type: 'wait', who: 'Alex runs ~/Code/plans/x.sh', what: 'role-file edits', evidence: 'x' } }, c);
+  const held = make('Held on two merges');
+  s.append({ kind: 'sync_intake', target: held, payload: { bucket: 'intake', note: 'Held until #1 merges' } }, c);
+  s.append({ kind: 'event', target: held, payload: { type: 'hold', prs: ['#1'] } }, c);
+  const queue = [prOk, script].map(id => ({ id, action: null, reason: 'a reason from the queue' }));
+  const v = Object.fromEntries(boardView(s.state, { queue, prApproval: { trusted: ['teamwork'] } }).map(x => [x.id, x]));
+  assert.deepEqual(v[prOk].waiting, { who: 'you', text: 'Waiting on you: approve opening a new PR (Approvals, New PRs)' });
+  assert.deepEqual(v[script].waiting, { who: 'you', text: 'Waiting on you: role-file edits (Alex runs ~/Code/plans/x.sh)' });
+  assert.deepEqual(v[held].waiting, { who: null, text: 'Held until #1 merges' });
+});
+
+test("a ready PR's card says what it really waits on: Alex's thread clicks, missing GitHub approvals, or his final checks (APPROVED is not Built's QA gate)", async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:'), c = { now: '2026-11-09T22:00:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/7';
+  const id = s.append({ kind: 'create', payload: { title: 'Ready PR', links: { pr: PR } } }, c).id;
+  s.state.work[id].phase = 'awaiting_human_approval';
+  const view = (prs, threads = {}) => { s.state.threads = threads; return boardView(s.state, { prs: new Map([[PR, prs]]) }).find(x => x.id === id).waiting; };
+  assert.deepEqual(view({ reviewDecision: 'REVIEW_REQUIRED', approvedBy: ['qa-pat'] }), { who: 'reviewers', text: 'Waiting for approvals on #7 (approved so far: qa-pat)' });
+  assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }), { who: 'you', text: 'Waiting on you: GitHub reviews approved on #7 (qa-pat, dev-sam); final QA and merge checks need you' });
+  assert.deepEqual(view({ reviewDecision: 'APPROVED', approvedBy: ['qa-pat', 'dev-sam'] }, { 'RT-1': { work: id, status: 'requested' }, 'RT-2': { work: id, status: 'resolved' } }),
+    { who: 'you', text: 'Waiting on you: resolve 1 review thread (Approvals, Review threads)' });
+});

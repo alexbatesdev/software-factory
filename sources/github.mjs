@@ -32,9 +32,10 @@ export async function readPrs(urls, run = exec) {
   for (let i = 0; i < urls.length; i += 40) {
     const chunk = urls.slice(i, i + 40).map(u => [u, String(u).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/)]).filter(([, m]) => m);
     if (!chunk.length) continue;
-    const q = `query{${chunk.map(([, m], j) => `p${j}: repository(owner:"${m[1]}",name:"${m[2]}"){pullRequest(number:${m[3]}){url state isDraft headRefOid mergedAt}}`).join(' ')}}`;
+    const q = `query{${chunk.map(([, m], j) => `p${j}: repository(owner:"${m[1]}",name:"${m[2]}"){pullRequest(number:${m[3]}){url state isDraft headRefOid mergedAt reviewDecision latestOpinionatedReviews(first:20){nodes{state author{login}}}}}`).join(' ')}}`;
     const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000, maxBuffer: 1 << 23 })).stdout);
-    chunk.forEach(([url], j) => { const p = data?.[`p${j}`]?.pullRequest; if (p) out.push({ url, state: p.state, isDraft: p.isDraft, head: p.headRefOid, mergedAt: p.mergedAt }); });
+    chunk.forEach(([url], j) => { const p = data?.[`p${j}`]?.pullRequest; if (p) out.push({ url, state: p.state, isDraft: p.isDraft, head: p.headRefOid, mergedAt: p.mergedAt, reviewDecision: p.reviewDecision || null,
+      approvedBy: (p.latestOpinionatedReviews?.nodes || []).filter(r => r.state === 'APPROVED').map(r => r.author?.login).filter(Boolean) }); });
   }
   return out;
 }

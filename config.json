@@ -70,7 +70,7 @@
       "waiting": "Waiting / scope checks",
       "history": "Done / closed",
       "prreview": "Waiting on PR review",
-      "parked": "Parked (not factory work)"
+      "parked": "Parked or held"
     },
     "hints": {
       "untriaged": "Not classified yet. New items are triaged automatically.",
