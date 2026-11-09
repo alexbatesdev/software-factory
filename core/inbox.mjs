@@ -1,7 +1,8 @@
 // What each seat should find in its inbox: board requests, worker stops, idle queues and answers, as message commands.
 // Pure. A message is created once per subject; waking the seat is the Wake port's job, not this one's.
 import { isTrustedReviewSeat } from './capabilities.mjs';
-import { BUILDING, LIVE_ASSIGNMENT } from './work.mjs';
+import { BUILDING, LIVE_ASSIGNMENT, TERMINAL } from './work.mjs';
+import { supportOf } from './store.mjs';
 import { eligibleRequests, planWorkerStops, planBlockedWorkers, planIdleQueues, planIdleOwners, routeOf, workerJob, PREFIX } from './notifier.mjs';
 
 /**
@@ -54,7 +55,11 @@ export function inboxCommands(state, cfg, fleet = null) {
     const rec = state.work[q.work];
     // The router's pick wins; else the asking seat if it still exists, else the record's stream, else the router.
     const to = q.answer.routeTo || [q.from].find(f => cfg.seats.includes(f)) || (rec && routeOf(rec, cfg.supervisors)) || cfg.router;
-    const text = `Answer to ${id}${q.from && q.from !== to ? ` (asked by ${q.from})` : ''}: ${[q.answer.choice && `(${q.answer.choice})`, q.answer.note].filter(Boolean).join(' ')}`;
+    // Support goes before any job not mid-flight, a resume included (Alex, 11-09).
+    const support = cfg.supervisors.includes(to) ? Object.values(state.work).filter(o => o.id !== q.work && !TERMINAL.includes(o.phase) && routeOf(o, cfg.supervisors) === to && supportOf(state, o.id)
+      && !(o.assignments || []).some(a => ['started', 'blocked'].includes(a.status))).flatMap(o => (o.assignments || []).filter(a => a.status === 'queued').map(a => `${o.id} ${a.id}`)) : [];
+    const first = support.length && q.work ? ` Support first (Alex, 11-09): start ${support.join(', ')} before resuming ${q.work}; ${q.work} resumes after it.` : '';
+    const text = `Answer to ${id}${q.from && q.from !== to ? ` (asked by ${q.from})` : ''}: ${[q.answer.choice && `(${q.answer.choice})`, q.answer.note].filter(Boolean).join(' ')}${first}`;
     cmds.push(msg(to, q.work || null, { answers: id }, text));
     // The record's own seat hears it too when someone else asked (W-243).
     const own = rec && [rec.stream, rec.owner].find(x => x && x !== to && cfg.seats.includes(x));

@@ -226,3 +226,10 @@ test('support work queues ahead of ordinary work; priority-1 work still cuts in 
   const two = autoDispatchPlan([loose('W-1'), loose('W-2', { support: true })], { ...cfg, supervisors: { [S1]: {} } }).filter(p => p.action).map(p => p.id);
   assert.deepEqual(two, ['W-2']);
 });
+
+test('queued support work takes a free stream before a parked job resumes there (Alex, 11-09, W-313)', () => {
+  const parked = w('W-1', { phase: 'implementation', parked: [{ assignmentId: 'R1', waitingOn: 'TB-9', cleared: true }], assignments: [{ id: 'R1', kind: 'implementation', owner: S1, status: 'blocked', waitingOn: 'TB-9' }] });
+  const p = plan([parked, w('W-2', { support: true })]);
+  assert.equal(p['W-2'].action, 'queue');
+  assert.equal(p['W-1'].action, null); assert.match(p['W-1'].reason, /busy with W-2/);
+});

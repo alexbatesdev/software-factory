@@ -253,3 +253,14 @@ test('an fyi message is stored already acked, so it never counts as unread or wa
   s.append({ kind: 'message', payload: { to: 'sup: s1', about: { restarted: 'x', fyi: true }, text: 'restarted' } }, { now: 't', by: 'board' });
   assert.equal(Object.values(s.state.messages)[0].ackedAt, 't');
 });
+
+test('an answer to a supervisor with support queued on its stream says to start the support job first (Alex, 11-09, W-313)', () => {
+  const s = store({ work: {
+    'W-262': work({ id: 'W-262', phase: 'implementation', requests: [], assignments: [{ id: 'R1', kind: 'implementation', status: 'blocked', owner: 'sbx: s', waitingOn: 'TB-1' }] }),
+    'W-301': work({ id: 'W-301', title: 'Carrix | INVESTIGATE', support: true, requests: [], assignments: [{ id: 'R1', kind: 'implementation', status: 'queued', owner: S1 }] }),
+  } });
+  s.append({ kind: 'ask', payload: { title: 'Which way?', options: [{ key: 'a', text: 'this way' }], work: 'W-262', wwbd: 'none' } }, ctx(S1));
+  s.append({ kind: 'answer', target: 'TB-1', payload: { choice: 'a', note: 'go' } }, ctx('local-head'));
+  const text = plan(s).cmds.find(c => c.payload.about?.answers).payload.text;
+  assert.match(text, /Support first \(Alex, 11-09\): start W-301 R1 before resuming W-262; W-262 resumes after it\./);
+});

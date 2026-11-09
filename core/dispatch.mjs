@@ -71,42 +71,35 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && isRunning(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
   for (const [to, why] of cfg.drain || []) runningOn.set(to, why);
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
-  for (const w of works.filter(parkedOnly)) {
-    const p = (w.parked || []).find(x => x.cleared), to = routeOf(w, labels);
-    if (!p || !to) continue;
-    if (busy.has(to)) { out.push({ id: w.id, action: null, reason: `${p.waitingOn} cleared; ${to} is busy with ${busy.get(to)}, resumes next` }); continue; }
-    busy.set(to, w.id); runningOn.set(to, w.id);
-    out.push({ id: w.id, action: 'resume', to, assignmentId: p.assignmentId, version: p.version, reason: `${p.waitingOn} cleared, ${to} is free` });
-  }
   const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && (pendingDispatch(w) || takenUp(w) || live(w))))
     .sort(queueOrder);
-  for (const w of order) {
+  const place = w => {
     const wait = reason => out.push({ id: w.id, action: null, reason });
     const holds = w.priority === 1 ? runningOn : busy;
     const track = trackOf(w, cfg);
-    if (track === 'excluded') { wait('Excluded in config.autoDispatch.exclude'); continue; }
-    if (track === 'trusted-review') { wait('a trusted review, not stream work'); continue; }
-    if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); continue; }
-    if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); continue; }
-    if (w.owner && terminals.includes(w.owner)) { wait(`owner ${w.owner} runs in Terminals`); continue; }
-    if (w.waitingOn) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); continue; }
-    if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner)) { wait(`owned by ${w.owner}, not a stream`); continue; }
-    if (w.openQuestions > 0) { wait(`${w.openQuestions} open question(s)`); continue; }
-    if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); continue; }
-    if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); continue; }
-    if (needsPrApproval(w, cfg.prApproval)) { wait("needs Alex's go to open a new PR (dashboard: New PRs)"); continue; }
+    if (track === 'excluded') { wait('Excluded in config.autoDispatch.exclude'); return; }
+    if (track === 'trusted-review') { wait('a trusted review, not stream work'); return; }
+    if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); return; }
+    if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); return; }
+    if (w.owner && terminals.includes(w.owner)) { wait(`owner ${w.owner} runs in Terminals`); return; }
+    if (w.waitingOn) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); return; }
+    if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner)) { wait(`owned by ${w.owner}, not a stream`); return; }
+    if (w.openQuestions > 0) { wait(`${w.openQuestions} open question(s)`); return; }
+    if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); return; }
+    if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); return; }
+    if (needsPrApproval(w, cfg.prApproval)) { wait("needs Alex's go to open a new PR (dashboard: New PRs)"); return; }
     const bound = boundStream(w, byId, labels);
     // A stream that declined this record isn't sent it again unless someone pins it there (W-217).
     const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));
-    if (bound && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || 'built-rails'}; re-route it`); continue; }
-    if (bound && declined.has(bound.to) && !w.streamPin) { wait(`${bound.to} declined it; re-route or pin it`); continue; }
-    if (bound && holds.has(bound.to)) { wait(`${bound.to} is busy with ${holds.get(bound.to)}; waits its turn (${bound.why})`); continue; }
+    if (bound && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || 'built-rails'}; re-route it`); return; }
+    if (bound && declined.has(bound.to) && !w.streamPin) { wait(`${bound.to} declined it; re-route or pin it`); return; }
+    if (bound && holds.has(bound.to)) { wait(`${bound.to} is busy with ${holds.get(bound.to)}; waits its turn (${bound.why})`); return; }
     // ponytail: ties go to config order, not the stream idle longest; add last-dispatch times if one stream keeps winning ties.
     const here = routeOf(w, labels), mine = STREAM_LOAD.includes(w.phase) ? here : null;
     const cost = l => load[l] // this record's own slot doesn't count against its stream
       - (l === mine ? 1 : 0);
     const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors)).sort((a, b) => cost(a) - cost(b))[0];
-    if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); continue; }
+    if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     busy.set(to, w.id); runningOn.set(to, w.id);
     const spread = labels.map(l => `${l}: ${cost(l)}`).join(', ');
     if (mine) load[mine]--;
@@ -114,6 +107,17 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const owner = to !== w.stream ? to : undefined;
     out.push({ id: w.id, action: w.phase === 'ready' ? 'queue' : 'request', owner, to,
       reason: `${w.priority === 1 ? 'priority: ' : ''}${w.phase}, no open questions or dependencies, ${to} is free${bound ? ` (${bound.why})` : `, least loaded (${spread})`}` });
+  };
+  // Priority and support work go before any job not mid-flight, a parked job's resume included (Alex, 11-09).
+  const first = w => w.priority === 1 || w.support;
+  order.filter(first).forEach(place);
+  for (const w of works.filter(parkedOnly)) {
+    const p = (w.parked || []).find(x => x.cleared), to = routeOf(w, labels);
+    if (!p || !to) continue;
+    if (busy.has(to)) { out.push({ id: w.id, action: null, reason: `${p.waitingOn} cleared; ${to} is busy with ${busy.get(to)}, resumes next` }); continue; }
+    busy.set(to, w.id); runningOn.set(to, w.id);
+    out.push({ id: w.id, action: 'resume', to, assignmentId: p.assignmentId, version: p.version, reason: `${p.waitingOn} cleared, ${to} is free` });
   }
+  order.filter(w => !first(w)).forEach(place);
   return out;
 }
