@@ -41,6 +41,7 @@ h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { co
 .card { background: var(--card); border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 270px; max-width: 100%; }
 .you-t .card { border-left-color: var(--you); } .others-t .card { border-left-color: var(--others); }
 .factory-t .card { border-left-color: var(--factory); opacity: .85; font-size: 13px; width: 230px; }
+.support-t > .h h2 { color: var(--gold); }
 .done-t .card { opacity: .6; font-size: 12px; width: 210px; }
 .card .t { font-weight: 600; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card .w { font-size: 12px; margin-top: 2px; } .you-t .card .w { color: var(--you); font-weight: 600; }
@@ -90,12 +91,14 @@ button:disabled { opacity: .5; cursor: default; }
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 // Who a card is waiting on decides how loud it is. Agents (seats, triage, reviewer panes) are the factory.
 const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
-const tierOf = c => ['history', 'parked'].includes(c.category) ? 'done'
+// Support work that isn't finished is always on top, never folded away (Alex's support week).
+const tierOf = c => c.support && c.category !== 'history' ? 'support'
+  : ['history', 'parked'].includes(c.category) ? 'done'
   : c.needs?.me || c.waiting?.who === 'you' ? 'you'
   : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others' : 'factory';
 // Cards folded into a PR's card show only when they need Alex; otherwise the PR's card speaks for them.
-const shown = (c, order) => order.includes(c.category) || tierOf(c) === 'you';
-const TIERS = [['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['done', 'Done, closed or parked']];
+const shown = (c, order) => order.includes(c.category) || ['you', 'support'].includes(tierOf(c));
+const TIERS = [['support', 'Support'], ['you', 'Needs you'], ['others', 'Waiting on other people'], ['factory', 'The factory has it'], ['done', 'Done, closed or parked']];
 
 function cardEl(c, labels) {
   const d = el('div', 'card');

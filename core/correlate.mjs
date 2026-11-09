@@ -64,7 +64,7 @@ export function claimPr(state, id, url, idx = sourceIndex(state)) {
 
 /** A record refreshed from its own source item: title, links, upstream and the task's acceptance criteria. */
 // From here a task's description fills an empty objective (W-303: triage had nothing to read).
-const OBJECTIVE_FROM = '2026-11-09T20:30:00.000Z';
+const OBJECTIVE_FROM = '2026-11-09T20:15:00.000Z';
 export function refresh(w, item, parseAcs, now = '') {
   const acs = item.kind === 'task' ? parseAcs(item.description) : [];
   const next = { ...w, title: item.title, upstream: item.noFeedback ? 'gone' : 'open', repo: item.repo || w.repo,
