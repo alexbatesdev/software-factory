@@ -84,3 +84,13 @@ test("a ready record's waiting line and queue position come from the auto-dispat
   assert.equal(cards[ids[1]].waiting.text, 'In queue, #2: the next free stream takes #1');
   assert.equal(cards[ids[2]].waiting.text, 'Not dispatched: Excluded in config.autoDispatch.exclude');
 });
+
+test('a card shows what the exit report says is unverified, and nothing when it says nothing', () => {
+  const s = openStore(':memory:', { supervisors: [S1] });
+  s.append({ kind: 'create', payload: { title: 'T' } }, ctx());
+  const report = unverified => s.append({ kind: 'event', target: 'W-1', payload: { type: 'note', text: `Exit report. Changed: a. Proven: b. Unverified: ${unverified} Risk: low.` } }, ctx());
+  report('The live GitHub call.');
+  assert.equal(card(s, 'W-1').unverified, 'The live GitHub call.');
+  report('nothing.');
+  assert.equal(card(s, 'W-1').unverified, null);
+});
