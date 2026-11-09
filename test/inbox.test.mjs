@@ -62,6 +62,19 @@ test('a worker that stops again on the same assignment messages its supervisor a
   assert.equal(sent, 2);
 });
 
+test('a worker blocked for 5 minutes with a started job messages its supervisor once per blocked episode', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'implementation', requests: [], assignments: [{ id: 'R1', kind: 'implementation', status: 'started', version: 1 }] }) } });
+  const unit = status => ({ id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status } });
+  let watches, sent = [];
+  for (const [status, t] of [['blocked', 0], ['blocked', 200000], ['blocked', 310000], ['blocked', 600000], ['working', 700000], ['blocked', 800000], ['blocked', 1200000]]) {
+    const p = plan(s, { units: [unit(status)], now: t, watches });
+    watches = p.watches;
+    sent.push(...p.cmds.filter(c => c.payload.about.workerBlocked));
+  }
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[0].payload.to, S1);
+});
+
 test('a worker reported working whose pane has not changed for quietMs messages its supervisor once per stretch', () => {
   const s = store({ work: { 'W-1': work({ phase: 'review', requests: [], assignments: [{ id: 'R3', kind: 'review', owner: 'sbx: stream-1', status: 'started', version: 1 }] }) } });
   const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'working' } };

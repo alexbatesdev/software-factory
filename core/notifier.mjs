@@ -101,6 +101,24 @@ export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000
   return { watch: next, due };
 }
 
+/**
+ * A worker blocked (parked at a dialog) for graceMs while its stream has a started job: due once per blocked episode.
+ * @param watch {unit id: {since, told}}; a status other than blocked ends the episode.
+ */
+export function planBlockedWorkers({ units, works, watch = {}, now, graceMs = 300000, supervisors }) {
+  const next = {}, due = [];
+  for (const u of units) {
+    const to = u.supervisor?.label;
+    if (u.worker?.status !== 'blocked' || !supervisors.includes(to)) continue;
+    const w = next[u.id] = { since: watch[u.id]?.since ?? now, told: !!watch[u.id]?.told };
+    const job = workerJob(u, works);
+    if (w.told || now - w.since < graceMs || !job) continue;
+    w.told = true;
+    due.push({ to, work: job[0].id, worker: u.worker.label, since: w.since });
+  }
+  return { watch: next, due };
+}
+
 // A stream whose supervisor and worker have both stopped, with nothing started and an assignment queued on it,
 // wakes the supervisor once per assignment: the board sends no other start notice for work queued behind a busy stream.
 const stopped = a => !a || ['done', 'idle'].includes(a.status);
