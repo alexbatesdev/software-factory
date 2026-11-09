@@ -238,3 +238,18 @@ test('a task folded into a ready PR unit is not a second Ready to merge card (re
   assert.equal(v.filter(x => [unit, task].includes(x.id) && x.section === 'merge' && x.category !== 'in-unit').length, 1);
   assert.notEqual(v.find(x => x.id === task && x.category === 'in-unit')?.section, 'merge', 'the folded member stays folded');
 });
+
+test("a running worker and Alex's pending question show together: Needs you, with the job still running; a scheduler queue place is the factory's (W-317 phase 6)", async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-10T00:00:00.000Z', by: 'test' };
+  const id = s.append({ kind: 'create', payload: { title: 'Busy and asking' } }, c).id;
+  s.appendAll([{ kind: 'event', target: id, payload: { type: 'transition', to: 'ready' } }, { kind: 'event', target: id, payload: { type: 'transition', to: 'queued' } },
+    { kind: 'event', target: id, payload: { type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'started', owner: 'sbx: s', evidence: 'b' } }], c);
+  s.state.questions['TB-1'] = { status: 'open', title: 'Which tenant?', work: id };
+  s.state.work[id].externalDeps = [{ ref: 'TB-1', question: 'TB-1', text: 'Alex answers TB-1' }];
+  const v = boardView(s.state).find(x => x.id === id);
+  assert.equal(v.section, 'you'); assert.equal(v.running?.id, 'R1', 'the job keeps running while Alex decides');
+  const q = s.append({ kind: 'create', payload: { title: 'Waiting its turn' } }, c).id;
+  s.appendAll([{ kind: 'event', target: q, payload: { type: 'transition', to: 'ready' } }], c);
+  const queued = boardView(s.state, { queue: [{ id: q, action: null, reason: 'every stream is busy (sup: s with W-1); waits its turn' }] }).find(x => x.id === q);
+  assert.equal(queued.section, 'factory'); assert.match(queued.waiting.text, /^In queue|^Not dispatched/);
+});
