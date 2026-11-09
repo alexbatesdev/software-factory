@@ -197,7 +197,7 @@ test('Ready to merge needs every gate, not APPROVED alone; a miss is named and w
   const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/8641';
   const id = s.append({ kind: 'create', payload: { title: 'Ready', links: { pr: PR } } }, c).id;
   s.state.work[id].phase = 'awaiting_human_approval';
-  const ok = { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa', 'dev'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0 };
+  const ok = { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa', 'dev'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0, head: 'h1', approvals: [{ by: 'qa', commit: 'h1' }, { by: 'dev', commit: 'h1' }], recentCommits: ['a0', 'h1'] };
   const card = pr => boardView(s.state, { prs: new Map([[PR, pr]]) }).find(x => x.id === id);
   assert.equal(card(ok).section, 'merge');
   assert.match(card(ok).waiting.text, /^Ready to merge: #8641 approved \(qa, dev\), checks clean, no open threads; final QA is yours/);
@@ -220,7 +220,7 @@ test('a stale GitHub read never shows a PR as ready to merge (W-317 phase 4)', a
   const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/8641';
   const id = s.append({ kind: 'create', payload: { title: 'Ready', links: { pr: PR } } }, c).id;
   s.state.work[id].phase = 'awaiting_human_approval';
-  const prs = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0 }]]);
+  const prs = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0, head: 'h1', approvals: [{ by: 'qa', commit: 'h1' }], recentCommits: ['h1'] }]]);
   const at = Date.parse('2026-11-09T23:40:00Z');
   const v = readAt => boardView(s.state, { prs, prsReadAt: readAt, now: at }).find(x => x.id === id);
   assert.equal(v(at - 60000).section, 'merge');
@@ -233,7 +233,7 @@ test('a task folded into a ready PR unit is not a second Ready to merge card (re
   const unit = s.append({ kind: 'create', payload: { title: 'Unit', source: { type: 'pr', key: 'built-rails-8641' }, links: { pr: PR } } }, c).id;
   const task = s.append({ kind: 'create', payload: { title: 'Task', links: { pr: PR } } }, c).id;
   for (const id of [unit, task]) s.state.work[id].phase = 'awaiting_human_approval';
-  const prs = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0 }]]);
+  const prs = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0, head: 'h1', approvals: [{ by: 'qa', commit: 'h1' }], recentCommits: ['h1'] }]]);
   const v = boardView(s.state, { prs });
   assert.equal(v.filter(x => [unit, task].includes(x.id) && x.section === 'merge' && x.category !== 'in-unit').length, 1);
   assert.notEqual(v.find(x => x.id === task && x.category === 'in-unit')?.section, 'merge', 'the folded member stays folded');
@@ -252,4 +252,17 @@ test("a running worker and Alex's pending question show together: Needs you, wit
   s.appendAll([{ kind: 'event', target: q, payload: { type: 'transition', to: 'ready' } }], c);
   const queued = boardView(s.state, { queue: [{ id: q, action: null, reason: 'every stream is busy (sup: s with W-1); waits its turn' }] }).find(x => x.id === q);
   assert.equal(queued.section, 'factory'); assert.match(queued.waiting.text, /^In queue|^Not dispatched/);
+});
+
+test("approvals given before the PR's latest commits don't make it ready; the card names the commit and waits on reviewers (W-321, #8563)", async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/8563';
+  const id = s.append({ kind: 'create', payload: { title: 'Moved on', links: { pr: PR } } }, c).id;
+  s.state.work[id].phase = 'awaiting_human_approval';
+  const pr = { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['jmcdonald-ut', 'cbprice'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0,
+    head: '0980807aa', approvals: [{ by: 'cbprice', commit: '4b89514ad6' }, { by: 'jmcdonald-ut', commit: '4b89514ad6' }], recentCommits: ['4b89514ad6', 'f6a881a00', '0980807aa'] };
+  const v = boardView(s.state, { prs: new Map([[PR, pr]]) }).find(x => x.id === id);
+  assert.equal(v.section, 'others');
+  assert.deepEqual(v.waiting, { who: 'reviewers', text: 'Waiting for re-approval on #8563: approved at 4b89514 (cbprice, jmcdonald-ut), 2 commits since' });
+  const unread = boardView(s.state, { prs: new Map([[PR, { ...pr, approvals: undefined }]]) }).find(x => x.id === id);
+  assert.notEqual(unread.section, 'merge', 'approval commits not read: never ready');
 });

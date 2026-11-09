@@ -59,6 +59,7 @@ function mergeMiss(w, pr, stale) {
   const coming = (w.assignments || []).find(a => ['queued', 'started'].includes(a.status));
   if (pr.state !== 'OPEN') return pr.state ? `PR is ${pr.state.toLowerCase()}` : 'PR state not read yet';
   if (pr.isDraft) return 'still a draft';
+  if (!pr.approvals || !pr.head) return 'approval commits not read yet';
   if (!pr.base) return 'base branch not read yet';
   if (pr.base !== 'main') return `stacked on ${pr.base}`;
   if (!pr.mergeState) return 'merge state not read yet';
@@ -80,6 +81,12 @@ function personWait(w, state, prs, stale) {
   if ((w.phase === 'awaiting_human_approval' || parkedOpen) && pr?.reviewDecision) {
     const n = `#${w.links.pr.split('/pull/')[1]}`, by = pr.approvedBy || [];
     if (pr.reviewDecision === 'APPROVED') {
+      // GitHub keeps APPROVED after new commits here (stale reviews aren't dismissed); only approvals at the head count (W-321).
+      const old = (pr.approvals || []).filter(a => a.commit !== pr.head);
+      if (old.length) {
+        const at = old[0].commit, i = (pr.recentCommits || []).indexOf(at), since = i < 0 ? 'more commits since' : `${pr.recentCommits.length - 1 - i} commit${pr.recentCommits.length - 2 - i ? 's' : ''} since`;
+        return { who: 'reviewers', text: `Waiting for re-approval on ${n}: approved at ${at.slice(0, 7)} (${old.map(a => a.by).sort().join(', ')}), ${since}` };
+      }
       const miss = mergeMiss(w, pr, stale);
       return miss ? { who: 'github', text: `GitHub reviews approved on ${n} (${by.join(', ')}); not ready to merge: ${miss}` }
         : { who: 'github', ready: true, text: `Ready to merge: ${n} approved (${by.join(', ')}), checks clean, no open threads; final QA is yours` };
