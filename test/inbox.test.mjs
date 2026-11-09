@@ -152,6 +152,15 @@ test("a worker's own board note reaches its supervisor once, so nobody has to re
   assert.equal(notes(inboxCommands(state, cfg)).length, 0, 'once');
 });
 
+test("a worker's note on another stream's record also reaches that record's supervisor (W-288)", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const work = { id: 'W-9', title: 'Fix it', phase: 'implementation', stream: 'sup: s2', requests: [], assignments: [], updates: [{ at: 't1', by: 'sbx: s1', text: 'For stream-2: rebase first.' }] };
+  const state = { work: { 'W-9': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: ['sup: s1', 'sup: s2'], seats: [], workers: { 'sbx: s1': 'sup: s1', 'sbx: s2': 'sup: s2' } };
+  const to = inboxCommands(state, cfg).cmds.filter(c => c.payload.about?.workerNote).map(c => c.payload.to).sort();
+  assert.deepEqual(to, ['sup: s1', 'sup: s2']);
+});
+
 test("a record owned by the board developer reaches its pane when it's filed, and again when someone else adds a note", async () => {
   const { inboxCommands } = await import('../core/inbox.mjs');
   const rec = (id, extra = {}) => ({ id, title: `Bug ${id}`, phase: 'ready', stream: 'dev', requests: [], assignments: [], updates: [{ at: '2026-11-06T00:00:00Z', by: 'board lead', text: 'Created.' }], ...extra });

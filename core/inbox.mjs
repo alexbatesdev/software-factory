@@ -102,7 +102,9 @@ export function inboxCommands(state, cfg, fleet = null) {
   const BOOKKEEPING = /^(Updated links\.|Proposed from W-\d+\.|Out-of-scope discovery proposed as separate work: )/;
   for (const w of Object.values(state.work)) (w.updates || []).forEach((u, i) => {
     const sup = cfg.workers?.[u.by], key = `${w.id}/${i}`;
-    if (sup && !BOOKKEEPING.test(u.text || '') && !told.has(`workerNote:${key}`)) cmds.push(msg(sup, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
+    if (!sup || BOOKKEEPING.test(u.text || '') || told.has(`workerNote:${key}`)) return;
+    // The record's own stream hears it too when the worker wrote on another stream's record (W-288).
+    for (const to of new Set([sup, routeOf(w, cfg.supervisors)])) if (to) cmds.push(msg(to, w.id, { workerNote: key }, `${u.by} on ${w.id}: ${u.text}`));
   });  // A worker job the worker never wrote on: its session may lack the board tools (W-218), or the brief never started.
   const workerOf = Object.fromEntries(Object.entries(cfg.workers || {}).map(([wk, sup]) => [sup, wk]));
   for (const w of Object.values(state.work)) {
