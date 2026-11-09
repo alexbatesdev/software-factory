@@ -144,11 +144,11 @@ function observeSource(state, item, ctx) {
   const o = ownerOf(state, item, sourceIndex(state), ctx.now);
   if (!o) {
     const id = create(state, { title: item.title, kind: item.kind === 'task' ? 'build' : 'pr-feedback', source: { type: item.kind === 'task' ? 'teamwork' : 'pr', key: item.id } }, ctx);
-    state.work[id] = refresh(state.work[id], item, parseAcs);
+    state.work[id] = refresh(state.work[id], item, parseAcs, ctx.now);
     return id;
   }
   const w = state.work[o.id];
-  if (w.source?.key === item.id) { state.work[o.id] = refresh(w, item, parseAcs); return o.id; }
+  if (w.source?.key === item.id) { state.work[o.id] = refresh(w, item, parseAcs, ctx.now); return o.id; }
   if ((w.aliases || []).includes(item.id)) return o.id;
   // Joining a record (e.g. a task's own PR, by branch): the key becomes an alias; the record keeps its title and an existing PR link.
   state.work[o.id] = W.updateWork(w, { aliases: [...(w.aliases || []), item.id], ...(item.kind === 'pr' && !w.links?.pr ? { links: { pr: item.url, branch: item.branch } } : {}) }, ctx);

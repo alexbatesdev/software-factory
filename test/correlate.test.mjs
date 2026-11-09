@@ -121,3 +121,19 @@ test('a worker PR joins the live record its supervisor named the branch on (W-18
   assert.deepEqual(Object.keys(s.state.work), [id], 'no duplicate record');
   assert.equal(s.state.work[id].links.pr, PR(8570));
 });
+
+test("a Teamwork record's objective is the task's description, so triage can read the task; one a seat wrote is kept (W-303)", () => {
+  const s = open(), at = { now: '2026-11-10T00:00:00.000Z', by: 'poller' }, cfg = { now: at.now };
+  const t = { ...task(41517664, 'Carrix | INVESTIGATE'), description: 'Termination did not remove the future position.' };
+  const run = items => sourceCommands(s.state, new Map(items.map(i => [i.id, i])), 'teamwork', parseAcs, cfg).map(c => s.append(c, at));
+  run([t]);
+  const [id] = Object.keys(s.state.work);
+  assert.equal(s.state.work[id].objective, 'Termination did not remove the future position.');
+  assert.deepEqual(run([t]), [], 'no change, no command');
+  s.append({ kind: 'update', target: id, payload: { objective: 'Scoped by board lead' } }, at);
+  run([{ ...t, description: 'Edited in Teamwork' }]);
+  assert.equal(s.state.work[id].objective, 'Scoped by board lead');
+  const old = open();
+  sourceCommands(old.state, new Map([[t.id, t]]), 'teamwork', parseAcs, { now: '2026-11-09T00:00:00.000Z' }).map(c => old.append(c, ctx('poller')));
+  assert.equal(Object.values(old.state.work)[0].objective || '', '', 'rows logged before the change replay as before');
+});

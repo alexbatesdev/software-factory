@@ -63,10 +63,13 @@ export function claimPr(state, id, url, idx = sourceIndex(state)) {
 }
 
 /** A record refreshed from its own source item: title, links, upstream and the task's acceptance criteria. */
-export function refresh(w, item, parseAcs) {
+// From here a task's description fills an empty objective (W-303: triage had nothing to read).
+const OBJECTIVE_FROM = '2026-11-09T20:30:00.000Z';
+export function refresh(w, item, parseAcs, now = '') {
   const acs = item.kind === 'task' ? parseAcs(item.description) : [];
   const next = { ...w, title: item.title, upstream: item.noFeedback ? 'gone' : 'open', repo: item.repo || w.repo,
     links: { ...w.links, source: item.url, ...(item.kind === 'pr' ? { pr: item.url, branch: item.branch } : {}) } };
+  if (item.kind === 'task' && item.description && !w.objective && now >= OBJECTIVE_FROM) next.objective = item.description;
   if (acs.length && JSON.stringify(acs) !== JSON.stringify(w.acs?.items)) next.acs = { items: acs, source: `TW ${item.ref}` };
   return next;
 }
@@ -79,7 +82,7 @@ export function sourceCommands(state, items, sourceType, parseAcs, cfg = {}) {
   const idx = sourceIndex(state), cmds = [];
   for (const it of items.values()) {
     const o = ownerOf(state, it, idx), w = o && state.work[o.id];
-    if (!w || w.source?.key !== it.id && !(w.aliases || []).includes(it.id) || w.source?.key === it.id && JSON.stringify(refresh(w, it, parseAcs)) !== JSON.stringify(w)) cmds.push({ kind: 'observe_source', payload: it });
+    if (!w || w.source?.key !== it.id && !(w.aliases || []).includes(it.id) || w.source?.key === it.id && JSON.stringify(refresh(w, it, parseAcs, cfg.now ?? new Date().toISOString())) !== JSON.stringify(w)) cmds.push({ kind: 'observe_source', payload: it });
   }
   for (const w of Object.values(state.work)) {
     if (w.source?.type === sourceType && w.upstream === 'open' && !items.has(w.source.key)) cmds.push({ kind: 'source_gone', target: w.id, payload: {} });
