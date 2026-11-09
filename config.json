@@ -107,7 +107,7 @@
       "W-84"
     ]
   },
-  "mutationBranch": "mutation",
+  "mutationBranch": "alex/(mutation-tester|test-quality/mutation-gaps)",
   "mergeClose": {
     "enabled": true
   },

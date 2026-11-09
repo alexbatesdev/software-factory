@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createWork, applyEvent, updateWork, gate, migrate, syncIntake, observeHead, unverifyHead, prReadyPreflight, observeHealth, stranded } from '../core/work.mjs';
+import { createWork, applyEvent, updateWork, gate, migrate, syncIntake, observeHead, unverifyHead, prReadyPreflight, observeHealth, stranded, trackOf } from '../core/work.mjs';
 
 const T = '2026-10-26T15:00:00.000Z';
 const ctx = (over = {}) => ({ now: T, by: 'test', openQuestions: 0, ...over });
@@ -673,4 +673,13 @@ test('a merge hold waits on its PRs until each is released', () => {
   const held = run(build(), { type: 'hold', prs: ['#8606', '#8631'] }, { type: 'hold', prs: ['#8606'] });
   assert.deepEqual(held.externalDeps.map(d => d.pr), ['#8606', '#8631']);
   assert.deepEqual(run(held, { type: 'hold_released', pr: '#8606' }).externalDeps.map(d => d.pr), ['#8631']);
+});
+
+import { readFileSync } from 'node:fs';
+test('the configured Mutation track takes the Mutation branches, not a GraphQL-mutation security branch', () => {
+  const cfg = JSON.parse(readFileSync(new URL('../config.json', import.meta.url)));
+  const track = branch => trackOf({ id: 'W-1', links: { branch } }, cfg);
+  assert.equal(track('alex/test-quality/mutation-gaps-3'), 'mutation');
+  assert.equal(track('alex/mutation-tester'), 'mutation');
+  assert.equal(track('alex/security/graphql-mutation-id-loads/41474202'), 'stream');
 });
