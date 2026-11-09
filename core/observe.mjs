@@ -70,18 +70,26 @@ const sansCheckTime = w => JSON.stringify({ ...w, headVerified: w.headVerified &
  * observe_head / unverify_head commands for live records whose PR head GitHub just reported (or no longer shows).
  * A poll that only re-confirms the same head yields nothing, so the log records changes, not polls.
  */
-export function headCommands(state, heads, { owner, now, standingWaiver }) {
+export function headCommands(state, heads, { owner, now, standingWaiver, ancestry = new Map() }) {
   const cmds = [];
   for (const w of Object.values(state.work)) {
     const key = recordPrKey(w, owner);
     if (!key || W.TERMINAL.includes(w.phase)) continue;
-    const h = heads.get(key);
-    const cmd = h ? { kind: 'observe_head', target: w.id, payload: { sha: h.sha, via: 'github', isDraft: h.isDraft } } : { kind: 'unverify_head', target: w.id, payload: {} };
+    const h = heads.get(key), a = ancestry.get(w.id);
+    const cmd = h ? { kind: 'observe_head', target: w.id, payload: { sha: h.sha, via: 'github', isDraft: h.isDraft, ...(a ? { ancestry: a } : {}) } } : { kind: 'unverify_head', target: w.id, payload: {} };
     const ctx = { now, by: 'github', ...(h ? { standingWaiver } : {}) };
     const after = h ? W.observeHead(w, cmd.payload, ctx) : W.unverifyHead(w, ctx);
     if (sansCheckTime(after) !== sansCheckTime(w)) cmds.push({ ...cmd, ctx });
   }
   return cmds;
+}
+
+/** Compare reads the poller owes before headCommands: a reviewed PR's head whose descent from the reviewed head isn't read yet. */
+export function ancestryWanted(state, heads, owner) {
+  return Object.values(state.work).flatMap(w => {
+    const key = recordPrKey(w, owner), h = key && !W.TERMINAL.includes(w.phase) && heads.get(key), base = h && W.ancestryBase(w, h.sha);
+    return base ? [{ id: w.id, repo: key.split(':')[0], base, head: h.sha }] : [];
+  });
 }
 
 /**

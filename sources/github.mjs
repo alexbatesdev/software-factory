@@ -22,6 +22,11 @@ export async function readPrLines({ owner, tracked = [] }, run = exec) {
 }
 
 /** Fresh state of each PR URL, 40 per GraphQL call; an unreadable PR is left out. */
+/** GitHub's compare status of head against base: ahead or identical means head descends from base. */
+export async function readCompare(owner, repo, base, head, run = exec) {
+  return (await run('gh', ['api', `repos/${owner}/${repo}/compare/${base}...${head}`, '--jq', '.status'], { timeout: 30000 })).stdout.trim();
+}
+
 export async function readPrs(urls, run = exec) {
   const out = [];
   for (let i = 0; i < urls.length; i += 40) {

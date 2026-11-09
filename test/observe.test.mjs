@@ -153,3 +153,16 @@ test('the audit names what the GitHub read saw but no record holds: an own PR wi
   const missed = auditMissed(state, new Set(['built-rails:1', 'built-rails:2', 'built-rails:3', 'built-rails:4']), health, { owner: OWNER, exclude: ['W-3'], prs: new Map([['built-rails-4', { branch: 'alex/mutation-round-5' }]]) });
   assert.deepEqual(missed.map(m => [m.key, m.id]), [['built-rails:1', 'T2'], ['built-rails:2', 'pr'], ['built-rails:4', 'pr']]);
 });
+
+test('a new head on a reviewed PR carries GitHub ancestry from the reviewed head, read only where lineage is unknown', async () => {
+  const { ancestryWanted } = await import('../core/observe.mjs');
+  const now = '2026-11-10T09:00:00.000Z', c = { now, by: 'test' };
+  let w = createWork({ id: 'W-1', title: 'T', kind: 'build', links: { pr: PR(1) } }, c);
+  w = { ...w, phase: 'ready_for_human', head: 'aaa1111', headVerified: { via: 'github', sha: 'aaa1111' }, reviews: [{ head: 'aaa1111', by: 'r', result: 'clean' }] };
+  const state = { work: { 'W-1': w } }, heads = new Map([['built-rails:1', { sha: 'bbb2222', isDraft: true }]]);
+  assert.deepEqual(ancestryWanted(state, heads, OWNER), [{ id: 'W-1', repo: 'built-rails', base: 'aaa1111', head: 'bbb2222' }]);
+  const [cmd] = headCommands(state, heads, { owner: OWNER, now, ancestry: new Map([['W-1', { base: 'aaa1111', status: 'diverged' }]]) });
+  assert.deepEqual(cmd.payload.ancestry, { base: 'aaa1111', status: 'diverged' });
+  const after = applyEvent(w, { type: 'head', sha: 'aaa1111' }, c).work;
+  assert.deepEqual(ancestryWanted({ work: { 'W-1': after } }, new Map([['built-rails:1', { sha: 'aaa1111' }]]), OWNER), [], 'the reviewed head itself needs no read');
+});
