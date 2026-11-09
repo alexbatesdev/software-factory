@@ -11,7 +11,9 @@ export const gh = {
   ready: async url => { await exec('gh', ['pr', 'ready', url], { timeout: 30000 }); },
   /** A review thread's PR and resolved state, or null when the id isn't a review thread. */
   thread: async id => {
-    const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved pullRequest{url}}}}', '-f', `id=${id}`], { timeout: 20000 });
+    // gh exits 1 on an unknown id but still prints the {node: null} answer.
+    const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved pullRequest{url}}}}', '-f', `id=${id}`], { timeout: 20000 })
+      .catch(e => { if (/NOT_FOUND/.test(e.stdout || '')) return { stdout: e.stdout }; throw e; });
     const n = JSON.parse(stdout).data?.node;
     return n?.pullRequest ? { pr: n.pullRequest.url, isResolved: n.isResolved } : null;
   },
