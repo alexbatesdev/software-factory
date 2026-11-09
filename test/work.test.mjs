@@ -683,3 +683,12 @@ test('the configured Mutation track takes the Mutation branches, not a GraphQL-m
   assert.equal(track('alex/mutation-tester'), 'mutation');
   assert.equal(track('alex/security/graphql-mutation-id-loads/41474202'), 'stream');
 });
+
+import { skipNotes } from '../core/work.mjs';
+test('a record the factory skips as Mutation gets one note saying why', () => {
+  const cfg = { mutationBranch: 'alex/mutation-tester' };
+  const w = { id: 'W-9', phase: 'ready_for_human', links: { branch: 'alex/mutation-tester' }, updates: [] };
+  assert.deepEqual(skipNotes({ 'W-9': w, 'W-1': { ...build(), links: {} } }, cfg).map(c => [c.target, c.payload.type]), [['W-9', 'note']]);
+  const noted = { ...w, updates: [{ text: skipNotes({ 'W-9': w }, cfg)[0].payload.text }] };
+  assert.deepEqual(skipNotes({ 'W-9': noted }, cfg), []);
+});

@@ -19,7 +19,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { mergeCloses, holdReleases } from '../core/units.mjs';
-import { TERMINAL, trackOf, stranded, observeHealth } from '../core/work.mjs';
+import { TERMINAL, trackOf, stranded, observeHealth, skipNotes } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen } from '../sources/github.mjs';
 import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
 import { list as readFleet } from '../fleet/herdr.mjs';
@@ -172,6 +172,7 @@ async function githubTick() {
     const links = [...new Set([...Object.values(store.state.work).filter(w => !TERMINAL.includes(w.phase)).map(w => w.links?.pr).filter(Boolean), ...holdReleases(store.state.work, owner).urls])];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
     healTick();
+    apply(skipNotes(store.state.work, config), 'board (skip)');
     await mergeTick();
     holdTick();
     await alexReviewTick();

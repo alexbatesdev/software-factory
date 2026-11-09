@@ -41,6 +41,13 @@ export function trackOf(w, cfg = {}) {
   if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '') || isTrustedReviewSeat(w.owner)) return 'trusted-review';
   return 'stream';
 }
+// A skip the factory never says out loud hides bugs (11-09: two security PRs read as Mutation for 2.6 days).
+const SKIP_NOTE = 'Skipped by the factory: Mutation track';
+/** One note per live record the factory leaves alone as Mutation, naming why. */
+export function skipNotes(works, cfg = {}) {
+  return Object.values(works).filter(w => !TERMINAL.includes(w.phase) && trackOf(w, cfg) === 'mutation' && !(w.updates || []).some(u => u.text?.startsWith(SKIP_NOTE)))
+    .map(w => ({ kind: 'event', target: w.id, payload: { type: 'note', text: `${SKIP_NOTE} (${(cfg.exclude || []).includes(w.id) ? 'listed in autoDispatch.exclude' : `branch or PR matches mutationBranch /${cfg.mutationBranch || 'mutation'}/`}). No dispatch, notices or auto-ready.` } }));
+}
 /** Queue order everywhere work waits for a stream: priority 1 (Alex's "priority") first, then oldest record. */
 export const queueOrder = (a, b) => (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2));
 // A dependency counts as finished once its work is through internal review.
