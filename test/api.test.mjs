@@ -216,6 +216,15 @@ test('ask refuses a second open question on a record unless marked distinct, and
   } finally { f.close(); }
 });
 
+test('the server serves each seat its current tool table', async () => {
+  const f = await serveWith({});
+  try {
+    const tools = await (await fetch(`${f.base}/api/tools`, { headers: { 'x-seat': 'questions router' } })).json();
+    assert.deepEqual(tools.map(t => t.name).sort(), ['ack', 'create', 'inbox', 'questions', 'read', 'route', 'set_owner']);
+    assert.ok(tools.every(t => t.inputSchema?.type === 'object'));
+  } finally { f.close(); }
+});
+
 test('a question is added to with ask amend: its asker or the board lead appends a note; a closed one refuses', async () => {
   const f = await serve();
   try {

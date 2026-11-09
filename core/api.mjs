@@ -8,6 +8,7 @@ import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
 import { escapes } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
+import { toolsFor } from '../mcp/server.mjs';
 
 const PAGE = new URL('../views/index.html', import.meta.url);
 
@@ -89,6 +90,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
         const items = Object.values(store.state.work).flatMap(escapes), count = k => items.reduce((m, e) => ({ ...m, [e[k]]: (m[e[k]] || 0) + 1 }), {});
         return send(res, 200, { total: items.length, byReview: count('review'), byPr: count('pr'), items });
       }
+      if (req.method === 'GET' && url.pathname === '/api/tools') return send(res, 200, toolsFor(roleOf(config, seat)));
       if (req.method === 'GET' && url.pathname === '/api/whoami') return send(res, 200, { ip: req.socket.remoteAddress, headers: req.headers });
       if (req.method === 'GET' && url.pathname === '/api/inbox') return send(res, 200, { seat, messages: Object.values(store.state.messages).filter(m => m.to === seat && !m.ackedAt) });
       if (req.method === 'POST' && url.pathname === '/api/threads/resolve') {
