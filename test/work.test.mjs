@@ -777,3 +777,13 @@ test("a record whose only work was cancelled, with no PR, can still be withdrawn
   const done = run(build(), { type: 'assign', assignmentId: 'R1', kind: 'implementation', owner: 'sup: s', status: 'started', evidence: 'x' });
   assert.throws(() => applyEvent(done, { type: 'withdraw', note: 'x' }, later), /can't be withdrawn/, 'live work still can not');
 });
+
+test("a head on a replacement PR is never assumed to descend from a review of the old PR: it gets its own internal review (W-374: #8694 -> hotfix #8707)", () => {
+  const ready = reviewedAt('clean');
+  const late = { now: '2026-11-11T09:00:00.000Z' };
+  const swapped = updateWork(updateWork(ready, { links: { pr: null } }, capCtx(late)), { links: { pr: 'https://github.com/builtforteams/built-rails/pull/8707' } }, capCtx(late));
+  const reported = capRun(swapped, { type: 'head', sha: 'ddd4444', ctx: late });
+  assert.equal(reported.phase, 'rereview');
+  assert.notEqual(reported.lineage?.status, 'assumed');
+  assert.equal(capRun(ready, { type: 'head', sha: 'ddd4444' }).phase, 'ready_for_human', 'same PR: still assumed until GitHub says otherwise');
+});

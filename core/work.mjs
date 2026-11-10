@@ -188,7 +188,7 @@ function setHead(w, sha, ctx, via = 'report', ancestry = null) {
     // The full form of the current short head (or the reverse) is the same commit: keep the longer one, invalidate nothing.
     if (sha.length > w.head.length) expandHead(w, w.head, sha);
     // A GitHub read can overturn a reported head's assumed lineage.
-    if (ctx.now >= REVIEW_CAP_FROM && ancestry && !trace(w, ancestry, w.head) && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
+    if (ctx.now >= REVIEW_CAP_FROM && ancestry && !trace(w, ancestry, w.head, ctx) && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
       w.phase = 'rereview';
       note(w, ctx, `GitHub shows ${w.head} does not descend from the reviewed ${w.lineage.reviewed} (rebased or force pushed): it needs a new internal review.`);
     }
@@ -204,7 +204,7 @@ function setHead(w, sha, ctx, via = 'report', ancestry = null) {
     w.prReadyAuth = null;
     note(w, ctx, `PR-ready authorization for ${had} dropped: the head is now ${sha}.`);
   }
-  const kept = ctx.now >= REVIEW_CAP_FROM && trace(w, ancestry, had);
+  const kept = ctx.now >= REVIEW_CAP_FROM && trace(w, ancestry, had, ctx);
   if (kept) note(w, ctx, `New commit ${sha} descends from the reviewed ${w.lineage.reviewed}: no new internal review (one per PR unless rebased or force pushed).`);
   else if (had && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
     w.phase = 'rereview';
@@ -225,10 +225,13 @@ export function ancestryBase(w, sha) {
   return r.head;
 }
 // Records whether the head descends from the last internal review: GitHub's compare status, else assumed from an unbroken line.
-function trace(w, ancestry, had) {
+// From PR_SWAP_FROM a review of another PR (Alex replaced it, e.g. a hotfix onto production) never carries over (W-374).
+const PR_SWAP_FROM = '2026-11-10T22:30:00.000Z';
+function trace(w, ancestry, had, ctx) {
   const r = lastReview(w), l = w.lineage;
   if (!r) return false;
-  const status = ancestry && sameSha(ancestry.base, r.head) ? ancestry.status
+  const otherPr = ctx.now >= PR_SWAP_FROM && r.pr && w.links?.pr && r.pr !== w.links.pr;
+  const status = otherPr ? 'other-pr' : ancestry && sameSha(ancestry.base, r.head) ? ancestry.status
     : sameSha(r.head, had) || (l && sameSha(l.reviewed, r.head) && sameSha(l.head, had) && DESCENDS.includes(l.status)) ? 'assumed' : 'unknown';
   w.lineage = { reviewed: r.head, head: w.head, status };
   return DESCENDS.includes(status);
@@ -349,7 +352,7 @@ export function applyEvent(work, e, ctx) {
       if (moved) { note(w, ctx, `Head ${w.head} -> ${e.head}: the review pushed its fixes (no PR to observe).`); w.head = e.head; }
       if (!e.by || e.by === w.implementer) fail('A review must be independent of the implementer.');
       if (!['clean', 'findings'].includes(e.result)) fail('A review result is "clean" or "findings".');
-      w.reviews.push({ head: e.head, by: e.by, result: e.result, at: ctx.now, link: e.link || null });
+      w.reviews.push({ head: e.head, by: e.by, result: e.result, at: ctx.now, link: e.link || null, pr: w.links?.pr || null });
       // A finding may come as plain text (W-160 had four stored with none).
       for (const f of e.findings || []) w.findings.push({ id: nextId(w.findings, 'F'), text: typeof f === 'string' ? f : f.text, severity: f.severity || null, status: 'open', reviewHead: e.head, note: null });
       if (e.result === 'findings' && w.phase !== 'fixes') {
