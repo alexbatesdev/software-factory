@@ -46,6 +46,10 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
     }
     if (action === 'triage' && args.carriesOut && !['answered', 'settled'].includes(s.questions[args.carriesOut]?.status)) return [409, { error: `carriesOut names a question Alex has answered; ${args.carriesOut} is ${s.questions[args.carriesOut]?.status || 'not a question'}.` }];
+    // Alex's decision already has a question: a second, prose wait on him never clears when he answers (W-365: W-271).
+    const asked = action === 'progress' && !args.assignmentId && args.actor === 'alex' && args.waitingOn && args.waitingOn !== 'clear'
+      && Object.entries(s.questions).find(([, q]) => q.status === 'open' && q.work === args.work);
+    if (asked) return [409, { error: `${args.work} already waits on Alex's ${asked[0]} ("${asked[1].title}"). Block the assignment on ${asked[0]} instead (progress stage blocked, waitingOn ${asked[0]}): it resumes when he answers.` }];
     const parking = action === 'triage' && args.bucket === 'intake' && s.work[args.work];
     const seats = [...Object.keys(config.routing?.supervisors || {}), ...Object.keys(config.roles || {}), config.boardLead?.seat || 'board lead'];
     if (action === 'triage' && args.reviewBy && !seats.includes(args.reviewer)) return [409, { error: `reviewer must be a seat that reads its inbox: ${seats.join(', ')}.` }];

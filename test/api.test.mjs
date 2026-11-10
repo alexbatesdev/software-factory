@@ -279,3 +279,16 @@ test('a re-triage that releases the last hold must say what holds it next, and a
     assert.equal(code, 409); assert.match(body.error, /reviewer/);
   } finally { f.close(); }
 });
+
+test("a record-level wait on Alex is refused while the record has an open question: block on the TB-n, which clears when he answers (W-365: W-271, TB-214)", async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'Narrowing' });
+    f.store.state.questions['TB-214'] = { status: 'open', work: 'W-1', title: 'narrowing-only vs own_ids?' };
+    const [code, body] = await f.act(S1, 'progress', { work: 'W-1', waitingOn: 'Alex: pick narrowing-only vs own_ids', actor: 'alex', text: 'HELD' });
+    assert.equal(code, 409); assert.match(body.error, /TB-214/);
+    assert.equal((await f.act(S1, 'progress', { work: 'W-1', waitingOn: 'product sign-off', actor: 'other', text: 'x' }))[0], 200, 'a wait on someone else is fine');
+    f.store.state.questions['TB-214'].status = 'answered';
+    assert.equal((await f.act(S1, 'progress', { work: 'W-1', waitingOn: 'Alex runs the migration script', actor: 'alex', text: 'x' }))[0], 200, 'with no open question, a manual action of Alex is fine');
+  } finally { f.close(); }
+});
