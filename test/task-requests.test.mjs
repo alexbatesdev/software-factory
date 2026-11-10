@@ -73,3 +73,35 @@ test('only the factory creates Teamwork tasks: no seat holds a create action, an
   assert.match(page, /New Teamwork tasks/);
   assert.match(page, /\/api\/task-requests/);
 });
+
+test('a retry never makes a second task: it finds one an earlier attempt made, refuses when Teamwork cannot be checked, and one request names each proposal once (review of b774b4a)', async () => {
+  let made = 0, existing = null, findFails = false;
+  const tw = { createTask: async () => { made++; if (made === 1) throw new Error('timed out'); return { id: 900 + made, url: `u/${900 + made}` }; },
+    getTask: async id => ({ id, name: proposal.name }), findTask: async () => { if (findFails) throw new Error('search down'); return existing; } };
+  const f = await serve(tw);
+  try {
+    await f.act('propose_task', proposal);
+    await f.decide({ ids: ['NT-1', 'NT-1'], decision: 'approve' });
+    assert.equal(made, 1, 'the same id twice in one request is one attempt');
+    assert.equal(f.store.state.taskRequests['NT-1'].status, 'failed');
+    findFails = true;
+    await f.decide({ ids: ['NT-1'], decision: 'approve' });
+    assert.deepEqual([made, f.store.state.taskRequests['NT-1'].status], [1, 'failed'], 'no check, no retry');
+    findFails = false; existing = { id: 555, url: 'u/555' };
+    await f.decide({ ids: ['NT-1'], decision: 'approve' });
+    const t = f.store.state.taskRequests['NT-1'];
+    assert.deepEqual([made, t.status, t.taskId], [1, 'created', 555], 'the timed-out attempt had created it');
+  } finally { f.close(); }
+});
+
+test('a proposal stuck mid-create (the server stopped) can be retried after two minutes, through the same existing-task check', async () => {
+  let made = 0;
+  const f = await serve({ createTask: async () => ({ id: 1000 + ++made, url: 'u' }), getTask: async () => null, findTask: async () => null });
+  try {
+    await f.act('propose_task', proposal);
+    f.store.append({ kind: 'task_decide', target: 'NT-1', payload: { decision: 'approve' } }, { now: '2026-11-10T23:20:00.000Z', by: 'Alex (dashboard)' });
+    assert.equal((await f.board()).taskRequests[0].stuck, true);
+    await f.decide({ ids: ['NT-1'], decision: 'approve' });
+    assert.deepEqual([made, f.store.state.taskRequests['NT-1'].status], [1, 'created']);
+  } finally { f.close(); }
+});

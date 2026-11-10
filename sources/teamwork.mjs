@@ -72,3 +72,10 @@ export async function createTask(input) {
   return c.createTask(input);
 }
 export const getTask = async id => (await (await client()).getTask(id))?.task ?? null;
+/** The task of exactly this name in that tasklist (or under that parent), as {id, url}, or null. Guards a retried create (W-382). */
+export async function findTask({ name, tasklistId, parentTaskId }) {
+  const c = await client();
+  const tasks = parentTaskId ? await c.listSubtasks(parentTaskId) : (await c.searchTasks(name, { pageSize: 100 })).tasks;
+  const t = (tasks || []).find(x => x.name === name && (parentTaskId || x.tasklistId === tasklistId));
+  return t ? { id: t.id, url: `https://${String(process.env.TEAMWORK_SITE).replace(/^https?:\/\//, '')}/app/tasks/${t.id}` } : null;
+}

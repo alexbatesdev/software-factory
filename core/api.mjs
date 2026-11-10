@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
 import { supportOf, prGateView } from './store.mjs';
-import { decideTaskRequests } from './task-requests.mjs';
+import { decideTaskRequests, STUCK_MS } from './task-requests.mjs';
 import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -113,7 +113,7 @@ export function createApi({ store, config, gh = null, tw = null, readPr = async 
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
           newPrs: Object.values(s.work).filter(w => awaitsPrApproval(prGateView(s, w), config.prApproval)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null, support: supportOf(s, w.id), proposal: w.proposal || null })),
-          taskRequests: Object.values(s.taskRequests || {}).filter(t => ['requested', 'approved', 'failed'].includes(t.status)).map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
+          taskRequests: Object.values(s.taskRequests || {}).filter(t => ['requested', 'approved', 'failed'].includes(t.status)).map(t => ({ ...t, stuck: t.status === 'approved' && Date.parse(now()) - Date.parse(t.approvedAt) > STUCK_MS, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o }) });
       }

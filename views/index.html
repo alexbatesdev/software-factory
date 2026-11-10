@@ -296,8 +296,10 @@ function tasksPanel(list) {
       if (v) dl.append(el('dt', null, label), el('dd', null, v));
     left.append(dl);
     if (t.status === 'failed') left.append(el('div', 'fail', `Failed: ${t.detail}`));
-    const ok = el('button', null, t.status === 'approved' ? 'Creating…' : t.status === 'failed' ? 'Retry' : 'Approve'), no = el('button', null, 'Decline');
-    ok.disabled = t.status === 'approved'; no.disabled = t.status === 'approved';
+    const busy = t.status === 'approved' && !t.stuck;
+    if (t.stuck) left.append(el('div', 'fail', 'Stuck mid-create (the factory restarted). Retry checks Teamwork for it first.'));
+    const ok = el('button', null, busy ? 'Creating…' : t.status === 'approved' || t.status === 'failed' ? 'Retry' : 'Approve'), no = el('button', null, 'Decline');
+    ok.disabled = busy; no.disabled = busy;
     ok.onclick = () => decideTasks([t.id], 'approve', ok); no.onclick = () => decideTasks([t.id], 'decline', no);
     acts.append(ok, no); row.append(left, acts); box.append(row);
   }
