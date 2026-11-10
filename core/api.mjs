@@ -70,8 +70,10 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
     if (action === 'ack' && /^W-\d+\/R\d+$/.test(args.ref)) cmds = [...cmds, ...Object.values(s.messages).filter(m => m.to === seat && !m.ackedAt && [m.about?.requests].flat().includes(args.ref)).map(m => ({ kind: 'ack_message', target: m.id, payload: { outcome: args.outcome } }))];
     const ctx = { now: now(), by: seat };
     // Done and approval waits are checked against GitHub as it is now, not as last polled.
-    const pr = ['done', 'await_approval'].includes(action) && (args.pr || s.work[args.work]?.links?.pr);
+    const closing = action === 'triage' && args.bucket === 'close';
+    const pr = (['done', 'await_approval'].includes(action) || closing) && (args.pr || s.work[args.work]?.links?.pr);
     const remote = pr ? await readPr(pr) : null;
+    if (closing) ctx.prState = remote;
     if (action === 'done' && args.assignmentId) Object.assign(ctx, { prHead: remote?.head || null, prState: remote });
     if (action === 'await_approval') ctx.verifiedPrs = remote ? [remote] : [];
     // A review can name a commit GitHub has but the poller hasn't read yet (W-231): read the PR, and if that commit is

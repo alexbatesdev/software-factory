@@ -302,3 +302,21 @@ test('done replacesPr must name the PR the record carries (W-371)', async () => 
     assert.equal(code, 409); assert.match(body.error, /pull\/1/);
   } finally { f.close(); }
 });
+
+test("a finished record whose own PR GitHub shows closed unmerged can be closed by triage, freeing its stream (W-378: W-288, #8642 closed, work carried by W-271's #8635)", async () => {
+  const PR = 'https://github.com/builtforteams/built-rails/pull/8642';
+  let state = 'OPEN';
+  const f = await serveWith({ readPr: async url => ({ url, head: 'aaa1111', state, isDraft: false }) });
+  try {
+    await f.act('local-head', 'create', { title: 'Narrowing' });
+    await f.act('local-head', 'create', { title: 'Port' });
+    f.store.state.work['W-1'].links.pr = PR;
+    f.store.state.work['W-1'].assignments = [{ id: 'R1', kind: 'implementation', status: 'done', version: 2 }, { id: 'R5', kind: 'fixes', status: 'cancelled', version: 2 }];
+    f.store.state.work['W-1'].phase = 'awaiting_human_approval';
+    const close = () => f.act('board lead', 'triage', { work: 'W-1', bucket: 'close', reason: 'duplicate', of: 'W-2', note: 'shipped in #8635' });
+    assert.notEqual((await close())[0], 200, 'PR still open: refused');
+    state = 'CLOSED';
+    assert.equal((await close())[0], 200);
+    assert.equal(f.store.state.work['W-1'].phase, 'cancelled');
+  } finally { f.close(); }
+});

@@ -712,7 +712,9 @@ export function applyEvent(work, e, ctx) {
       if (!e.note) fail('Withdrawing needs the reason.');
       // Cancelled-only work with no PR left nothing behind to undo.
       const onlyCancelled = ctx.now >= WITHDRAW_CANCELLED_FROM && !w.links?.pr && (w.assignments || []).every(a => a.status === 'cancelled');
-      if (TERMINAL.includes(w.phase) || ((w.assignments || []).length && !onlyCancelled)) fail(`${w.id} has started or finished; it can't be withdrawn.`);
+      // W-378: its own PR closed unmerged (GitHub, read at the close) and nothing running: the work went elsewhere.
+      const prClosed = ctx.prState?.state === 'CLOSED' && ctx.prState.url === w.links?.pr && !(w.assignments || []).some(a => LIVE_ASSIGNMENT.includes(a.status));
+      if (TERMINAL.includes(w.phase) || ((w.assignments || []).length && !onlyCancelled && !prClosed)) fail(`${w.id} has started or finished; it can't be withdrawn${w.links?.pr ? ` while ${w.links.pr} is open on GitHub` : ''}.`);
       w.phase = 'cancelled';
       // A duplicate's source key goes to the record it duplicates (W-365), as an absorb would.
       w.completion = { withdrawn: e.note, at: ctx.now, by: ctx.by, ...(e.duplicateOf && { absorbedInto: e.duplicateOf }) };
