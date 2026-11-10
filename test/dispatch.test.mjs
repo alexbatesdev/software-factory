@@ -199,7 +199,9 @@ test('a running scout never holds its stream: real work dispatches to it', () =>
 });
 
 test('Sentry citations: issue URLs in either form and short ids for the scanned projects', () => {
-  assert.deepEqual(sentryCited([{ title: 'BUILT-1A2 crash', objective: 'https://sentry.io/organizations/builtapp/issues/42/ and BUILT-IN things', links: {}, updates: [] }], SC.projects), ['42', 'BUILT-1A2']);
+  assert.deepEqual(sentryCited([{ title: 'BUILT-1A2 crash', objective: 'https://sentry.io/organizations/builtapp/issues/42/ and BUILT-IN things', links: {}, updates: [] }], SC.projects), ['42', 'BUILT-1A2', 'BUILT-IN'],
+    'an all-letter word like BUILT-IN is skipped too: a needless skip costs nothing, a missed id re-files a tracked error (W-348)');
+  assert.deepEqual(sentryCited([{ title: 'x', objective: 'https://builtforteams.sentry.io/issues/BUILT-ETM and BUILT-GVZ', links: {}, updates: [] }], SC.projects), ['BUILT-ETM', 'BUILT-GVZ'], 'W-323 and W-343 cite all-letter short ids (W-348)');
 });
 
 test('a new PR nobody asked for waits for Alex: agent-filed build work with no PR holds until approved; Teamwork tasks and existing PRs go (Alex, 11-09)', () => {

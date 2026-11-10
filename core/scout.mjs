@@ -7,7 +7,8 @@ import { TERMINAL } from './work.mjs';
 export function sentryCited(works, projects) {
   // ponytail: a bare numeric id with no URL isn't recognised; cite the URL.
   const names = [...projects].sort((a, b) => b.length - a.length).map(p => p.toUpperCase()).join('|');
-  const short = new RegExp(`\\b(?:${names})-(?=[0-9A-Z]*\\d)[0-9A-Z]+\\b`, 'g'), out = new Set();
+  // All-letter ids (BUILT-ETM) are real, so no digit is required; a stray word like BUILT-IN only adds a harmless skip (W-348).
+  const short = new RegExp(`\\b(?:${names})-[0-9A-Z]+\\b`, 'g'), out = new Set();
   for (const w of works) {
     const text = [w.title, w.objective, ...Object.values(w.links || {}), ...(w.updates || []).map(u => u.text)].join('\n');
     for (const m of text.matchAll(/sentry\.io\/(?:organizations\/[\w-]+\/)?issues\/(\d+)/g)) out.add(m[1]);
