@@ -124,7 +124,7 @@ export function auditMissed(state, own, health, { owner, exclude, prs = new Map(
   const works = Object.values(state.work), told = new Set(works.flatMap(w => (w.findings || []).flatMap(f => f.source?.ids || [])));
   const out = [];
   for (const key of own) {
-    const recs = works.filter(w => recordPrKey(w, owner) === key);
+    const recs = works.filter(w => recordPrKey(w, owner) === key || (w.aliases || []).includes(key.replace(':', '-')));
     const branch = prs.get(key.replace(':', '-'))?.branch;
     if ([...recs, ...(branch ? [{ links: { branch } }] : [])].some(w => W.trackOf(w, { exclude }) === 'excluded')) continue;
     if (!recs.some(w => !W.TERMINAL.includes(w.phase))) { out.push({ key, id: 'pr' }); continue; }

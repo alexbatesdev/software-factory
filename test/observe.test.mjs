@@ -172,3 +172,9 @@ test("a task from a support project is support work; others carry no flag (Alex'
   assert.equal(t.get('tw-5').support, true);
   assert.equal('support' in t.get('tw-6'), false, 'no flag, so records outside support never change');
 });
+
+test("a live record that holds an own PR's key as an alias is that PR's record for the audit (W-365: #8699 on W-359)", async () => {
+  const { auditMissed } = await import('../core/observe.mjs');
+  const w = { ...createWork({ id: 'W-359', title: 'PortNOLA', kind: 'build', source: { type: 'teamwork', key: 'tw-1' } }, ctx), phase: 'ready_for_human', aliases: ['built-rails-8699'] };
+  assert.deepEqual(auditMissed({ work: { 'W-359': w } }, new Set(['built-rails:8699']), new Map(), { owner: OWNER }), []);
+});
