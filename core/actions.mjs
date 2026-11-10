@@ -59,7 +59,7 @@ const BUILD = {
       const why = { duplicate: 'Duplicate', 'wont-build': "Won't build", 'no-code': 'No code to write' }[a.reason] || fail('Closing needs a reason: duplicate, wont-build or no-code.');
       need(a, 'note');
       if (a.reason === 'duplicate' && !/^W-\d+$/.test(a.of || '')) fail('A duplicate names the record it duplicates in "of".');
-      return [ev(a.work, { type: 'withdraw', note: `${why}${a.of ? ` of ${a.of}` : ''}: ${a.note}` })];
+      return [ev(a.work, { type: 'withdraw', note: `${why}${a.of ? ` of ${a.of}` : ''}: ${a.note}`, ...(a.reason === 'duplicate' && { duplicateOf: a.of }) })];
     }
     if (!['ready', 'clarify', 'intake'].includes(a.bucket)) fail('Triage a record ready, clarify, intake or close.');
     // W-292: a hold "until #N merges" is structured, so the poller can release it.

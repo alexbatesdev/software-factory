@@ -125,7 +125,8 @@ export function fold(state, row, { supervisors = [] } = {}) {
       state.work[id] = work;
       if (spawn) work.updates.at(-1).text += ` (${create(state, spawn, ctx)})`;
       // The absorbing record takes the absorbed one's source key, so pollers find it there.
-      if (payload.type === 'absorb' && cur.source?.key && state.work[payload.into]) state.work[payload.into] = { ...state.work[payload.into], aliases: [...new Set([...(state.work[payload.into].aliases || []), cur.source.key])] };
+      const into = payload.type === 'absorb' ? payload.into : payload.type === 'withdraw' ? payload.duplicateOf : null;
+      if (into && cur.source?.key && state.work[into]) state.work[into] = { ...state.work[into], aliases: [...new Set([...(state.work[into].aliases || []), cur.source.key])] };
       // The request ack is the seat's answer to the message about it; a still-open message would wake the seat for nothing.
       if (payload.type === 'ack') for (const m of Object.values(state.messages))
         if (!m.ackedAt && m.about?.requests === `${id}/${payload.requestId}`) state.messages[m.id] = { ...m, ackedAt: ctx.now, ackedBy: payload.by, outcome: 'request acked' };

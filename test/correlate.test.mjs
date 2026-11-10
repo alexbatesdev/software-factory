@@ -151,3 +151,18 @@ test("a hand-made record that links a Teamwork task is that task's record: the p
   old.append({ kind: 'observe_source', payload: task(7, 'x') }, at('2026-11-10T18:01:00.000Z'));
   assert.equal(Object.keys(old.state.work).length, 2, 'replay before the change keeps its two records');
 });
+
+test("a record closed as a duplicate hands its PR key to the record it duplicates, and an already-closed one can be absorbed after the fact (W-365: #8699, W-364 -> W-359)", async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = open(), c = { now: '2026-11-10T21:30:00.000Z', by: 'test' };
+  const keep = s.append({ kind: 'create', payload: { title: 'PortNOLA support', source: { type: 'teamwork', key: 'tw-41525276' } } }, c).id;
+  const dup = s.append({ kind: 'create', payload: { title: 'PR 8699', source: { type: 'pr', key: 'built-rails-8699' } } }, c).id;
+  s.appendAll(commandsFor('triage', { work: dup, bucket: 'close', reason: 'duplicate', of: keep, note: 'same PR' }), c);
+  assert.equal(sourceIndex(s.state).get('built-rails-8699'), keep);
+  const old = s.append({ kind: 'create', payload: { title: 'PR 9', source: { type: 'pr', key: 'built-rails-9' } } }, c).id;
+  s.append({ kind: 'event', target: old, payload: { type: 'withdraw', note: 'Duplicate of it, closed before W-365' } }, c);
+  assert.equal(sourceIndex(s.state).get('built-rails-9'), old, 'an old close still holds its key');
+  s.append({ kind: 'event', target: old, payload: { type: 'absorb', into: keep } }, c);
+  assert.equal(sourceIndex(s.state).get('built-rails-9'), keep, 'repair: absorbing the closed record moves the key');
+  assert.match(s.state.work[old].completion.withdrawn, /Duplicate/, 'the close reason stays');
+});

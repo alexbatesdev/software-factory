@@ -259,7 +259,7 @@ export function applyEvent(work, e, ctx) {
   if (w.head) for (const k of ['head', 'sha']) if (sameSha(e[k], w.head)) e = { ...e, [k]: w.head };
   let spawn;
   const terminal = TERMINAL.includes(w.phase);
-  if (terminal && !['note', 'ack', 'delivery', 'relate'].includes(e.type)) fail(`${w.id} is ${w.phase}.`);
+  if (terminal && !['note', 'ack', 'delivery', 'relate'].includes(e.type) && !(e.type === 'absorb' && w.phase === 'cancelled')) fail(`${w.id} is ${w.phase}.`);
 
   switch (e.type) {
     case 'waive_internal_review':
@@ -711,16 +711,19 @@ export function applyEvent(work, e, ctx) {
       const onlyCancelled = ctx.now >= WITHDRAW_CANCELLED_FROM && !w.links?.pr && (w.assignments || []).every(a => a.status === 'cancelled');
       if (TERMINAL.includes(w.phase) || ((w.assignments || []).length && !onlyCancelled)) fail(`${w.id} has started or finished; it can't be withdrawn.`);
       w.phase = 'cancelled';
-      w.completion = { withdrawn: e.note, at: ctx.now, by: ctx.by };
+      // A duplicate's source key goes to the record it duplicates (W-365), as an absorb would.
+      w.completion = { withdrawn: e.note, at: ctx.now, by: ctx.by, ...(e.duplicateOf && { absorbedInto: e.duplicateOf }) };
       note(w, ctx, `Withdrawn: ${e.note}`);
       break;
     }
     case 'absorb': {
       // A poller's placeholder for work another record already carries (its PR or task). Only before anyone started it.
       if (!e.into || e.into === w.id) fail('absorb needs the record that carries the work.');
-      if (![...PRE_QUEUE, 'proposed'].includes(w.phase) || (w.assignments || []).length) fail(`${w.id} has started; it can't be absorbed into ${e.into}.`);
+      // A record already cancelled (a duplicate closed before W-365) can be absorbed after the fact to hand over its key.
+      const closed = w.phase === 'cancelled' && !(w.assignments || []).some(a => LIVE_ASSIGNMENT.includes(a.status));
+      if (!closed && (![...PRE_QUEUE, 'proposed'].includes(w.phase) || (w.assignments || []).length)) fail(`${w.id} has started; it can't be absorbed into ${e.into}.`);
       w.phase = 'cancelled';
-      w.completion = { absorbedInto: e.into, at: ctx.now, by: ctx.by };
+      w.completion = { ...(closed ? w.completion : {}), absorbedInto: e.into, at: ctx.now, by: ctx.by };
       note(w, ctx, `Absorbed into ${e.into}, which carries this work.`);
       break;
     }

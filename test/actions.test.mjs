@@ -57,7 +57,7 @@ test('triage untilMerged holds the record on those PRs', () => {
 
 test('triage close withdraws a record with its reason, and needs one', () => {
   assert.deepEqual(commandsFor('triage', { work: 'W-284', bucket: 'close', reason: 'duplicate', of: 'W-278', note: 'same Teamtailor/Ashby cleanup' }),
-    [{ kind: 'event', target: 'W-284', payload: { type: 'withdraw', note: 'Duplicate of W-278: same Teamtailor/Ashby cleanup' } }]);
+    [{ kind: 'event', target: 'W-284', payload: { type: 'withdraw', note: 'Duplicate of W-278: same Teamtailor/Ashby cleanup', duplicateOf: 'W-278' } }], 'the duplicate names its record, so its source key moves there (W-365)');
   assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'close', reason: 'meh', note: 'x' }), /reason/);
   assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'close', reason: 'duplicate', note: 'x' }), /of/);
 });
