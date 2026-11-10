@@ -16,7 +16,7 @@ async function serve() {
     return [r.status, await r.json()];
   };
   const inbox = async seat => (await (await fetch(`${base}/api/inbox`, { headers: { 'x-seat': seat } })).json()).messages;
-  return { store, act, inbox, close: () => server.close() };
+  return { store, act, inbox, port: server.address().port, close: () => server.close() };
 }
 
 test('a seat may only take its role\'s actions, and unknown callers none', async () => {
@@ -330,5 +330,17 @@ test("a second fixes assignment on a PR another record is already fixing is refu
     f.store.state.work['W-1'].assignments = [{ id: 'R1', kind: 'fixes', status: 'started', owner: S1, version: 1 }];
     const [code, body] = await f.act('board lead', 'assign', { work: 'W-2', assignmentId: 'R2', kind: 'fixes', status: 'queued', owner: 'sup: stream-2', evidence: 'conflict' });
     assert.equal(code, 409); assert.match(body.error, /W-1 R1/);
+  } finally { f.close(); }
+});
+
+test('the page loads its markdown libraries from the factory itself, never a CDN, and only known vendor files are served', async () => {
+  const f = await serve();
+  try {
+    const { readFileSync } = await import('node:fs');
+    const page = readFileSync(new URL('../views/index.html', import.meta.url), 'utf8');
+    assert.doesNotMatch(page, /<script src="https?:/, 'no CDN scripts: the dashboard works offline');
+    const base = `http://127.0.0.1:${f.port}`;
+    for (const src of page.match(/<script src="([^"]+)"/g).map(x => x.slice(13, -1))) assert.equal((await fetch(base + src)).status, 200, src);
+    assert.equal((await fetch(`${base}/vendor/../core/api.mjs`)).status, 404);
   } finally { f.close(); }
 });

@@ -69,14 +69,26 @@ details summary { cursor: pointer; }
 #side .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 #side .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 #approvalsBtn { margin-left: auto; } #approvalsBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
-details.msgs { margin-top: 4px; font-size: 13px; } .msg { border-left: 2px solid var(--line); padding: 4px 0 4px 10px; margin: 6px 0; } .msg .mbody { white-space: pre-wrap; overflow-wrap: anywhere; }
+details.msgs { margin-top: 4px; font-size: 13px; }
+.msg { border: 1px solid var(--line); border-left: 3px solid var(--factory); border-radius: 6px; margin: 8px 0; background: var(--card); overflow: hidden; }
+.msg + .msg { margin-top: 10px; }
+.msg .mhead { display: flex; justify-content: space-between; gap: 8px; padding: 4px 10px; background: var(--bg); border-bottom: 1px solid var(--line); font-size: 12px; }
+.msg .mhead b { color: var(--ink); } .msg .mhead span { color: var(--mute); }
+.msg .mbody { padding: 6px 10px; overflow-wrap: anywhere; }
+.msg .mbody > :first-child { margin-top: 0; } .msg .mbody > :last-child { margin-bottom: 0; }
+.msg .mbody p, .msg .mbody ul, .msg .mbody ol, .msg .mbody blockquote { margin: 0 0 6px; }
+.msg .mbody pre { background: var(--bg); padding: 6px 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+.msg .mbody code { font-size: 12px; } .msg .mbody blockquote { border-left: 3px solid var(--line); padding-left: 8px; color: var(--mute); }
+.msg .mbody img { max-width: 100%; } .msg .mbody.raw { white-space: pre-wrap; }
 .thread .acts { display: flex; flex-direction: column; gap: 4px; } .thread > button, .thread .acts { align-self: start; }
-.thread { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 6px 0; }
-.thread .ask { font-weight: 600; overflow-wrap: anywhere; } .thread .res { font-size: 12px; color: var(--mute); overflow-wrap: anywhere; }
+.thread { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; padding: 6px 0; } .thread > div { min-width: 0; }
+.thread .ask { font-weight: 600; overflow-wrap: anywhere; }
 .thread .fail { font-size: 12px; color: var(--you); }
 button { font: inherit; font-size: 12px; border: 1px solid var(--link); color: var(--link); background: var(--card); border-radius: 5px; padding: 2px 9px; cursor: pointer; }
 button:disabled { opacity: .5; cursor: default; }
 </style>
+<script src="/vendor/marked-12.0.2.min.js"></script>
+<script src="/vendor/purify-3.1.6.min.js"></script>
 </head>
 <body>
 <header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="approvalsBtn">Approvals</button></header>
@@ -207,7 +219,7 @@ function threadsPanel(list) {
     for (const t of ts) {
       const row = el('div', 'thread'), left = el('div'), link = el('a', null, `${t.id} · ${t.reviewer}`);
       link.href = t.url; link.target = '_blank'; link.rel = 'noopener';
-      left.append(link, el('div', 'ask', t.ask), el('div', 'res', `Resolution: ${t.resolution}`));
+      left.append(link, el('div', 'ask', t.ask));
       if (t.status === 'failed') left.append(el('div', 'fail', `Failed: ${t.detail}`));
       left.append(threadMessages(t.id));
       const b = el('button', null, t.status === 'approved' ? 'Resolving…' : t.status === 'failed' ? 'Retry' : 'Resolve');
@@ -218,14 +230,24 @@ function threadsPanel(list) {
   }
   if (!list.length) box.append(el('div', 'mute', 'None.'));
 }
+// GitHub comment markdown, sanitized; plain text if the libraries didn't load.
+function mdBody(text) {
+  const b = el('div', 'mbody');
+  if (window.marked && window.DOMPurify) {
+    b.innerHTML = DOMPurify.sanitize(marked.parse(text || '', { gfm: true, breaks: true }));
+    for (const a of b.querySelectorAll('a')) { a.target = '_blank'; a.rel = 'noopener'; }
+  } else { b.classList.add('raw'); b.textContent = text || ''; }
+  return b;
+}
 // The last five messages on a thread, read from GitHub when first opened; open state and replies survive the 15s redraw.
 const openMsgs = new Set(), msgCache = new Map();
 function threadMessages(id) {
   const d = el('details', 'msgs'), body = el('div');
   d.append(el('summary', 'mute', 'Last 5 messages'), body); d.open = openMsgs.has(id);
   const fill = list => body.replaceChildren(...(list.error ? [el('div', 'fail', list.error)] : list.map(c => {
-    const m = el('div', 'msg'), h = el('div', 'mute', `${c.by} · ${new Date(c.at).toLocaleString()}`);
-    m.append(h, el('div', 'mbody', c.body)); return m; })));
+    const m = el('div', 'msg'), h = el('div', 'mhead');
+    h.append(el('b', null, c.by), el('span', null, new Date(c.at).toLocaleString()));
+    m.append(h, mdBody(c.body)); return m; })));
   const load = async () => {
     if (!msgCache.has(id)) { body.replaceChildren(el('div', 'mute', 'Loading…')); const r = await (await fetch(`/api/threads/${id}/comments`)).json(); msgCache.set(id, r.comments || r); }
     fill(msgCache.get(id));

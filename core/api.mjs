@@ -12,6 +12,7 @@ import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
 
 const PAGE = new URL('../views/index.html', import.meta.url);
+const VENDOR = ['marked-12.0.2.min.js', 'purify-3.1.6.min.js'];
 
 /** The role a seat label holds; every stream supervisor label is a stream-supervisor. */
 export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config.routing?.supervisors || {}) ? 'stream-supervisor'
@@ -100,6 +101,9 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'Local requests only.' });
       const seat = req.headers['x-seat'];
       if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq } = store.state; return send(res, 200, { work, questions, messages, seq }); }
+      // Vendored page libraries (markdown for review-thread messages), by exact name only.
+      const vendor = req.method === 'GET' && /^\/vendor\/([\w.-]+\.js)$/.exec(url.pathname)?.[1];
+      if (vendor && VENDOR.includes(vendor)) { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'max-age=86400' }); return res.end(readFileSync(new URL(`../views/vendor/${vendor}`, import.meta.url))); }
       if (req.method === 'GET' && url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(readFileSync(PAGE)); }
       if (req.method === 'GET' && url.pathname === '/api/board') {
         const s = store.state, inbox = {};
