@@ -11,7 +11,7 @@ const THREADS_SH = join(homedir(), '.claude/skills/triage/threads.sh');
 /** threads.sh lines for Alex's open PRs and for PRs that tracked records link. `own` is the set of Alex's open PR specs. */
 export async function readPrLines({ owner, tracked = [] }, run = exec) {
   const { stdout } = await run('gh', ['search', 'prs', '--author=@me', '--state=open', `--owner=${owner}`,
-    '--json', 'repository,number', '--jq', '.[] | "\\(.repository.name):\\(.number)"'], { maxBuffer: 1 << 22 });
+    '--limit', '1000', '--json', 'repository,number', '--jq', '.[] | "\\(.repository.name):\\(.number)"'], { maxBuffer: 1 << 22 });
   const own = stdout.split('\n').filter(Boolean);
   const extra = tracked.filter(x => !own.includes(x));
   const lines = [];

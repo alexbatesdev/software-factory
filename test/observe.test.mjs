@@ -178,3 +178,11 @@ test("a live record that holds an own PR's key as an alias is that PR's record f
   const w = { ...createWork({ id: 'W-359', title: 'PortNOLA', kind: 'build', source: { type: 'teamwork', key: 'tw-1' } }, ctx), phase: 'ready_for_human', aliases: ['built-rails-8699'] };
   assert.deepEqual(auditMissed({ work: { 'W-359': w } }, new Set(['built-rails:8699']), new Map(), { owner: OWNER }), []);
 });
+
+test("the open-PR search asks for every PR, not gh's default 30 (W-372: 46 open, so #8363's conflict was never read)", async () => {
+  const { readPrLines } = await import('../sources/github.mjs');
+  let args = null;
+  await readPrLines({ owner: 'o' }, async (cmd, a) => { if (cmd === 'gh') args = a; return { stdout: '' }; });
+  const i = args.indexOf('--limit');
+  assert.ok(i > 0 && Number(args[i + 1]) >= 1000, `gh search needs --limit; got ${args.join(' ')}`);
+});
