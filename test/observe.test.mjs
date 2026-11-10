@@ -197,3 +197,11 @@ test("a stacked PR's failing check is ours when its base PR doesn't fail it; unr
   assert.equal(run(null, br), undefined, 'base not read: nothing claimed');
   assert.equal(run(['ci/circleci: test', 'Audit Ruby'], br), undefined, 'every failure is the base\'s too');
 });
+
+test("a PR's new health finding lands on the record already fixing it, not a second record (W-377)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const mk = (id, extra) => ({ ...createWork({ id, title: 'x', kind: 'build', links: { pr: PR(8363) } }, ctx), head: 'bbbbbbb2', ...extra });
+  const work = { 'W-76': mk('W-76', { phase: 'awaiting_human_approval' }), 'W-152': mk('W-152', { phase: 'fixes', assignments: [{ id: 'R2', kind: 'fixes', status: 'started', owner: 'sup: s' }] }) };
+  const health = new Map([['built-rails:8363', { head: 'bbbbbbb2', base: 'main', conflict: true, failing: [], changesRequested: [], threads: [], comments: [] }]]);
+  assert.deepEqual(healthCommands({ work }, health, { owner: OWNER, now: ctx.now }).map(c => c.target), ['W-152']);
+});

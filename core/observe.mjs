@@ -103,7 +103,9 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
   const byPr = new Map();
   for (const w of Object.values(state.work)) { const k = recordPrKey(w, owner); if (k && acting(w)) byPr.set(k, [...(byPr.get(k) || []), w]); }
   for (const [key, ws] of byPr) {
-    const own = state.work[idx.get(key.replace(':', '-'))], w = acting(own) ? own : ws[0];
+    // The record already fixing this PR takes its new findings (W-377), else the PR's own record, else the first in play.
+    const fixer = ws.find(r => (r.assignments || []).some(a => a.kind === 'fixes' && ['queued', 'started'].includes(a.status)));
+    const own = state.work[idx.get(key.replace(':', '-'))], w = fixer || (acting(own) ? own : ws[0]);
     const h = health.get(key);
     if (!h || W.trackOf(w, { exclude }) === 'excluded') continue;
     // A stacked PR's CI and conflicts are judged against its base, not main; its review feedback is still ours to work.

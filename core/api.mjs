@@ -70,6 +70,10 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
     if (action === 'ack' && /^W-\d+\/R\d+$/.test(args.ref)) cmds = [...cmds, ...Object.values(s.messages).filter(m => m.to === seat && !m.ackedAt && [m.about?.requests].flat().includes(args.ref)).map(m => ({ kind: 'ack_message', target: m.id, payload: { outcome: args.outcome } }))];
     const ctx = { now: now(), by: seat };
     // Done and approval waits are checked against GitHub as it is now, not as last polled.
+    // One fixes round per PR (W-377): a second one on a PR another record is already fixing is refused.
+    const pr8 = action === 'assign' && args.kind === 'fixes' && s.work[args.work]?.links?.pr;
+    const fixing = pr8 && Object.values(s.work).flatMap(o => o.id !== args.work && o.links?.pr === pr8 ? (o.assignments || []).filter(a => a.kind === 'fixes' && ['queued', 'started'].includes(a.status)).map(a => `${o.id} ${a.id}`) : [])[0];
+    if (fixing) return [409, { error: `${pr8} is already being fixed by ${fixing}; add to that round instead of starting a second one.` }];
     const closing = action === 'triage' && args.bucket === 'close';
     const pr = (['done', 'await_approval'].includes(action) || closing) && (args.pr || s.work[args.work]?.links?.pr);
     const remote = pr ? await readPr(pr) : null;

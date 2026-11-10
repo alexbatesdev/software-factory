@@ -320,3 +320,15 @@ test("a finished record whose own PR GitHub shows closed unmerged can be closed 
     assert.equal(f.store.state.work['W-1'].phase, 'cancelled');
   } finally { f.close(); }
 });
+
+test("a second fixes assignment on a PR another record is already fixing is refused (W-377: #8363 queued on two streams)", async () => {
+  const f = await serve();
+  try {
+    const PR = 'https://github.com/builtforteams/built-rails/pull/8363';
+    await f.act('local-head', 'create', { title: 'W-76 shape' }); await f.act('local-head', 'create', { title: 'W-152 shape' });
+    for (const id of ['W-1', 'W-2']) f.store.state.work[id].links.pr = PR;
+    f.store.state.work['W-1'].assignments = [{ id: 'R1', kind: 'fixes', status: 'started', owner: S1, version: 1 }];
+    const [code, body] = await f.act('board lead', 'assign', { work: 'W-2', assignmentId: 'R2', kind: 'fixes', status: 'queued', owner: 'sup: stream-2', evidence: 'conflict' });
+    assert.equal(code, 409); assert.match(body.error, /W-1 R1/);
+  } finally { f.close(); }
+});
