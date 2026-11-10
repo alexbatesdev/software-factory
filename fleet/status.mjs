@@ -34,7 +34,7 @@ export const BOARD_ACTIONS = 'Board Actions';
 export const SERVICES = 'Services';
 export const RESERVED = ['Main', BOARD_ACTIONS, 'Terminals', SERVICES];
 export const REVIEWS = 'Trusted reviews';
-// A host stream's supervisor spawns one worker per job in that repo's workspace (TB-159), so it has no Worker tab.
+// A host stream's supervisor spawns one worker per job in a new tab of its own workspace (TB-159; W-357), so it has no Worker tab.
 export const HOST = 'Host';
 const BOARD_SPAWNED = /^triage-run\b/i;
 
