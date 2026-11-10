@@ -91,7 +91,9 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const bound = boundStream(w, byId, labels);
     // A stream that declined this record isn't sent it again unless someone pins it there (W-217).
     const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));
-    if (bound && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || 'built-rails'}; re-route it`); return; }
+    // A pin to a host stream is a person's deliberate choice (W-356: Alex put OSUP on the host); the host reaches every repo, a sandbox doesn't.
+    const hostPin = w.streamPin && (cfg.supervisors[bound?.to]?.repos || cfg.supervisors[bound?.to]?.branches);
+    if (bound && !hostPin && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || 'built-rails'}; re-route it`); return; }
     if (bound && declined.has(bound.to) && !w.streamPin) { wait(`${bound.to} declined it; re-route or pin it`); return; }
     if (bound && holds.has(bound.to)) { wait(`${bound.to} is busy with ${holds.get(bound.to)}; waits its turn (${bound.why})`); return; }
     // ponytail: ties go to config order, not the stream idle longest; add last-dispatch times if one stream keeps winning ties.

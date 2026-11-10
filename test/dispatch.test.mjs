@@ -248,3 +248,11 @@ test('support work skips the new-PR go when dispatching (W-329)', () => {
   assert.match(run(false).reason, /Alex's go/, 'unasked extra work waits');
   assert.ok(run(true).action, 'support work dispatches');
 });
+
+test("a record pinned to a host stream on someone's word is sent there even outside the host's repos; unpinned, a sandbox stream takes it (W-356: W-354 OSUP)", () => {
+  const H = 'sup: host', hcfg = { ...cfg, supervisors: { ...cfg.supervisors, [H]: { repos: { 'teamwork-mini-mcp': {} } } } };
+  const rec = over => w('W-354', { owner: H, stream: H, support: true, kind: 'build', source: { type: 'teamwork' }, ...over });
+  const run = over => autoDispatchPlan([rec(over)], hcfg, { terminals: [] })[0];
+  assert.notEqual(run({}).to, H, 'owner alone does not bind: unpinned built-rails work goes to a sandbox stream');
+  assert.deepEqual([run({ streamPin: { by: "local-head, on Alex's word" } }).action, run({ streamPin: { by: 'x' } }).to], ['queue', H]);
+});
