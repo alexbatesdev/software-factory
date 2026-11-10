@@ -78,7 +78,9 @@ export function workerJob(u, works) {
 }
 
 // A host stream has no paired worker (W-295): its worker is the unpaired agent its started job names as owner.
-const hostWorker = (u, works, others) => others.find(a => Object.values(works).some(r => r.stream === u.supervisor?.label && (r.assignments || []).some(x => x.status === 'started' && x.owner === a.label)));
+// Failing that, its worker is the one other agent in the supervisor's own workspace (W-357 puts it there; W-362: R1 kept the supervisor as owner).
+const hostWorker = (u, works, others) => others.find(a => Object.values(works).some(r => r.stream === u.supervisor?.label && (r.assignments || []).some(x => x.status === 'started' && x.owner === a.label)))
+  || (([one, ...more]) => (more.length ? undefined : one))(others.filter(a => u.supervisor?.workspace && a.workspace === u.supervisor.workspace && a.label !== u.supervisor.label));
 
 export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000, supervisors, others = [] }) {
   const next = { ...watch }, due = [];
