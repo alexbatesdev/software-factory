@@ -94,6 +94,9 @@ const HOUR = 3600000, ago = (now, t) => Date.parse(now) - Date.parse(t || 0);
 export function contradictions(state, { prState = () => null, now }) {
   const out = [], add = (id, kind, evidence, next) => out.some(c => c.id === id && c.kind === kind) || out.push({ id, kind, evidence, next });
   const resumedAt = Object.fromEntries(Object.values(state.messages || {}).filter(m => m.about?.resume).map(m => [m.about.resume, m.at]));
+  for (const w of Object.values(state.work).filter(w => TERMINAL.includes(w.phase)))
+    for (const a of (w.assignments || []).filter(a => ['queued', 'started', 'blocked'].includes(a.status)))
+      add(w.id, 'closed-with-live-job', `${w.id} is ${w.phase} but ${a.id} (${a.kind || 'job'}, ${a.owner || 'no owner'}) is still ${a.status}`, `cancel ${a.id} with the evidence that its work ended`);
   for (const w of Object.values(state.work).filter(w => !TERMINAL.includes(w.phase))) {
     if (['awaiting_human_approval', 'ready_for_human'].includes(w.phase) && prState(w.links?.pr) === 'MERGED')
       add(w.id, 'merged-awaiting', `${w.links.pr} reads MERGED but the record is still ${w.phase}`, 'check why merge-close skipped it (coverage beyond the PR?) and close or re-scope it');

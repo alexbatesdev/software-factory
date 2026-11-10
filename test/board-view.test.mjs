@@ -287,3 +287,13 @@ test("W-375: each card names who really acts: an agent seat is the factory, Alex
   assert.match(v[held].waiting.text, /#6233 is closed/);
   assert.deepEqual([v[member].section, v[member].waiting.text], ['factory', `#8236 is being fixed under ${fixer}`]);
 });
+
+test("a done record never shows a running job, and its leftover job can be cancelled (W-383: W-128, W-130)", async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-10T23:10:00.000Z', by: 'test' };
+  const id = s.append({ kind: 'create', payload: { title: 'Trusted review #8415' } }, c).id;
+  s.state.work[id].assignments = [{ id: 'R1', kind: 'review', status: 'started', owner: 'trusted-review-8415', version: 1, history: [] }];
+  s.state.work[id].phase = 'done';
+  assert.equal(boardView(s.state).find(x => x.id === id).running, null);
+  s.append({ kind: 'event', target: id, payload: { type: 'cancel_assignment', assignmentId: 'R1', expectedVersion: 1, evidence: 'pane gone since the 11-06 carve-out' } }, c);
+  assert.deepEqual([s.state.work[id].assignments[0].status, s.state.work[id].phase], ['cancelled', 'done']);
+});

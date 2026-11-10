@@ -144,3 +144,8 @@ test('the contradiction audit names a record once per kind, and leaves held fact
   } };
   assert.deepEqual(contradictions(state, { now }).map(c => `${c.kind}/${c.id}`), ['started-silent/W-1']);
 });
+
+test('the audit names a closed record that still has a live job (W-383)', () => {
+  const state = { questions: {}, messages: {}, work: { 'W-128': { id: 'W-128', phase: 'done', updatedAt: '2026-11-02T00:00:00.000Z', updates: [], assignments: [{ id: 'R1', status: 'started', at: '2026-10-30T00:00:00.000Z' }] } } };
+  assert.deepEqual(contradictions(state, { now: '2026-11-10T23:00:00.000Z' }).map(c => `${c.kind}/${c.id}`), ['closed-with-live-job/W-128']);
+});

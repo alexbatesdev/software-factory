@@ -262,7 +262,8 @@ export function applyEvent(work, e, ctx) {
   if (w.head) for (const k of ['head', 'sha']) if (sameSha(e[k], w.head)) e = { ...e, [k]: w.head };
   let spawn;
   const terminal = TERMINAL.includes(w.phase);
-  if (terminal && !['note', 'ack', 'delivery', 'relate'].includes(e.type) && !(e.type === 'absorb' && w.phase === 'cancelled')) fail(`${w.id} is ${w.phase}.`);
+  // A closed record may still clear a leftover job (W-383) or hand over its key (W-365).
+  if (terminal && !['note', 'ack', 'delivery', 'relate', 'cancel_assignment'].includes(e.type) && !(e.type === 'absorb' && w.phase === 'cancelled')) fail(`${w.id} is ${w.phase}.`);
 
   switch (e.type) {
     case 'waive_internal_review':
