@@ -104,3 +104,15 @@ test("work that carries out Alex's own answer was asked for: no New-PR approval;
     assert.deepEqual((await f.board()).newPrs.map(p => p.id), [], 'W-2 carries out TB-189');
   } finally { f.close(); }
 });
+
+test("triage support: true marks a support record that didn't come through the Teamwork poller, so it skips New PRs and dispatches (W-353: W-352 OSUP)", async () => {
+  const f = await serve();
+  try {
+    const triage = args => f.post('/api/actions', { action: 'triage', args: { work: 'W-1', bucket: 'ready', note: 'OSUP support INVESTIGATE', ...args } }, 'board lead');
+    assert.equal((await triage({ support: true }))[0], 200);
+    assert.equal(f.store.state.work['W-1'].support, true);
+    const b = await f.board();
+    assert.ok(!b.newPrs.some(p => p.id === 'W-1'));
+    assert.equal(b.cards.find(c => c.id === 'W-1').section, 'support');
+  } finally { f.close(); }
+});
