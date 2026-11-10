@@ -137,3 +137,17 @@ test("a Teamwork record's objective is the task's description, so triage can rea
   sourceCommands(old.state, new Map([[t.id, t]]), 'teamwork', parseAcs, { now: '2026-11-09T00:00:00.000Z' }).map(c => old.append(c, ctx('poller')));
   assert.equal(Object.values(old.state.work)[0].objective || '', '', 'rows logged before the change replay as before');
 });
+
+test("a hand-made record that links a Teamwork task is that task's record: the poller joins it instead of filing a duplicate (W-352/W-354)", () => {
+  const s = open(), at = now => ({ now, by: 'test' });
+  const id = s.append({ kind: 'create', payload: { title: 'OSUP | INVESTIGATE', links: { source: 'https://builtforteams.teamwork.com/app/tasks/41503361' } } }, at('2026-11-10T20:00:00.000Z')).id;
+  const seen = s.append({ kind: 'observe_source', payload: { ...task(41503361, 'OSUP | INVESTIGATE | User Unable To Submit Req'), support: true } }, at('2026-11-10T20:01:00.000Z')).id;
+  assert.equal(seen, id, 'joined, not a second record');
+  assert.ok(s.state.work[id].aliases.includes('tw-41503361'));
+  assert.equal(s.state.work[id].support, true, 'a support task makes its joined record support work');
+  assert.equal(Object.keys(s.state.work).length, 1);
+  const old = open();
+  old.append({ kind: 'create', payload: { title: 'x', links: { source: 'https://builtforteams.teamwork.com/app/tasks/7' } } }, at('2026-11-10T18:00:00.000Z'));
+  old.append({ kind: 'observe_source', payload: task(7, 'x') }, at('2026-11-10T18:01:00.000Z'));
+  assert.equal(Object.keys(old.state.work).length, 2, 'replay before the change keeps its two records');
+});

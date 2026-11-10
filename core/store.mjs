@@ -159,8 +159,14 @@ function finish(state, row, observed, touched, supervisors) {
 }
 
 // A task or PR seen by a poller: refresh its record, attach it to the record that carries it, or open a new one.
+// From here a live record that links a Teamwork task URL is that task's record (W-353: W-352 and W-354 were one task). Gated for replay.
+const TW_LINK_FROM = '2026-11-10T19:15:00.000Z';
+const twLinked = (state, item) => item.kind === 'task' && Object.values(state.work).find(w => !W.TERMINAL.includes(w.phase) && !w.source?.key?.startsWith('tw-')
+  && `tw-${String(w.links?.source || '').match(/teamwork\.com\/app\/tasks\/(\d+)/)?.[1]}` === item.id);
+
 function observeSource(state, item, ctx) {
-  const o = ownerOf(state, item, sourceIndex(state), ctx.now);
+  const idx = sourceIndex(state), linked = ctx.now >= TW_LINK_FROM && !idx.has(item.id) && twLinked(state, item);
+  const o = linked ? { id: linked.id, why: 'this record links the task' } : ownerOf(state, item, idx, ctx.now);
   if (!o) {
     const id = create(state, { title: item.title, kind: item.kind === 'task' ? 'build' : 'pr-feedback', source: { type: item.kind === 'task' ? 'teamwork' : 'pr', key: item.id } }, ctx);
     state.work[id] = refresh(state.work[id], item, parseAcs, ctx.now);
@@ -170,7 +176,7 @@ function observeSource(state, item, ctx) {
   if (w.source?.key === item.id) { state.work[o.id] = refresh(w, item, parseAcs, ctx.now); return o.id; }
   if ((w.aliases || []).includes(item.id)) return o.id;
   // Joining a record (e.g. a task's own PR, by branch): the key becomes an alias; the record keeps its title and an existing PR link.
-  state.work[o.id] = W.updateWork(w, { aliases: [...(w.aliases || []), item.id], ...(item.kind === 'pr' && !w.links?.pr ? { links: { pr: item.url, branch: item.branch } } : {}) }, ctx);
+  state.work[o.id] = W.updateWork(w, { aliases: [...(w.aliases || []), item.id], ...(item.kind === 'pr' && !w.links?.pr ? { links: { pr: item.url, branch: item.branch } } : {}), ...(linked && item.support ? { support: true } : {}) }, ctx);
   state.work[o.id].updates.at(-1).text += ` ${item.ref} joined: ${o.why}.`;
   return o.id;
 }
