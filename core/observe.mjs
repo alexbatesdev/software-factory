@@ -97,7 +97,7 @@ export function ancestryWanted(state, heads, owner) {
  * observe_health commands for Alex's PRs into main whose merge or CI state at the record's head needs work.
  * @param health Map(repo:num → {head, base, conflict, failing}); a PR GitHub hasn't finished computing says neither.
  */
-export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map() }) {
+export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map(), branches = new Map() }) {
   const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
   const byPr = new Map();
@@ -108,7 +108,11 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
     if (!h || W.trackOf(w, { exclude }) === 'excluded') continue;
     // A stacked PR's CI and conflicts are judged against its base, not main; its review feedback is still ours to work.
     const onMain = h.base === 'main';
-    const payload = { head: h.head, conflict: onMain && h.conflict, failing: onMain ? h.failing : [], changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(key.split(':')[0]) || null };
+    // W-375: a stacked PR's failing check is ours when its base PR (read this tick) passes it.
+    const repo = key.split(':')[0], baseId = !onMain && [...branches].find(([id, b]) => b === h.base && id.startsWith(`${repo}-`))?.[0];
+    const baseFailing = baseId && health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing;
+    const failing = onMain ? h.failing : baseFailing ? h.failing.filter(f => !baseFailing.includes(f)) : [];
+    const payload = { head: h.head, conflict: onMain && h.conflict, failing, changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(key.split(':')[0]) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   return cmds;

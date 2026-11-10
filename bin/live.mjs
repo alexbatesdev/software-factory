@@ -170,7 +170,7 @@ async function githubTick() {
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
     if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), exclude: config.autoDispatch?.exclude, mainGreen })], 'github');
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), exclude: config.autoDispatch?.exclude, mainGreen, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, { exclude: config.autoDispatch?.exclude }), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {

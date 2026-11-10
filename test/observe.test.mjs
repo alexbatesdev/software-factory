@@ -186,3 +186,14 @@ test("the open-PR search asks for every PR, not gh's default 30 (W-372: 46 open,
   const i = args.indexOf('--limit');
   assert.ok(i > 0 && Number(args[i + 1]) >= 1000, `gh search needs --limit; got ${args.join(' ')}`);
 });
+
+test("a stacked PR's failing check is ours when its base PR doesn't fail it; unread base, or the same failure on the base, stays the base's (W-375: #8244, #8629)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const rec = { ...createWork({ id: 'W-85', title: 'x', kind: 'build', links: { pr: PR(8244), branch: 'alex/ped/3' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const stacked = { head: 'aaaaaaa1', base: 'alex/ped/2', conflict: false, failing: ['ci/circleci: test', 'Audit Ruby'], changesRequested: [], threads: [], comments: [] };
+  const run = (baseFailing, branches) => healthCommands({ work: { 'W-85': rec } }, new Map([['built-rails:8244', stacked], ...(baseFailing ? [['built-rails:8242', { head: 'b1', base: 'main', conflict: false, failing: baseFailing }]] : [])]), { owner: OWNER, now: ctx.now, branches })[0]?.payload.failing;
+  const br = new Map([['built-rails-8242', 'alex/ped/2'], ['built-rails-8244', 'alex/ped/3']]);
+  assert.deepEqual(run(['Audit Ruby'], br), ['ci/circleci: test'], 'only what the base passes');
+  assert.equal(run(null, br), undefined, 'base not read: nothing claimed');
+  assert.equal(run(['ci/circleci: test', 'Audit Ruby'], br), undefined, 'every failure is the base\'s too');
+});
