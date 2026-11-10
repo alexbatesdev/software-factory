@@ -292,3 +292,13 @@ test("a record-level wait on Alex is refused while the record has an open questi
     assert.equal((await f.act(S1, 'progress', { work: 'W-1', waitingOn: 'Alex runs the migration script', actor: 'alex', text: 'x' }))[0], 200, 'with no open question, a manual action of Alex is fine');
   } finally { f.close(); }
 });
+
+test('done replacesPr must name the PR the record carries (W-371)', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'OSUP' });
+    f.store.state.work['W-1'].links.pr = 'https://github.com/builtforteams/built-rails/pull/1';
+    const [code, body] = await f.act(S1, 'done', { work: 'W-1', pr: 'https://github.com/builtforteams/built-rails/pull/3', replacesPr: 'https://github.com/builtforteams/built-rails/pull/2', head: 'abc1234' });
+    assert.equal(code, 409); assert.match(body.error, /pull\/1/);
+  } finally { f.close(); }
+});

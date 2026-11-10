@@ -122,3 +122,14 @@ test('a hold with no release condition carries a review date and who reviews it,
   s.appendAll(commandsFor('triage', { work: id, bucket: 'intake', note: 'n', deferredTo: 'product' }), c);
   assert.deepEqual(s.state.work[id].externalDeps.map(d => d.text), ['review by 2026-11-16 (board lead)', 'deferred to product']);
 });
+
+test("done replacesPr moves a record from the PR Alex replaced to the new one; it must name the PR actually linked (W-371: W-354 #8694 -> hotfix #8707)", async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const OLD = 'https://github.com/builtforteams/built-rails/pull/8694', NEW = 'https://github.com/builtforteams/built-rails/pull/8707';
+  const s = openStore(':memory:'), c = { now: '2026-11-10T22:00:00.000Z', by: 'test' };
+  const id = s.append({ kind: 'create', payload: { title: 'OSUP', links: { pr: OLD } } }, c).id;
+  const cmds = commandsFor('done', { work: id, pr: NEW, replacesPr: OLD, head: 'abc1234' });
+  s.appendAll(cmds.filter(x => x.kind === 'update'), c);
+  assert.equal(s.state.work[id].links.pr, NEW);
+  assert.throws(() => s.appendAll(commandsFor('done', { work: id, pr: OLD, head: 'abc1234' }).filter(x => x.kind === 'update'), c), /already carries/, 'without replacesPr the one-PR rule still holds');
+});

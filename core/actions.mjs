@@ -26,7 +26,9 @@ const BUILD = {
   },
   done: a => {
     need(a, 'work');
-    const link = a.pr ? [{ kind: 'update', target: a.work, payload: { links: { pr: a.pr } } }] : [];
+    // A PR Alex replaced (W-371: hotfix to production) is unlinked first, so the record still carries one PR.
+    const swap = a.pr && a.replacesPr ? [{ kind: 'update', target: a.work, payload: { links: { pr: null } } }] : [];
+    const link = a.pr ? [...swap, { kind: 'update', target: a.work, payload: { links: { pr: a.pr } } }] : [];
     return [...link, ev(a.work, a.assignmentId
       ? { type: 'assignment_done', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, head: a.head, ...(a.noChange ? { noChange: a.noChange } : {}) }
       : { type: 'implementation_done', head: a.head })];

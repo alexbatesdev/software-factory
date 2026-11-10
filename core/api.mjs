@@ -40,6 +40,7 @@ export function createApi({ store, config, gh = null, readPr = async () => null,
       if (open.length) return [409, { error: `${args.work} already has an open question: ${open.map(([id, q]) => `${id} "${q.title}" (from ${q.from})`).join('; ')}. Add to it with ask amend: ${open[0][0]} and a note, or pass distinct: true if this is a separate decision.` }];
     }
     // Code work is done only against Benny's Definition of Done (Alex, 11-09): the worker's exit report, checked by the supervisor.
+    if (action === 'done' && args.replacesPr && s.work[args.work]?.links?.pr !== args.replacesPr) return [409, { error: `replacesPr names the PR ${args.work} carries now: ${s.work[args.work]?.links?.pr || 'none'}.` }];
     const exitReport = action === 'done' && !args.noChange && s.work[args.work]?.assignments?.find(x => x.id === args.assignmentId)?.kind !== 'review';
     if (exitReport) {
       const miss = ['changed', 'proven', 'unverified', 'risk'].filter(k => !args.report?.[k]);
