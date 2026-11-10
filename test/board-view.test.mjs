@@ -267,3 +267,23 @@ test("approvals given before the PR's latest commits don't make it ready; the ca
   const unread = boardView(s.state, { prs: new Map([[PR, { ...pr, approvals: undefined }]]) }).find(x => x.id === id);
   assert.notEqual(unread.section, 'merge', 'approval commits not read: never ready');
 });
+
+test("W-375: each card names who really acts: an agent seat is the factory, Alex's own repo PR is his, a closed PR says so, and a PR another record is fixing waits on that fix", async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-10T23:00:00.000Z', by: 'test' };
+  const mk = (title, extra = {}) => s.append({ kind: 'create', payload: { title, ...extra } }, c).id;
+  const bug = mk('board bug');
+  s.append({ kind: 'event', target: bug, payload: { type: 'wait', who: 'triage board worker', what: 'fix it', evidence: 'x', actor: 'other' } }, c);
+  const own = mk('mini mcp', { links: { pr: 'https://github.com/alexbatesdev/teamwork-mini-mcp/pull/1' } });
+  const held = mk('W-1 shape', { links: { pr: 'https://github.com/builtforteams/built-rails/pull/6233' } });
+  s.append({ kind: 'event', target: held, payload: { type: 'wait', who: 'product and design', what: 'on hold', evidence: 'x', actor: 'other' } }, c);
+  const PR = 'https://github.com/builtforteams/built-rails/pull/8236';
+  const fixer = mk('W-71 shape', { links: { pr: PR } }), member = mk('W-40 shape');
+  s.state.work[member].links.pr = PR;
+  s.state.work[fixer].phase = 'fixes'; s.state.work[member].phase = 'awaiting_human_approval'; s.state.work[own].phase = 'awaiting_human_approval';
+  const prs = new Map([['https://github.com/builtforteams/built-rails/pull/6233', { state: 'CLOSED' }], [PR, { state: 'OPEN', isDraft: false }]]);
+  const v = Object.fromEntries(boardView(s.state, { prs, githubOwner: 'builtforteams' }).map(x => [x.id, x]));
+  assert.equal(v[bug].section, 'factory', 'the board developer is an agent seat');
+  assert.deepEqual([v[own].section, /your own repo/.test(v[own].waiting.text)], ['you', true]);
+  assert.match(v[held].waiting.text, /#6233 is closed/);
+  assert.deepEqual([v[member].section, v[member].waiting.text], ['factory', `#8236 is being fixed under ${fixer}`]);
+});

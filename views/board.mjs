@@ -7,7 +7,7 @@ import { statusOf, awaitingReview, PHASE_LABEL } from './status.mjs';
 import { supportOf, prGateView } from '../core/store.mjs';
 
 // Who a card waits on decides its section. Agents (seats, triage, reviewer panes) are the factory.
-const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
+const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$|^triage board worker$|^agent-unblocker$|^board$/;
 // The one place a card's section is decided (W-317): support on top, then Alex's action, another person, Parked only when nobody is named.
 export const sectionOf = c => c.support && c.category !== 'history' ? 'support'
   : c.category === 'history' ? 'done'
@@ -96,7 +96,7 @@ function personWait(w, state, prs, stale) {
   return null;
 }
 
-export function boardView(state, { supervisors = [], units = [], prs = new Map(), idleSince = {}, graceMs = 300000, queue = [], prApproval, prsReadAt = null, now = Date.now() } = {}) {
+export function boardView(state, { supervisors = [], units = [], prs = new Map(), idleSince = {}, graceMs = 300000, queue = [], prApproval, prsReadAt = null, now = Date.now(), githubOwner = null } = {}) {
   // A PR read older than three polls can't vouch for a merge (W-317): it never shows ready.
   const stale = prsReadAt && now - prsReadAt > 15 * 60000 ? `GitHub not read since ${new Date(prsReadAt).toISOString().slice(11, 16)}Z` : null;
   // Auto-dispatch decides why ready work waits; its reason is the card's waiting line, and its order is the queue.
@@ -152,6 +152,12 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     if (person && st.waiting?.who !== 'you') st.waiting = person;
     else if (q && st.waiting?.who !== 'you' && !w.waitingOn) st.waiting = { who: 'factory', text: q.position ? `In queue, #${q.position}: the next free stream takes #1` : `Not dispatched: ${q.reason}` };
     // Held on Alex's open question: it waits on him, wherever its triage parked it.
+    const pr = w.links?.pr, n = pr && `#${pr.split('/pull/')[1]}`;
+    // W-375: a PR in Alex's own repo has no other reviewers; a closed PR is named; a PR another record is fixing waits on that fix.
+    if (githubOwner && pr && w.phase === 'awaiting_human_approval' && !pr.includes(`github.com/${githubOwner}/`) && !w.waitingOn) st.waiting = { who: 'you', text: `Waiting on you: ${n} is in your own repo (${pr.split('/pull/')[0].split('github.com/')[1]}); review and merge it yourself` };
+    if (prs.get(pr)?.state === 'CLOSED' && st.waiting && !/is closed/.test(st.waiting.text)) st.waiting = { ...st.waiting, text: `${st.waiting.text} (${n} is closed)` };
+    const fixing = pr && !W.BUILDING.includes(w.phase) && Object.values(state.work).find(o => o.id !== w.id && o.links?.pr === pr && W.BUILDING.includes(o.phase));
+    if (fixing && w.phase === 'awaiting_human_approval') st.waiting = { who: 'factory', text: `${n} is being fixed under ${fixing.id}` };
     const heldOn = (w.externalDeps || []).map(d => d.question).find(id => state.questions[id]?.status === 'open') || null;
     if (heldOn) st.waiting = { who: 'you', text: `Waiting on you: ${heldOn} (${state.questions[heldOn].title})` };
     const c = { id: w.id, title: w.title, kind: w.kind, running: started ? { id: started.id, kind: started.kind, owner: started.owner } : null, queue: q || null, priority: w.priority === 1, phase: w.phase, phaseLabel: PHASE_LABEL[w.phase], stream: w.stream || null, pr: w.links?.pr || null,

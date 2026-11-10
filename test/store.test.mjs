@@ -326,3 +326,13 @@ test('a scout is created ready, its dispatch reaches its stream, it proposes bui
   act('done', { work: id, assignmentId: 'A1', expectedVersion: 1, noChange: { verifiedOn: 'abc1234', evidence: '1 filed, 2 skipped' } });
   assert.equal(s.state.work[id].phase, 'done');
 });
+
+test("an answered question releases a record wait that names it (W-375: W-316 still showed TB-210)", async () => {
+  const s = openStore(':memory:'), c = { now: '2026-11-10T23:00:00.000Z', by: 'test' };
+  const id = s.append({ kind: 'create', payload: { title: 'Lock state' } }, c).id;
+  s.append({ kind: 'ask', payload: { title: 'Lock state?', work: id, options: [{ key: 'a', text: 'a' }] } }, c);
+  const q = Object.keys(s.state.questions)[0];
+  s.append({ kind: 'event', target: id, payload: { type: 'wait', who: q, what: 'parked on it', evidence: 'x' } }, c);
+  s.append({ kind: 'answer', target: q, payload: { choice: 'a' } }, c);
+  assert.equal(s.state.work[id].waitingOn, null);
+});

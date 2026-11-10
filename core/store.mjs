@@ -92,6 +92,10 @@ export function fold(state, row, { supervisors = [] } = {}) {
       const next = W.syncIntake(w, { bucket: w.triage?.bucket || 'clarify', openQuestions: derivedCtx(state, w.id).openQuestions });
       if (next.phase !== w.phase) state.work[w.id] = { ...next, updates: [...w.updates, { at: observed.now, by: observed.by, text: `Questions answered; ${next.phase === 'ready' ? 'ready to queue' : `back to ${next.phase}`}.` }] };
     }
+    // An answered or closed question releases a record wait that names it (W-375), from ANSWER_RELEASES_FROM for replay.
+    if (observed.now >= ANSWER_RELEASES_FROM && state.questions[q]?.status !== 'open')
+      for (const r of Object.values(state.work)) if (r.waitingOn?.who === q)
+        state.work[r.id] = { ...r, waitingOn: null, updates: [...r.updates, { at: observed.now, by: observed.by, text: `No longer waiting on ${q}: it is ${state.questions[q].status}.` }] };
     finish(state, row, observed, null, supervisors);
     return q;
   }
@@ -161,6 +165,7 @@ function finish(state, row, observed, touched, supervisors) {
 
 // A task or PR seen by a poller: refresh its record, attach it to the record that carries it, or open a new one.
 // From here a live record that links a Teamwork task URL is that task's record (W-353: W-352 and W-354 were one task). Gated for replay.
+const ANSWER_RELEASES_FROM = '2026-11-10T22:45:00.000Z';
 const TW_LINK_FROM = '2026-11-10T19:15:00.000Z';
 const twLinked = (state, item) => item.kind === 'task' && Object.values(state.work).find(w => !W.TERMINAL.includes(w.phase) && !w.source?.key?.startsWith('tw-')
   && `tw-${String(w.links?.source || '').match(/teamwork\.com\/app\/tasks\/(\d+)/)?.[1]}` === item.id);
