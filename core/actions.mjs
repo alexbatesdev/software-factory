@@ -82,6 +82,8 @@ const BUILD = {
     return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), ...(a.support === true ? [{ kind: 'update', target: a.work, payload: { support: true } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
+  // A new Teamwork task waits for Alex's click on the dashboard (W-382); the factory creates it, never a seat.
+  propose_task: a => [{ kind: 'task_request', payload: { work: a.work, name: a.name, description: a.description, tasklistId: a.tasklistId, parentTaskId: a.parentTaskId, assigneeUserId: a.assigneeUserId, why: a.why } }],
   resolve_thread: a => [{ kind: 'thread_request', payload: { work: a.work, threadId: a.threadId, url: a.url, reviewer: a.reviewer, ask: a.ask, resolution: a.resolution } }],
   // Repair (board developer): a poller's duplicate record folds into the record that carries the work.
   absorb: a => { need(a, 'work', 'into'); return [ev(a.work, { type: 'absorb', into: a.into })]; },

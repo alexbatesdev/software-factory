@@ -22,7 +22,7 @@ import { scoutPlan } from '../core/scout.mjs';
 import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue, contradictions } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMainGreen, readCompare } from '../sources/github.mjs';
-import { readTasks, readTopParents, readTaskFeedback } from '../sources/teamwork.mjs';
+import { readTasks, readTopParents, readTaskFeedback, createTask, getTask } from '../sources/teamwork.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
 import { execFile } from 'node:child_process';
@@ -307,7 +307,7 @@ async function fleetTick() {
   } catch (e) { log(`fleet: ${e.message}`); }
 }
 
-http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, readPr: async url => (await readPrs([url]))[0] || null,
+http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask }, readPr: async url => (await readPrs([url]))[0] || null,
   observed: () => ({ units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 

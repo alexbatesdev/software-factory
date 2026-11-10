@@ -8,11 +8,12 @@ import { sourceIndex, ownerOf, claimPr, refresh } from './correlate.mjs';
 import { foldQuestion } from './questions.mjs';
 import { PR_REF, prRefUrl } from './units.mjs';
 import { foldThread, THREAD_KINDS } from './threads.mjs';
+import { foldTaskRequest, TASK_KINDS } from './task-requests.mjs';
 
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
 const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver'];
 
-export const emptyState = () => ({ work: {}, questions: {}, threads: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, nextQuestion: 1, nextThread: 1, seq: 0 });
+export const emptyState = () => ({ work: {}, questions: {}, threads: {}, taskRequests: {}, notifications: {}, messages: {}, legacy: {}, nextWork: 1, nextMessage: 1, nextQuestion: 1, nextThread: 1, nextTaskRequest: 1, seq: 0 });
 
 // What the reducer needs to know about other records, computed from the fold so far.
 /** Support work (Alex's support week, 11-09): a support task's record, or one filed from, under or as the same work as one. */
@@ -83,6 +84,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   const { kind, target: id, payload, ctx: observed } = row;
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
   if (THREAD_KINDS.includes(kind)) { const t = foldThread(state, row); state.seq = row.seq; return t; }
+  if (TASK_KINDS.includes(kind)) { const t = foldTaskRequest(state, row); state.seq = row.seq; return t; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
   if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close', 'question_amend'].includes(kind)) {
     const q = foldQuestion(state, row);

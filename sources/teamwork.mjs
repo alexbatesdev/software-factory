@@ -64,3 +64,11 @@ export async function readTaskFeedback(ids, since) {
   }
   return out;
 }
+
+/** W-382: the factory's only Teamwork write path, run on Alex's dashboard click. Needs teamwork-mini's createTask (its #1). */
+export async function createTask(input) {
+  const c = await client();
+  if (typeof c.createTask !== 'function') throw new Error('teamwork-mini has no createTask yet: merge and build alexbatesdev/teamwork-mini-mcp#1');
+  return c.createTask(input);
+}
+export const getTask = async id => (await (await client()).getTask(id))?.task ?? null;
