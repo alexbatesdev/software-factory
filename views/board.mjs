@@ -4,7 +4,7 @@ import { routeOf, streamHold } from '../core/notifier.mjs';
 import { sourceIndex } from '../core/correlate.mjs';
 import { isPrUnit, groupIndex } from '../core/units.mjs';
 import { statusOf, awaitingReview, PHASE_LABEL } from './status.mjs';
-import { supportOf } from '../core/store.mjs';
+import { supportOf, prGateView } from '../core/store.mjs';
 
 // Who a card waits on decides its section. Agents (seats, triage, reviewer panes) are the factory.
 const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$/;
@@ -49,7 +49,7 @@ function withDelivery(state, w, questions) {
 function approvalNote(w, state, prApproval) {
   const rt = Object.values(state.threads || {}).filter(t => t.work === w.id && t.status !== 'resolved').length;
   if (rt) return `resolve ${rt} review thread${rt > 1 ? 's' : ''}`;
-  return W.awaitsPrApproval({ ...w, support: supportOf(state, w.id) }, prApproval) ? 'approve opening a new PR' : null;
+  return W.awaitsPrApproval(prGateView(state, w), prApproval) ? 'approve opening a new PR' : null;
 }
 
 const MERGE_STATE = { DIRTY: 'merge conflicts', BEHIND: 'behind main', BLOCKED: 'failing or pending checks', UNSTABLE: 'failing or pending checks', DRAFT: 'still a draft' };

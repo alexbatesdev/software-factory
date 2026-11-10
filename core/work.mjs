@@ -38,8 +38,8 @@ export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
  */
 // A new PR nobody asked for waits for Alex's go (Alex, 11-09): work that will open one, from a source he hasn't trusted.
 // Only `repos` go through PRs (no repo is built-rails); Alex's own tooling commits to main.
-// A fix found while investigating a support task is part of that task (Alex, 11-09, W-329): `support` is supportOf, set by the caller.
-export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval && !w.support
+// Support work (W-329) and work carrying out Alex's own answer (W-333) were asked for: `support`/`asked` come from store.mjs prGateView.
+export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval && !w.support && !w.asked
   && (!repos || repos.includes(w.repo || 'built-rails')) && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
 
 /** An unstarted record a stream would take, held for Alex's new-PR go: the Approvals list and its card both read this. */
@@ -758,6 +758,11 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Held until ${e.prs.join(', ')} merge${e.prs.length > 1 ? '' : 's'}.`);
       break;
     }
+    case 'carries_out':
+      if (!/^TB-\d+$/.test(e.question || '')) fail('carries_out names a question, TB-n.');
+      w.carriesOut = [...new Set([...(w.carriesOut || []), e.question])];
+      note(w, ctx, `Carries out Alex's answer to ${e.question}.`);
+      break;
     case 'hold_released':
       // A settled free-text hold, cleared by whoever triages it (W-3: the board lead had no way to).
       if (e.text) { if (!w.externalDeps.some(d => (d.text || d.ref) === e.text)) fail(`${w.id} has no hold "${e.text}".`); w.externalDeps = w.externalDeps.filter(d => (d.text || d.ref) !== e.text); note(w, ctx, `Hold released: ${e.text}.`); break; }

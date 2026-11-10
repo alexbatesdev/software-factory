@@ -5,7 +5,7 @@ import { openStore } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 
 const S1 = 'sup: stream-1', T = '2026-11-09T20:00:00.000Z';
-const config = { roles: {}, routing: { supervisors: { [S1]: {} } } };
+const config = { roles: { 'board lead': 'board-lead' }, routing: { supervisors: { [S1]: {} } } };
 
 async function serve() {
   const store = openStore(':memory:', { supervisors: [S1] });
@@ -88,5 +88,19 @@ test("a fix found while investigating a support task is part of it: no New-PR ap
     assert.ok(b.newPrs.some(p => p.id === 'W-1'), 'genuinely extra work still waits');
     const [, body] = await f.post('/api/actions', { action: 'assign', args: { work: fix, assignmentId: 'R1', kind: 'implementation', status: 'started', owner: S1 } }, S1);
     assert.doesNotMatch(body.error || '', /Alex's go|new PR/, 'the new-PR gate does not refuse it');
+  } finally { f.close(); }
+});
+
+test("work that carries out Alex's own answer was asked for: no New-PR approval; triage carriesOut links an answer filed on another record (W-333)", async () => {
+  const f = await serve();
+  try {
+    f.store.state.questions['TB-176'] = { status: 'answered', work: 'W-1', title: 'Which check?' };
+    f.store.state.questions['TB-189'] = { status: 'answered', work: 'W-9', title: 'Lock state?' };
+    f.store.state.questions['TB-190'] = { status: 'open', work: 'W-9', title: 'Still open' };
+    assert.deepEqual((await f.board()).newPrs.map(p => p.id), ['W-2'], 'W-1 carries out TB-176, answered on it');
+    const triage = args => f.post('/api/actions', { action: 'triage', args: { work: 'W-2', bucket: 'ready', note: 'n', ...args } }, 'board lead');
+    assert.equal((await triage({ carriesOut: 'TB-190' }))[0], 409, 'only an answered question counts');
+    assert.equal((await triage({ carriesOut: 'TB-189' }))[0], 200);
+    assert.deepEqual((await f.board()).newPrs.map(p => p.id), [], 'W-2 carries out TB-189');
   } finally { f.close(); }
 });

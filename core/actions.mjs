@@ -76,7 +76,7 @@ const BUILD = {
     if (a.reviewBy && !/^\d{4}-\d{2}-\d{2}$/.test(a.reviewBy)) fail('reviewBy takes a date, YYYY-MM-DD.');
     if (a.reviewBy && !a.reviewer) fail('reviewBy needs a reviewer: the seat that reviews the hold on that date.');
     const holds = [...(prs.length ? [{ prs }] : []), ...(questions.length ? [{ questions }] : []), ...(a.reviewBy ? [{ review: { by: a.reviewBy, reviewer: a.reviewer } }] : []), ...(a.deferredTo ? [{ deferred: String(a.deferredTo) }] : [])];
-    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...proposal];
+    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   resolve_thread: a => [{ kind: 'thread_request', payload: { work: a.work, threadId: a.threadId, url: a.url, reviewer: a.reviewer, ask: a.ask, resolution: a.resolution } }],
