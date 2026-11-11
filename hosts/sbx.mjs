@@ -62,6 +62,8 @@ export function parseHealth(out, nowMs = Date.now()) {
 export const healthCmd = (agent = 'claude') => `df -P /; echo --; p=$(pgrep -o -x ${agent}) && ps -o etimes= -p "$p"; true`;
 
 export async function health(worker) {
+  // A pane back at its shell has no agent, whatever the sandbox says (a start that died, e.g. Codex at bootstrap).
+  if (worker.ref && await atShell(worker).catch(() => false)) return { diskPct: null, agentSince: null };
   const { stdout } = await run('sbx', ['exec', worker.sandbox, 'sh', '-c', healthCmd(worker.agent)], { timeout: 20000 });
   return parseHealth(stdout);
 }
@@ -250,7 +252,15 @@ export async function restart(worker, want = null) {
   if (worker.agent !== 'codex') await markNudgeSeen(worker.sandbox).catch(() => {}); // the unblocker rule still covers the dialog if this fails
   if (want) try { await tune(worker, want); } catch (e) { return { ok: false, detail: `couldn't set model/effort: ${e.message}` }; }
   await herdr('pane', 'run', worker.ref, line);
-  for (let i = 0; i < 20; i++) { await pause(3000); if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}${want ? ` (model ${want.model || 'default'}, effort ${want.effort || 'default'})` : ''}` }; }
+  for (let i = 0; i < 20; i++) {
+    await pause(3000);
+    if (await atShell(worker)) continue;
+    // Running isn't started: an agent can die at bootstrap seconds in (stream-2's Codex, 11-11), so it must still be up 20 s later.
+    await pause(20000);
+    if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}${want ? ` (model ${want.model || 'default'}, effort ${want.effort || 'default'})` : ''}` };
+    const screen = (await herdr('pane', 'read', worker.ref, '--source', 'recent-unwrapped', '--lines', '6').catch(() => ({ stdout: '' }))).stdout;
+    return { ok: false, detail: `the agent started, then exited: ${screen.split('\n').filter(l => /error|exited/i.test(l)).slice(-2).join(' ').slice(0, 300) || 'no error shown'}` };
+  }
   return { ok: false, detail: `no agent running in ${worker.sandbox} a minute after the restart` };
 }
 

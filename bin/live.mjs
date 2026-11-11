@@ -66,7 +66,7 @@ let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = nul
 // Worker hosts (Alex, 11-04): disk readings, cycles under way or failed, and the streams draining for one.
 const RC = { enabled: false, threshold: 0.75, host: 'sbx', healthMs: 300000, ...config.recycle };
 const host = RC.enabled ? await import(`../hosts/${RC.host}.mjs`) : null;
-let health = {}, recycling = {}, drain = new Map();
+let health = {}, recycling = {}, drain = new Map(), restartFailedAt = {};
 // Each sbx worker's model and effort (deep-model, Alex 11-11): what it was last started with, and restarts a record asked for.
 const TUNED = join(dirname(DB), 'worker-tuning.json');
 const tuned = (() => { try { return JSON.parse(readFileSync(TUNED, 'utf8')); } catch { return {}; } })();
@@ -385,10 +385,12 @@ async function recycleTick() {
     const tell = (to, about, text) => apply([{ kind: 'message', payload: { to, about, text: `[software factory] ${text}` } }], 'board');
     if (d.restart) {
       if (DRY) { once(`dry run: would restart ${d.worker.label}`); continue; }
+      // A failed restart waits 10 min before the next try, so a broken agent start doesn't loop (11-11, stream-2).
+      if (Date.now() - (restartFailedAt[d.unit] || 0) < 600000) continue;
       const r = await host.restart(d.worker).catch(e => ({ ok: false, detail: e.message }));
       log(`restart ${d.worker.label}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
       if (r.ok) { delete health[d.unit]; tell(d.to, { restarted: `${d.worker.label}/${now()}`, fyi: true }, `${d.worker.label} was restarted between jobs (a fresh session in the same sandbox: repo and disk kept, context gone). Brief it cold. If its pane parks on a startup dialog, send it to local-head.`); }
-      else tell(config.boardLead?.seat || 'board lead', { restartFailed: `${d.worker.label}/${now()}` }, `Restarting ${d.worker.label} between jobs failed: ${r.detail}. File it as a factory record if it repeats.`);
+      else restartFailedAt[d.unit] = Date.now(), tell(config.boardLead?.seat || 'board lead', { restartFailed: `${d.worker.label}/${now()}` }, `Restarting ${d.worker.label} between jobs failed: ${r.detail}. File it as a factory record if it repeats.`);
       continue;
     }
     const found = await host.preflight(d.worker).catch(e => [{ path: '(preflight)', problem: e.message, blocking: true }]);
