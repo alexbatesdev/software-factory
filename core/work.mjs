@@ -96,6 +96,7 @@ export function createWork(f, ctx) {
   };
   checkTuning(f);
   for (const k of Object.keys(TUNING)) if (f[k]) w[k] = f[k];
+  if (String(f.alexAsked || '').trim()) w.alexAsked = String(f.alexAsked).trim().slice(0, 1000);
   note(w, ctx, phase === 'proposed' ? `Proposed${w.proposedFrom ? ` from ${w.proposedFrom}` : ''}.` : 'Created.');
   return w;
 }
@@ -737,6 +738,12 @@ export function applyEvent(work, e, ctx) {
       w.phase = 'cancelled';
       w.completion = { ...(closed ? w.completion : {}), absorbedInto: e.into, at: ctx.now, by: ctx.by };
       note(w, ctx, `Absorbed into ${e.into}, which carries this work.`);
+      break;
+    }
+    case 'reviewer_rerequested': {
+      // W-426: the board re-requested a non-approving reviewer whose feedback is addressed; one per review round.
+      w.rerequests = [...(w.rerequests || []), { reviewer: e.reviewer, reviewAt: e.reviewAt, head: e.head, at: ctx.now }];
+      note(w, ctx, `Re-requested ${e.reviewer}'s review on ${String(e.head).slice(0, 7)}: their ${String(e.state || '').toLowerCase().replace('_', ' ')} review's threads are all resolved and the head has moved.`);
       break;
     }
     case 'relate': {

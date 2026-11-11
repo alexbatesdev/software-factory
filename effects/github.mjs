@@ -30,3 +30,22 @@ export const gh = {
     return stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
   },
 };
+
+// W-426: what re-requesting a reviewer needs from a PR, and the request itself (the board's own process, gh as Alex,
+// under his 11-11 authorization; never a seat). Bots are marked so the planner skips them.
+const BOT = /\[bot\]$|-bot$|^chatgpt-codex-connector$/;
+export async function reviewState(url) {
+  const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
+  const q = `query{repository(owner:"${m[1]}",name:"${m[2]}"){pullRequest(number:${m[3]}){author{login} state headRefOid isDraft reviews(last:50){nodes{author{login __typename} state submittedAt commit{oid}}} reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{author{login}}}}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}}}`;
+  const p = JSON.parse((await exec('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000 })).stdout).data?.repository?.pullRequest;
+  if (!p) return null;
+  return { url, author: p.author?.login, open: p.state === 'OPEN', head: p.headRefOid, isDraft: p.isDraft,
+    reviews: p.reviews.nodes.filter(r => r.submittedAt && r.author).map(r => ({ by: r.author.login, state: r.state, at: r.submittedAt, commit: r.commit?.oid, bot: r.author.__typename === 'Bot' || BOT.test(r.author.login) })),
+    threads: p.reviewThreads.nodes.map(t => ({ by: t.comments.nodes[0]?.author?.login, resolved: t.isResolved })),
+    requested: p.reviewRequests.nodes.map(r => r.requestedReviewer?.login).filter(Boolean) };
+}
+export async function requestReview(url, login) {
+  const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
+  await exec('gh', ['api', '-X', 'POST', `repos/${m[1]}/${m[2]}/pulls/${m[3]}/requested_reviewers`, '-f', `reviewers[]=${login}`], { timeout: 30000 });
+  return (await reviewState(url))?.requested.includes(login) || false;
+}

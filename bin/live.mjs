@@ -31,7 +31,8 @@ import { createLogWake } from '../wake/log.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles } from '../core/recycle.mjs';
-import { gh as liveGh } from '../effects/github.mjs';
+import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
+import { rerequestPlan } from '../core/rerequest.mjs';
 import { syncStandards } from '../hosts/standards.mjs';
 import { agentOf } from '../fleet/factory.mjs';
 
@@ -197,6 +198,7 @@ async function githubTick() {
     apply(skipNotes(store.state.work, config), 'board (skip)');
     await mergeTick();
     holdTick();
+    await rerequestTick();
     // After merge-close, so a merge it just closed is not reported. Once per (kind, record), to the board lead (W-317).
     if (contradictionsDue) {
       contradictionsDue = false;
@@ -208,6 +210,21 @@ async function githubTick() {
     await syncResolvedThreads(store, gh, now, { me: config.githubLogin });
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
+}
+
+// W-426 (Alex, 11-11): re-request a non-approving reviewer once their threads are resolved and the head moved, once
+// per round. Off by default: with config.rerequest.enabled false it only logs who it would ask.
+async function rerequestTick() {
+  const s = store.state, urls = [...new Set(Object.values(s.work).filter(w => w.links?.pr && !TERMINAL.includes(w.phase) && trackOf(w, config) !== 'excluded').map(w => w.links.pr))]
+    .filter(u => openPrs.get(u)?.state === 'OPEN');
+  const prs = [];
+  for (const u of urls) { const p = await reviewState(u).catch(e => { once(`review state ${u}: ${e.message}`); return null; }); if (p?.open && p.author === config.githubLogin) prs.push(p); }
+  for (const r of rerequestPlan(s.work, prs)) {
+    if (!config.rerequest?.enabled || DRY) { once(`re-request (off): would re-request ${r.reviewer} on ${r.pr} (${r.work}, ${r.state} at ${r.reviewAt})`); continue; }
+    const ok = await requestReview(r.pr, r.reviewer).catch(e => { log(`re-request ${r.reviewer} on ${r.pr}: ${e.message}`); return false; });
+    if (ok) apply([{ kind: 'event', target: r.work, payload: { type: 'reviewer_rerequested', reviewer: r.reviewer, reviewAt: r.reviewAt, head: r.head, state: r.state } }], 'board (re-request)');
+    else once(`re-request ${r.reviewer} on ${r.pr}: GitHub doesn't show the request after the call`);
+  }
 }
 
 // A record whose PR merged (or a task whose every PR merged) closes as merged, re-verified on a fresh read. Teamwork stays human.
