@@ -7,7 +7,8 @@ import { exitChoice } from '../hosts/sbx.mjs';
 export const ORCHESTRATOR_TAB = 'Orchestrator', WORKER_TAB = 'Worker', TERMINALS = 'Terminals';
 
 /** The agent a seat runs: a stream's worker runs its `routing.supervisors[sup].agent` (default claude); every other seat is Claude. */
-export const agentOf = (config, label) => Object.values(config.routing?.supervisors || {}).find(s => s.worker === label)?.agent || 'claude';
+export const agentOf = (config, label) => Object.values(config.routing?.supervisors || {}).find(s => s.worker === label)?.agent
+  || (config.factory?.seats || []).find(s => s.label === label && s.kind === 'codex')?.kind || 'claude';
 // Each agent's own quit command.
 export const QUIT = { claude: '/exit', codex: '/quit' };
 

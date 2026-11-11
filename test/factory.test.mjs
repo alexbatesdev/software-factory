@@ -126,3 +126,9 @@ test("a stream set to codex runs a Codex worker; every other seat, and its own s
   assert.deepEqual(['sbx: s2', 'sup: s2', 'sbx: s1', 'local-head'].map(l => agentOf(cfg, l)), ['codex', 'claude', 'claude', 'claude']);
   assert.deepEqual([QUIT.claude, QUIT.codex], ['/exit', '/quit']);
 });
+
+test("a fixed seat that runs Codex is woken as Codex (W-413: the agent unblocker's board messages never arrived)", async () => {
+  const { agentOf } = await import('../fleet/factory.mjs');
+  const cfg = { routing: { supervisors: {} }, factory: { seats: [{ label: 'agent-unblocker', kind: 'codex' }, { label: 'board lead', kind: 'claude' }, { label: 'script', kind: 'shell' }] } };
+  assert.deepEqual(['agent-unblocker', 'board lead', 'local-head'].map(l => agentOf(cfg, l)), ['codex', 'claude', 'claude']);
+});
