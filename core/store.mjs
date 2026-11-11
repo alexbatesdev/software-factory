@@ -28,7 +28,7 @@ export function supportOf(state, id, seen = new Set()) {
 /** prState and owner come only from a live GitHub read; the reducer passes neither, so replay never sees PR state. */
 const ANSWERED = ['answered', 'settled'];
 /** Work that carries out one of Alex's answers was asked for (W-333): an answered question on the record, or one it names with carriesOut. */
-export const askedFor = (state, w) => Object.values(state.questions).some(q => q.work === w.id && ANSWERED.includes(q.status)) || (w.carriesOut || []).some(t => ANSWERED.includes(state.questions[t]?.status));
+export const askedFor = (state, w) => Object.values(state.questions).some(q => q.work === w.id && ANSWERED.includes(q.status)) || (w.carriesOut || []).some(t => ANSWERED.includes(state.questions[t]?.status)) || !!w.alexAsked;
 /** The record as the new-PR gate reads it: support and asked-for work skip Alex's go. */
 export const prGateView = (state, w) => ({ ...w, support: supportOf(state, w.id), asked: askedFor(state, w) });
 

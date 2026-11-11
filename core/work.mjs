@@ -64,7 +64,7 @@ const rank = w => Math.min(w.priority ?? 3, w.support ? 2 : 3);
 export const queueOrder = (a, b) => rank(a) - rank(b) || (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2));
 // A dependency counts as finished once its work is through internal review.
 export const SATISFIES_DEPS = ['ready_for_human', 'awaiting_human_approval', 'done'];
-const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'streamPin', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases', 'support', 'model', 'effort'];
+const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'streamPin', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases', 'support', 'model', 'effort', 'alexAsked'];
 // What a record may ask its worker to run with (Alex, 11-11, deep-model): a Claude model alias, and an effort both agents accept.
 export const TUNING = { model: ['sonnet', 'opus', 'haiku'], effort: ['low', 'medium', 'high', 'xhigh'] };
 const checkTuning = f => { for (const k of Object.keys(TUNING)) if (f[k] != null && !TUNING[k].includes(f[k])) fail(`${k} is one of ${TUNING[k].join(', ')} (or default); not "${f[k]}".`); };

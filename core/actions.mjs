@@ -82,8 +82,11 @@ const BUILD = {
     const holds = [...(prs.length ? [{ prs }] : []), ...(questions.length ? [{ questions }] : []), ...(a.reviewBy ? [{ review: { by: a.reviewBy, reviewer: a.reviewer } }] : []), ...(a.deferredTo ? [{ deferred: String(a.deferredTo) }] : [])];
     // A support task that didn't come through the Teamwork poller is marked here (W-353).
     // "default" puts the worker back on its usual model or effort (deep-model, Alex 11-11).
+    // A record made from Alex's own request carries his words and skips New PRs (W-423).
+    if (a.alexAsked !== undefined && !String(a.alexAsked).trim()) fail('alexAsked quotes Alex\'s request, with when he said it.');
+    const asked = a.alexAsked ? [{ kind: 'update', target: a.work, payload: { alexAsked: String(a.alexAsked).trim().slice(0, 1000) } }] : [];
     const tuning = Object.fromEntries(['model', 'effort'].filter(k => a[k] !== undefined).map(k => [k, a[k] === 'default' ? null : a[k]]));
-    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), ...(Object.keys(tuning).length ? [{ kind: 'update', target: a.work, payload: tuning }] : []), ...(a.support === true ? [{ kind: 'update', target: a.work, payload: { support: true } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
+    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), ...(Object.keys(tuning).length ? [{ kind: 'update', target: a.work, payload: tuning }] : []), ...asked, ...(a.support === true ? [{ kind: 'update', target: a.work, payload: { support: true } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   // A new Teamwork task waits for Alex's click on the dashboard (W-382); the factory creates it, never a seat.

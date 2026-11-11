@@ -73,6 +73,7 @@ details summary { cursor: pointer; }
 details.msgs { margin-top: 4px; font-size: 13px; }
 .msg { border: 1px solid var(--line); border-left: 3px solid var(--factory); border-radius: 6px; margin: 8px 0; background: var(--card); overflow: hidden; }
 .msg + .msg { margin-top: 10px; }
+.note { width: 100%; box-sizing: border-box; margin-top: 6px; font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--card); color: var(--ink); resize: vertical; }
 .msg.mine { border-left-color: var(--merge); } .msg.mine .mhead { background: var(--merge-bg); } .msg.mine .mhead b { color: var(--merge); }
 .msg .mhead { display: flex; justify-content: space-between; gap: 8px; padding: 4px 10px; background: var(--bg); border-bottom: 1px solid var(--line); font-size: 12px; }
 .msg .mhead b { color: var(--ink); } .msg .mhead span { color: var(--mute); }
@@ -207,9 +208,16 @@ async function render() {
   const seats = document.getElementById('seats'); seats.replaceChildren();
   for (const [seat, n] of Object.entries(b.inbox)) seats.append(el('span', 'seat', `${seat}: ${n} unread`));
 }
-async function resolveThreads(ids, btn) {
+// An optional note on any approval (W-423): Alex's words go on the record with the decision. Drafts survive the 15s redraw.
+const drafts = new Map();
+function noteBox(key) {
+  const i = el('textarea', 'note'); i.placeholder = 'Note (optional): instructions or why'; i.rows = 2; i.value = drafts.get(key) || '';
+  i.oninput = () => drafts.set(key, i.value); return i;
+}
+const sent = keys => { const note = keys.map(k => drafts.get(k) || '').find(Boolean) || null; keys.forEach(k => drafts.delete(k)); return note; };
+async function resolveThreads(ids, btn, note = sent(ids)) {
   btn.disabled = true;
-  try { await fetch('/api/threads/resolve', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids }) }); }
+  try { await fetch('/api/threads/resolve', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids, note }) }); }
   finally { render(); }
 }
 function threadsPanel(list) {
@@ -228,7 +236,7 @@ function threadsPanel(list) {
       link.href = t.url; link.target = '_blank'; link.rel = 'noopener';
       left.append(link, el('div', 'ask', t.ask));
       if (t.status === 'failed') left.append(el('div', 'fail', `Failed: ${t.detail}`));
-      left.append(threadMessages(t.id));
+      left.append(threadMessages(t.id), noteBox(t.id));
       const b = el('button', null, t.status === 'approved' ? 'Resolving…' : t.status === 'failed' ? 'Retry' : 'Resolve');
       b.disabled = t.status === 'approved'; b.onclick = () => resolveThreads([t.id], b);
       row.append(left, b); sec.append(row);
@@ -263,9 +271,9 @@ function threadMessages(id) {
   if (d.open) load();
   return d;
 }
-async function decidePrs(ids, decision, btn) {
+async function decidePrs(ids, decision, btn, note = sent(ids)) {
   btn.disabled = true;
-  try { await fetch('/api/pr-approvals', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids, decision }) }); }
+  try { await fetch('/api/pr-approvals', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids, decision, note }) }); }
   finally { render(); }
 }
 function newPrsPanel(list) {
@@ -277,15 +285,14 @@ function newPrsPanel(list) {
     const BREAKDOWN = [['prompted', 'What prompted it'], ['addresses', 'What it addresses'], ['whyThisFix', 'Why this fix'], ['since', 'How long'], ['customerImpact', 'Change for customers']];
     if (p.proposal) { const dl = el('dl', 'bd'); for (const [k, label] of BREAKDOWN) dl.append(el('dt', null, label), el('dd', null, p.proposal[k])); left.append(dl); }
     else { left.append(el('div', 'fail', 'No breakdown yet: the board lead adds it at triage.')); if (p.objective) left.append(el('div', 'res', p.objective.slice(0, 400))); }
+    left.append(noteBox(p.id));
     const ok = el('button', null, 'Approve'), no = el('button', null, 'Decline');
     ok.onclick = () => decidePrs([p.id], 'approve', ok); no.onclick = () => decidePrs([p.id], 'decline', no);
     acts.append(ok, no); row.append(left, acts); box.append(row);
   }
   if (!list.length) box.append(el('div', 'mute', 'None.'));
 }
-async function decideTasks(ids, decision, btn) {
-  const note = decision === 'decline' ? prompt('Why decline? (recorded on the proposal)') : null;
-  if (decision === 'decline' && note === null) return;
+async function decideTasks(ids, decision, btn, note = sent(ids)) {
   btn.disabled = true;
   try { await fetch('/api/task-requests', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids, decision, note }) }); }
   finally { render(); }
@@ -301,6 +308,7 @@ function tasksPanel(list) {
       if (v) dl.append(el('dt', null, label), el('dd', null, v));
     left.append(dl);
     if (t.status === 'failed') left.append(el('div', 'fail', `Failed: ${t.detail}`));
+    left.append(noteBox(t.id));
     const busy = t.status === 'approved' && !t.stuck;
     if (t.stuck) left.append(el('div', 'fail', 'Stuck mid-create (the factory restarted). Retry checks Teamwork for it first.'));
     const ok = el('button', null, busy ? 'Creating…' : t.status === 'approved' || t.status === 'failed' ? 'Retry' : 'Approve'), no = el('button', null, 'Decline');
@@ -310,9 +318,7 @@ function tasksPanel(list) {
   }
   if (!list.length) box.append(el('div', 'mute', 'None.'));
 }
-async function decideAws(ids, decision, btn) {
-  const note = decision === 'decline' ? prompt('Why decline? (recorded on the record)') : null;
-  if (decision === 'decline' && note === null) return;
+async function decideAws(ids, decision, btn, note = sent(ids)) {
   btn.disabled = true;
   try { await fetch('/api/aws-requests', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids, decision, note }) }); }
   finally { render(); }
@@ -324,6 +330,7 @@ function awsPanel(list) {
     if (r.support) { row.classList.add('support'); left.append(el('span', 'stag', 'Support')); }
     left.append(el('div', 'ask', `${r.id} · ${r.sandbox}`), el('div', 'res', `${r.work}${r.title ? ` · ${r.title}` : ''} · from ${r.from}`), el('div', null, r.why));
     if (r.status === 'failed') left.append(el('div', 'fail', `Failed: ${r.detail}`));
+    left.append(noteBox(r.id));
     const busy = r.status === 'approved', ok = el('button', null, busy ? 'Granting…' : r.status === 'failed' ? 'Retry' : 'Approve'), no = el('button', null, 'Decline');
     ok.disabled = busy; no.disabled = busy;
     ok.onclick = () => decideAws([r.id], 'approve', ok); no.onclick = () => decideAws([r.id], 'decline', no);

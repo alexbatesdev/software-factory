@@ -28,6 +28,9 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
+  // Alex's optional note on a dashboard decision (W-423): his words, verbatim, on the record; the inbox delivers it.
+  const alexNote = (work, note, what) => { if (work && String(note || '').trim()) store.append({ kind: 'event', target: work, payload: { type: 'note', text: `${what}: ${String(note).trim()}` } }, { now: now(), by: 'Alex (dashboard)' }); };
+
   async function act(seat, action, args) {
     const role = roleOf(config, seat);
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
@@ -64,7 +67,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       return [409, { error: `Parking ${args.work} in intake needs what releases it: untilMerged (#N), untilAnswered (TB-n), reviewBy (YYYY-MM-DD) with reviewer (the seat that looks again), or deferredTo (who decides, e.g. product).` }];
     // Ready into New PRs only with the breakdown Alex reads there (11-09).
     const tw = action === 'triage' && args.bucket === 'ready' && s.work[args.work];
-    if (tw && !tw.proposal && !args.proposal && args.support !== true && wouldAwaitPrApproval(prGateView(s, { ...tw, carriesOut: [...(tw.carriesOut || []), ...(args.carriesOut ? [args.carriesOut] : [])] }), config.prApproval)) return [409, { error: `${args.work} will wait in Alex's New PRs list, so triage it ready with a proposal: {prompted (what made the agent file it), addresses (what the PR fixes), whyThisFix (why this is the right fix), since (how long the issue has existed, with evidence), customerImpact (what changes for existing customers, or "none")}.` }];
+    if (tw && !tw.proposal && !args.proposal && args.support !== true && !String(args.alexAsked || '').trim() && wouldAwaitPrApproval(prGateView(s, { ...tw, carriesOut: [...(tw.carriesOut || []), ...(args.carriesOut ? [args.carriesOut] : [])] }), config.prApproval)) return [409, { error: `${args.work} will wait in Alex's New PRs list, so triage it ready with a proposal: {prompted (what made the agent file it), addresses (what the PR fixes), whyThisFix (why this is the right fix), since (how long the issue has existed, with evidence), customerImpact (what changes for existing customers, or "none")}.` }];
     // A new PR nobody asked for starts only after Alex's dashboard click (Alex, 11-09), whoever assigns it.
     if (action === 'assign' && args.kind !== 'review' && s.work[args.work] && needsPrApproval(prGateView(s, s.work[args.work]), config.prApproval)) return [409, { error: `${args.work} would open a new PR that no Teamwork task asked for: it waits for Alex's go on the dashboard (New PRs). Don't ask it as a question.` }];
     if (action === 'route' && args.setOwner) args = { ...args, setOwnerOf: s.questions[args.id]?.work || undefined };
@@ -138,30 +141,38 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       if (req.method === 'POST' && url.pathname === '/api/threads/resolve') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
         if (readOnly || !gh) return send(res, 405, { error: 'This factory does not write to GitHub.' });
-        const { ids = [] } = await readBody(req);
-        return send(res, 200, { results: await resolveThreads(store, ids, gh, now) });
+        const { ids = [], note = null } = await readBody(req);
+        const results = await resolveThreads(store, ids, gh, now);
+        for (const w of new Set(ids.map(id => store.state.threads[id]?.work))) alexNote(w, note, 'Alex, resolving its review threads');
+        return send(res, 200, { results });
       }
       if (req.method === 'POST' && url.pathname === '/api/aws-requests') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
         if (readOnly) return send(res, 405, { error: 'This factory does not write.' });
         const { ids = [], decision, note } = await readBody(req);
         if (!['approve', 'decline'].includes(decision)) return send(res, 400, { error: 'decision is approve or decline.' });
-        return send(res, 200, { results: await decideAwsRequests(store, ids, decision, note, awsHost, now) });
+        const results = await decideAwsRequests(store, ids, decision, note, awsHost, now);
+        if (decision === 'approve') for (const id of ids) alexNote(store.state.awsRequests[id]?.work, note, `Alex, approving AWS access ${id}`);
+        return send(res, 200, { results });
       }
       if (req.method === 'POST' && url.pathname === '/api/task-requests') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
         if (readOnly) return send(res, 405, { error: 'This factory is read-only (shadow mode).' });
         const { ids = [], decision, note = null } = await readBody(req);
         if (!['approve', 'decline'].includes(decision)) return send(res, 400, { error: 'decision is approve or decline.' });
-        return send(res, 200, { results: await decideTaskRequests(store, ids, decision, note, tw, now) });
+        const results = await decideTaskRequests(store, ids, decision, note, tw, now);
+        if (decision === 'approve') for (const id of ids) alexNote(store.state.taskRequests[id]?.work, note, `Alex, approving Teamwork task ${id}`);
+        return send(res, 200, { results });
       }
       if (req.method === 'POST' && url.pathname === '/api/pr-approvals') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
         if (readOnly) return send(res, 405, { error: 'This factory is read-only (shadow mode).' });
-        const { ids = [], decision } = await readBody(req);
+        const { ids = [], decision, note = null } = await readBody(req);
         if (!['approve', 'decline'].includes(decision)) return send(res, 400, { error: 'decision is approve or decline.' });
+        const why = String(note || '').trim();
         const results = ids.map(id => { try {
-          store.append({ kind: 'event', target: id, payload: decision === 'approve' ? { type: 'pr_approved' } : { type: 'withdraw', note: 'Alex declined opening a new PR for it (dashboard).' } }, { now: now(), by: 'Alex (dashboard)' });
+          store.append({ kind: 'event', target: id, payload: decision === 'approve' ? { type: 'pr_approved' } : { type: 'withdraw', note: `Alex declined opening a new PR for it (dashboard)${why ? `: ${why}` : '.'}` } }, { now: now(), by: 'Alex (dashboard)' });
+          if (decision === 'approve') alexNote(id, why, 'Alex, approving the new PR, with instructions');
           return { id, ok: true };
         } catch (e) { return { id, error: e.message }; } });
         return send(res, 200, { results });

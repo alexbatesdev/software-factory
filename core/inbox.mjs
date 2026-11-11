@@ -154,13 +154,14 @@ export function inboxCommands(state, cfg, fleet = null) {
       });
     }
   }
-  // local-head's notes carry Alex's words (W-416): each reaches the record's owner, open or done, once.
+  // local-head's notes and Alex's dashboard notes carry his words (W-416, W-423): each reaches the record's owner
+  // (with none: whoever proposed it, else the board lead, who triages it), open or done, once.
   for (const w of Object.values(state.work)) {
-    const to = w.owner || w.stream;
+    const to = w.owner || w.stream || (w.source?.type === 'agent' ? w.source.by : null) || cfg.triage?.seat || 'board lead';
     if (!to || to === 'local-head' || to === cfg.developer) continue;
     (w.updates || []).forEach((u, i) => {
-      if (u.by !== 'local-head' || u.at < LOCAL_HEAD_NOTES_FROM || told.has(`localHeadNote:${w.id}/${i}`)) return;
-      cmds.push(msg(to, w.id, { localHeadNote: `${w.id}/${i}` }, `local-head on ${w.id} ${quote(w.title)} (for Alex): ${u.text}`));
+      if (!['local-head', 'Alex (dashboard)'].includes(u.by) || u.at < LOCAL_HEAD_NOTES_FROM || told.has(`localHeadNote:${w.id}/${i}`)) return;
+      cmds.push(msg(to, w.id, { localHeadNote: `${w.id}/${i}` }, `${u.by === 'local-head' ? 'local-head' : 'Alex'} on ${w.id} ${quote(w.title)}${u.by === 'local-head' ? ' (for Alex)' : ''}: ${u.text}`));
     });
   }
   // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.

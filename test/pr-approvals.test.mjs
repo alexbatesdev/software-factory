@@ -1,20 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { readFileSync } from 'node:fs';
 import { openStore } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 
 const S1 = 'sup: stream-1', T = '2026-11-09T20:00:00.000Z';
 const config = { roles: { 'board lead': 'board-lead' }, routing: { supervisors: { [S1]: {} } } };
 
-async function serve() {
+async function serve(T2 = T) {
   const store = openStore(':memory:', { supervisors: [S1] });
   const ctx = { now: T, by: 'test' };
   for (const title of ['Another create action takes over a company', 'A second unasked fix']) {
     const id = store.append({ kind: 'create', payload: { title, kind: 'build', source: { type: 'manual' }, proposedFrom: 'W-9', stream: S1 } }, ctx).id;
     store.append({ kind: 'event', target: id, payload: { type: 'transition', to: 'ready' } }, ctx);
   }
-  const server = http.createServer(createApi({ store, config, now: () => T }));
+  const server = http.createServer(createApi({ store, config, now: () => T2 }));
   await new Promise(ok => server.listen(0, '127.0.0.1', ok));
   const base = `http://127.0.0.1:${server.address().port}`;
   const post = async (path, body, seat) => { const r = await fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1', ...(seat ? { 'x-seat': seat } : {}) }, body: JSON.stringify(body) }); return [r.status, await r.json()]; };
@@ -129,4 +130,34 @@ test('a record created for a Teamwork task a closed support record carried is su
   assert.equal(store.state.work[id].support, true);
   const { id: other } = store.append({ kind: 'create', payload: { title: 'Unrelated', kind: 'build', links: { source: 'https://acme.teamwork.com/app/tasks/5' } } }, ctx);
   assert.ok(!store.state.work[other].support);
+});
+
+test("Alex's note on a New PR decision is saved verbatim on the record and reaches whoever acts on it (W-423)", async () => {
+  const f = await serve('2026-11-11T22:30:00.000Z');
+  try {
+    const note = 'reproduce all of these first, then one PR for the ones that reproduce';
+    assert.equal((await f.post('/api/pr-approvals', { ids: ['W-1'], decision: 'approve', note }))[0], 200);
+    const w = f.store.state.work['W-1'];
+    assert.ok(w.updates.some(u => u.by === 'Alex (dashboard)' && u.text.includes(note)));
+    await f.post('/api/pr-approvals', { ids: ['W-2'], decision: 'decline', note: 'covered by W-9' });
+    assert.match(f.store.state.work['W-2'].completion.withdrawn, /covered by W-9/);
+    const { inboxCommands } = await import('../core/inbox.mjs');
+    const sent = inboxCommands(f.store.state, { supervisors: [S1], seats: [] }, null).cmds.filter(c => c.payload.about?.localHeadNote);
+    assert.ok(sent.some(c => c.payload.to === 'board lead' && c.payload.work === 'W-1' && c.payload.text.includes(note)), 'with no owner yet, the board lead (who triages it) hears the instruction');
+  } finally { f.close(); }
+});
+
+test("a record made from Alex's own request skips New PRs when it carries his words (W-423: W-406, W-422)", async () => {
+  const f = await serve();
+  try {
+    const [code] = await f.post('/api/actions', { action: 'triage', args: { work: 'W-1', bucket: 'ready', note: 'n', alexAsked: 'Alex, 11-11: "could we make a small task to…"' } }, 'board lead');
+    assert.equal(code, 200);
+    assert.ok(!(await f.board()).newPrs.some(p => p.id === 'W-1'));
+    assert.notEqual((await f.post('/api/actions', { action: 'triage', args: { work: 'W-2', bucket: 'ready', note: 'n', alexAsked: '  ' } }, 'board lead'))[0], 200, 'it needs his words');
+  } finally { f.close(); }
+});
+
+test('every approval card offers a note next to Approve and Decline', () => {
+  const page = readFileSync(new URL('../views/index.html', import.meta.url), 'utf8');
+  for (const fn of ['decidePrs', 'decideTasks', 'decideAws', 'resolveThreads']) assert.match(page, new RegExp(`async function ${fn}\\(ids, [^)]*note`), fn);
 });
