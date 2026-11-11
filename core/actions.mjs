@@ -87,6 +87,8 @@ const BUILD = {
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   // A new Teamwork task waits for Alex's click on the dashboard (W-382); the factory creates it, never a seat.
+  // AWS read access for a sandbox waits for Alex's click on the dashboard (W-420); the factory runs the script, never a seat.
+  request_aws: a => [{ kind: 'aws_request', payload: { work: a.work, sandbox: a.sandbox, why: a.why } }],
   propose_task: a => [{ kind: 'task_request', payload: { work: a.work, name: a.name, description: a.description, tasklistId: a.tasklistId, parentTaskId: a.parentTaskId, assigneeUserId: a.assigneeUserId, why: a.why } }],
   resolve_thread: a => [{ kind: 'thread_request', payload: { work: a.work, threadId: a.threadId, url: a.url, reviewer: a.reviewer, ask: a.ask, resolution: a.resolution } }],
   // Repair (board developer): a poller's duplicate record folds into the record that carries the work.

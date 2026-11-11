@@ -312,7 +312,7 @@ async function fleetTick() {
   } catch (e) { log(`fleet: ${e.message}`); }
 }
 
-http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, readPr: async url => (await readPrs([url]))[0] || null,
+http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess, readPr: async url => (await readPrs([url]))[0] || null,
   observed: () => ({ units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 

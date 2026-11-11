@@ -276,3 +276,18 @@ export async function recycle(worker, log = () => {}) {
   }
   return { ok: false, detail: `${worker.sandbox} not running with an agent after 20 minutes` };
 }
+
+// W-420: read-only AWS for one sandbox, run only after Alex approves on the dashboard. The script comes from built-rails
+// origin/main (not the shared checkout's branch), runs with --name only (never --session), and the egress rule is scoped
+// to that sandbox. ponytail: the rule outlives the one-hour token; remove it on expiry if open AWS egress ever matters.
+export const obsAccess = {
+  script: async () => {
+    await run('git', ['-C', BUILT_RAILS, 'fetch', '-q', 'origin', 'main'], { timeout: 60000 }).catch(() => {});
+    return (await run('git', ['-C', BUILT_RAILS, 'show', 'origin/main:bin/sbx-obs-creds'], { timeout: 20000 })).stdout;
+  },
+  creds: (sandbox, script) => new Promise((resolve, reject) => {
+    const p = execFile('bash', ['-s', '--', '--name', sandbox], { cwd: BUILT_RAILS, timeout: 120000 }, (e, out, err) => e ? reject(new Error((err || e.message).trim().split('\n').slice(0, 4).join(' '))) : resolve());
+    p.stdin.end(script);
+  }),
+  allow: (sandbox, hosts) => run('sbx', ['policy', 'allow', 'network', '--sandbox', sandbox, hosts.join(',')], { timeout: 60000 }),
+};

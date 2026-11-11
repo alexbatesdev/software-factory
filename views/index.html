@@ -101,6 +101,7 @@ button:disabled { opacity: .5; cursor: default; }
 <aside id="side" hidden>
   <div class="sh"><h2>Approvals</h2><button id="sideClose">Close</button></div>
   <section class="feed prs"><h3>New PRs to approve <span class="n" id="prN"></span></h3><div class="mute">Company-repo work no Teamwork task asked for. Approve and it queues; Decline withdraws it.</div><div id="prList"></div></section>
+  <section class="feed aws"><h3>AWS read access to approve <span class="n" id="awsN"></span></h3><div class="mute">Approve and the factory runs bin/sbx-obs-creds for that sandbox (a one-hour ObservabilityReadOnly token, never your session) and opens the AWS hosts bin/obs reads. It needs your Observer AWS login on this Mac.</div><div id="awsList"></div></section>
   <section class="feed tw"><h3>New Teamwork tasks to approve <span class="n" id="twN"></span></h3><div class="mute">Receipts for work already done or under way; nothing waits on them. Approve and the factory creates the task in Teamwork through teamwork-mini; no agent runs. Decline asks for a reason.</div><div id="taskList"></div></section>
   <section class="feed thr"><h3>Review threads to resolve <span class="n" id="thrN"></span></h3><div class="mute">Resolve marks the thread resolved on GitHub directly; no agent runs.</div><div id="threadList"></div></section>
 </aside>
@@ -182,10 +183,11 @@ async function render() {
   }
   document.getElementById('you').hidden = !total;
 
-  threadsPanel(b.threads || []); newPrsPanel(b.newPrs || []); tasksPanel(b.taskRequests || []);
+  threadsPanel(b.threads || []); newPrsPanel(b.newPrs || []); tasksPanel(b.taskRequests || []); awsPanel(b.awsRequests || []);
+  document.getElementById('awsN').textContent = (b.awsRequests || []).length;
   document.getElementById('twN').textContent = (b.taskRequests || []).length;
   document.getElementById('prN').textContent = (b.newPrs || []).length; document.getElementById('thrN').textContent = (b.threads || []).length;
-  const pending = (b.newPrs || []).length + (b.threads || []).filter(t => t.status !== 'approved').length + (b.taskRequests || []).filter(t => t.status !== 'approved').length, ab = document.getElementById('approvalsBtn');
+  const pending = (b.newPrs || []).length + (b.threads || []).filter(t => t.status !== 'approved').length + (b.taskRequests || []).filter(t => t.status !== 'approved').length + (b.awsRequests || []).filter(r => r.status !== 'approved').length, ab = document.getElementById('approvalsBtn');
   ab.textContent = `Approvals (${pending})`; ab.classList.toggle('has', pending > 0);
   const board = document.getElementById('board'); board.replaceChildren();
   const order = b.buckets.order;
@@ -304,6 +306,27 @@ function tasksPanel(list) {
     const ok = el('button', null, busy ? 'Creating…' : t.status === 'approved' || t.status === 'failed' ? 'Retry' : 'Approve'), no = el('button', null, 'Decline');
     ok.disabled = busy; no.disabled = busy;
     ok.onclick = () => decideTasks([t.id], 'approve', ok); no.onclick = () => decideTasks([t.id], 'decline', no);
+    acts.append(ok, no); row.append(left, acts); box.append(row);
+  }
+  if (!list.length) box.append(el('div', 'mute', 'None.'));
+}
+async function decideAws(ids, decision, btn) {
+  const note = decision === 'decline' ? prompt('Why decline? (recorded on the record)') : null;
+  if (decision === 'decline' && note === null) return;
+  btn.disabled = true;
+  try { await fetch('/api/aws-requests', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids, decision, note }) }); }
+  finally { render(); }
+}
+function awsPanel(list) {
+  const box = document.getElementById('awsList'); box.replaceChildren();
+  for (const r of list) {
+    const row = el('div', 'thread pr'), left = el('div'), acts = el('div', 'acts');
+    if (r.support) { row.classList.add('support'); left.append(el('span', 'stag', 'Support')); }
+    left.append(el('div', 'ask', `${r.id} · ${r.sandbox}`), el('div', 'res', `${r.work}${r.title ? ` · ${r.title}` : ''} · from ${r.from}`), el('div', null, r.why));
+    if (r.status === 'failed') left.append(el('div', 'fail', `Failed: ${r.detail}`));
+    const busy = r.status === 'approved', ok = el('button', null, busy ? 'Granting…' : r.status === 'failed' ? 'Retry' : 'Approve'), no = el('button', null, 'Decline');
+    ok.disabled = busy; no.disabled = busy;
+    ok.onclick = () => decideAws([r.id], 'approve', ok); no.onclick = () => decideAws([r.id], 'decline', no);
     acts.append(ok, no); row.append(left, acts); box.append(row);
   }
   if (!list.length) box.append(el('div', 'mute', 'None.'));

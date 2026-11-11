@@ -1,10 +1,10 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
-export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate'];
+export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws'];
 
 export const ROLES = {
-  'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner'],
+  'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner', 'progress'],
   'questions-router': ['read', 'ack', 'route', 'create', 'set_owner'],
-  'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread', 'settle_finding', 'propose_task'],
+  'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread', 'settle_finding', 'propose_task', 'request_aws'],
   'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify', 'cancel', 'propose_task'],
   'board-developer': ACTIONS,
   'trusted-reviewer': [], // PR review carve-out (Alex, 11-06): trusted reviews run off the board

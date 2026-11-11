@@ -8,6 +8,7 @@ import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
 import { supportOf, prGateView } from './store.mjs';
 import { decideTaskRequests, STUCK_MS } from './task-requests.mjs';
+import { decideAwsRequests } from './aws-access.mjs';
 import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -23,7 +24,7 @@ export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config
  * @param readOnly the shadow runner serves the page and reads only; every write is refused
  * @param observed () => {units, prs} from the latest fleet and GitHub reads, for the views
  */
-export function createApi({ store, config, gh = null, tw = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
+export function createApi({ store, config, gh = null, tw = null, awsHost = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -115,6 +116,7 @@ export function createApi({ store, config, gh = null, tw = null, readPr = async 
         const o = observed(), disk = Object.fromEntries((o.units || []).filter(u => o.health?.[u.id]).map(u => [u.supervisor?.label, o.health[u.id].diskPct]));
         return send(res, 200, { mode: readOnly ? 'shadow (read-only)' : 'live', seq: s.seq, buckets: config.buckets, questions, inbox,
           newPrs: Object.values(s.work).filter(w => awaitsPrApproval(prGateView(s, w), config.prApproval)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null, support: supportOf(s, w.id), proposal: w.proposal || null })),
+          awsRequests: Object.values(s.awsRequests || {}).filter(r => ['requested', 'approved', 'failed'].includes(r.status)).map(r => ({ ...r, title: s.work[r.work]?.title || null, support: supportOf(s, r.work) })),
           taskRequests: Object.values(s.taskRequests || {}).filter(t => ['requested', 'approved', 'failed'].includes(t.status)).map(t => ({ ...t, stuck: t.status === 'approved' && Date.parse(now()) - Date.parse(t.approvedAt) > STUCK_MS, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o }) });
@@ -138,6 +140,13 @@ export function createApi({ store, config, gh = null, tw = null, readPr = async 
         if (readOnly || !gh) return send(res, 405, { error: 'This factory does not write to GitHub.' });
         const { ids = [] } = await readBody(req);
         return send(res, 200, { results: await resolveThreads(store, ids, gh, now) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/aws-requests') {
+        if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
+        if (readOnly) return send(res, 405, { error: 'This factory does not write.' });
+        const { ids = [], decision, note } = await readBody(req);
+        if (!['approve', 'decline'].includes(decision)) return send(res, 400, { error: 'decision is approve or decline.' });
+        return send(res, 200, { results: await decideAwsRequests(store, ids, decision, note, awsHost, now) });
       }
       if (req.method === 'POST' && url.pathname === '/api/task-requests') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
