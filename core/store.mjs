@@ -47,9 +47,15 @@ export function derivedCtx(state, id, { prState = () => null, owner } = {}) {
   };
 }
 
+// A record opened for a Teamwork task an earlier support record carried (a reopened investigation) is support too (W-405).
+const SUPPORT_REOPEN_FROM = '2026-11-11T16:30:00.000Z';
+const taskOf = w => w.source?.key?.startsWith('tw-') ? w.source.key : `tw-${String(w.links?.source || '').match(/teamwork\.com\/app\/tasks\/(\d+)/)?.[1]}`;
 function create(state, fields, ctx) {
   const id = `W-${state.nextWork++}`;
+  const task = ctx.now >= SUPPORT_REOPEN_FROM && fields.links?.source && taskOf(fields);
+  const support = task && Object.values(state.work).some(w => w.support && taskOf(w) === task);
   state.work[id] = W.createWork({ ...fields, id }, ctx);
+  if (support) state.work[id].support = true;
   const claim = fields.links?.pr && claimPr(state, id, fields.links.pr);
   if (claim) state.work[claim.absorb] = W.applyEvent(state.work[claim.absorb], { type: 'absorb', into: id }, ctx).work;
   return id;

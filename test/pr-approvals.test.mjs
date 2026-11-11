@@ -116,3 +116,17 @@ test("triage support: true marks a support record that didn't come through the T
     assert.equal(b.cards.find(c => c.id === 'W-1').section, 'support');
   } finally { f.close(); }
 });
+
+test('a record created for a Teamwork task a closed support record carried is support work too (W-405: W-404 reopened W-304)', () => {
+  const store = openStore(':memory:', { supervisors: [S1] }), ctx = { now: '2026-11-11T17:00:00.000Z', by: 'test' };
+  const url = 'https://acme.teamwork.com/app/tasks/41517610';
+  store.append({ kind: 'observe_source', payload: { kind: 'task', id: 'tw-41517610', title: 'Kyverna | INVESTIGATE', url, support: true } }, ctx);
+  const old = Object.values(store.state.work)[0];
+  assert.equal(old.support, true);
+  store.append({ kind: 'event', target: old.id, payload: { type: 'resolve', note: 'closed no change on a wrong verdict' } }, ctx);
+  assert.ok(['done', 'cancelled'].includes(store.state.work[old.id].phase));
+  const { id } = store.append({ kind: 'create', payload: { title: 'Kyverna (reopened)', kind: 'build', links: { source: url } } }, ctx);
+  assert.equal(store.state.work[id].support, true);
+  const { id: other } = store.append({ kind: 'create', payload: { title: 'Unrelated', kind: 'build', links: { source: 'https://acme.teamwork.com/app/tasks/5' } } }, ctx);
+  assert.ok(!store.state.work[other].support);
+});
