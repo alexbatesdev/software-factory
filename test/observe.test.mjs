@@ -205,3 +205,10 @@ test("a PR's new health finding lands on the record already fixing it, not a sec
   const health = new Map([['built-rails:8363', { head: 'bbbbbbb2', base: 'main', conflict: true, failing: [], changesRequested: [], threads: [], comments: [] }]]);
   assert.deepEqual(healthCommands({ work }, health, { owner: OWNER, now: ctx.now }).map(c => c.target), ['W-152']);
 });
+
+test("a PR its record replaced (done replacesPr) is accounted for after that record closes, so the audit stays quiet (W-354: #8694 replaced by merged #8707)", async () => {
+  const { auditMissed } = await import('../core/observe.mjs');
+  const w = { ...createWork({ id: 'W-354', title: 'OSUP', kind: 'build', links: { pr: PR(8707) } }, ctx), phase: 'done', aliases: ['built-rails-8694', 'built-rails-8707'] };
+  assert.deepEqual(auditMissed({ work: { 'W-354': w } }, new Set(['built-rails:8694']), new Map(), { owner: OWNER }), []);
+  assert.deepEqual(auditMissed({ work: { 'W-354': { ...w, links: { pr: PR(8694) } } } }, new Set(['built-rails:8694']), new Map(), { owner: OWNER }).map(m => m.id), ['pr'], 'its own PR still open after close is a gap');
+});

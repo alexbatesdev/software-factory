@@ -133,7 +133,8 @@ export function auditMissed(state, own, health, { owner, exclude, prs = new Map(
     const recs = works.filter(w => recordPrKey(w, owner) === key || (w.aliases || []).includes(key.replace(':', '-')));
     const branch = prs.get(key.replace(':', '-'))?.branch;
     if ([...recs, ...(branch ? [{ links: { branch } }] : [])].some(w => W.trackOf(w, { exclude }) === 'excluded')) continue;
-    if (!recs.some(w => !W.TERMINAL.includes(w.phase))) { out.push({ key, id: 'pr' }); continue; }
+    // A PR a record replaced (an alias that isn't its own PR) was settled on that record, open or not.
+    if (!recs.some(w => !W.TERMINAL.includes(w.phase))) { if (!recs.some(w => recordPrKey(w, owner) !== key)) out.push({ key, id: 'pr' }); continue; }
     const h = health.get(key);
     for (const x of [...(h?.changesRequested || []), ...(h?.threads || []), ...(h?.comments || [])]) if (!told.has(x.id)) out.push({ key, id: x.id, by: x.by, url: x.url });
   }
