@@ -4,6 +4,7 @@ import { isTrustedReviewSeat } from './capabilities.mjs';
 import { BUILDING, LIVE_ASSIGNMENT, TERMINAL } from './work.mjs';
 import { supportOf } from './store.mjs';
 import { eligibleRequests, planWorkerStops, planBlockedWorkers, planIdleQueues, planIdleOwners, routeOf, workerJob, PREFIX } from './notifier.mjs';
+const LOCAL_HEAD_NOTES_FROM = '2026-11-11T19:00:00.000Z';
 
 /**
  * Subjects already told: V2 messages, and imported V1 notifications (so cutover tells nobody twice).
@@ -152,6 +153,15 @@ export function inboxCommands(state, cfg, fleet = null) {
       cmds.push(msg(cfg.developer, w.id, { devNote: `${w.id}/${i}` }, `${u.by} on ${w.id}: ${u.text}`));
       });
     }
+  }
+  // local-head's notes carry Alex's words (W-416): each reaches the record's owner, open or done, once.
+  for (const w of Object.values(state.work)) {
+    const to = w.owner || w.stream;
+    if (!to || to === 'local-head' || to === cfg.developer) continue;
+    (w.updates || []).forEach((u, i) => {
+      if (u.by !== 'local-head' || u.at < LOCAL_HEAD_NOTES_FROM || told.has(`localHeadNote:${w.id}/${i}`)) return;
+      cmds.push(msg(to, w.id, { localHeadNote: `${w.id}/${i}` }, `local-head on ${w.id} ${quote(w.title)} (for Alex): ${u.text}`));
+    });
   }
   // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.
   if (cfg.triage?.since) for (const w of Object.values(state.work))

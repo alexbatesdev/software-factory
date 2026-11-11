@@ -275,3 +275,16 @@ test('a just-started assignment gets five minutes for its pane to appear before 
   assert.equal(ghosts(start + 640), 0, 'the pane is still being spawned');
   assert.equal(ghosts(start + 5 * 60000), 1, 'still missing after the grace');
 });
+
+test("local-head's note on a record, open or done, reaches the record's owner once (W-416)", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const note = { at: '2026-11-11T20:00:00.000Z', by: 'local-head', text: 'Alex: KAI is ADP WFN.' };
+  const work = { id: 'W-408', title: 'KAI', phase: 'done', owner: 'sup: host', stream: 'sup: host', requests: [], assignments: [], updates: [{ at: '2026-11-11T17:00:00.000Z', by: 'x', text: 'Created.' }, note] };
+  const state = { work: { 'W-408': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: ['sup: host'], seats: ['local-head'] };
+  const got = inboxCommands(state, cfg, null).cmds.filter(c => c.payload.about?.localHeadNote);
+  assert.deepEqual(got.map(c => [c.payload.to, c.payload.work, c.payload.about.localHeadNote]), [['sup: host', 'W-408', 'W-408/1']]);
+  assert.match(got[0].payload.text, /local-head .*W-408.*KAI is ADP WFN/);
+  state.messages['M-1'] = { id: 'M-1', to: 'sup: host', about: { localHeadNote: 'W-408/1' } };
+  assert.equal(inboxCommands(state, cfg, null).cmds.filter(c => c.payload.about?.localHeadNote).length, 0, 'once');
+});

@@ -76,3 +76,9 @@ test('the board lead acks the answer to a question it asked, not anyone else\'s 
   assert.equal(refusal('board-lead', 'ack', { ref: 'TB-156' }, ctx), null);
   assert.match(refusal('board-lead', 'ack', { ref: 'TB-9' }, ctx), /only messages/);
 });
+
+test('local-head adds notes on Alex\'s behalf but never a worker report, a stage or a wait (W-416)', () => {
+  assert.equal(refusal('local-head', 'progress', { work: 'W-1', text: 'Alex: use ADP WFN' }), null);
+  for (const extra of [{ assignmentId: 'R1' }, { stage: 'blocked' }, { waitingOn: 'TB-1' }, { discovery: 'x' }, { branch: 'b' }])
+    assert.match(refusal('local-head', 'progress', { work: 'W-1', text: 'x', ...extra }) || '', /notes/, JSON.stringify(extra));
+});
