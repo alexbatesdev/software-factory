@@ -1,8 +1,8 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
-export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws'];
+export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws', 'approve_pr'];
 
 export const ROLES = {
-  'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner', 'progress'],
+  'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner', 'progress', 'approve_pr'],
   'questions-router': ['read', 'ack', 'route', 'create', 'set_owner'],
   'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread', 'settle_finding', 'propose_task', 'request_aws'],
   'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify', 'cancel', 'propose_task'],
@@ -22,6 +22,7 @@ const ownAsk = (a, c) => { const id = a.withdraw || a.amend; return !id || (!!c.
 const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
 const LIMITS = {
   'local-head': { ask: ownAsk, set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word',
+    approve_pr: a => !!String(a.quote || '').trim() || 'local-head approves only on Alex\'s words: put them in quote',
     progress: a => !['assignmentId', 'stage', 'waitingOn', 'discovery', 'branch'].some(k => a[k]) || 'local-head adds plain notes for Alex; reports, stages, waits and discoveries are other seats\''},
   'board-lead': { ask: (a, c) => !!a.amend && !a.withdraw || ownAsk(a, c), assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
     progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',

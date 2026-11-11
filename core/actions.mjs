@@ -48,8 +48,9 @@ const BUILD = {
   // A created record's source is the seat that created it; pollers' sources come only from observe_source.
   // Correlation and ownership (aliases, PR links, owner, parent) come only from their own commands, which check them.
   create: a => {
+    if (a.alexAsked !== undefined && !String(a.alexAsked).trim()) fail('alexAsked quotes Alex\'s request, with when he said it.');
     const { pr, branch, ...links } = a.links || {};
-    const keep = Object.fromEntries(['title', 'objective', 'kind', 'repo', 'priority', 'criteria', 'deps', 'model', 'effort'].filter(k => a[k] !== undefined).map(k => [k, a[k]]));
+    const keep = Object.fromEntries(['title', 'objective', 'kind', 'repo', 'priority', 'criteria', 'deps', 'model', 'effort', 'alexAsked'].filter(k => a[k] !== undefined).map(k => [k, a[k]]));
     return [{ kind: 'create', payload: { ...keep, links, source: { type: 'agent', by: a.by }, ...(a.phase === 'proposed' ? { phase: 'proposed' } : {}) } }];
   },
   set_owner: a => { need(a, 'work', 'owner'); return [setOwner(a)]; },
@@ -90,6 +91,14 @@ const BUILD = {
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   // A new Teamwork task waits for Alex's click on the dashboard (W-382); the factory creates it, never a seat.
+  // Alex's go on a New PR, entered by local-head from his words in chat (W-425); same effect as his dashboard click.
+  approve_pr: a => {
+    need(a, 'work', 'decision', 'quote');
+    const said = `"${String(a.quote).trim()}"${String(a.note || '').trim() ? `. Note: ${String(a.note).trim()}` : ''}`;
+    if (a.decision === 'approve') return [ev(a.work, { type: 'pr_approved' }), ev(a.work, { type: 'note', text: `Alex approved (via local-head): ${said}` })];
+    if (a.decision === 'decline') return [ev(a.work, { type: 'withdraw', note: `Alex declined (via local-head): ${said}` })];
+    fail('decision is approve or decline.');
+  },
   // AWS read access for a sandbox waits for Alex's click on the dashboard (W-420); the factory runs the script, never a seat.
   request_aws: a => [{ kind: 'aws_request', payload: { work: a.work, sandbox: a.sandbox, why: a.why } }],
   propose_task: a => [{ kind: 'task_request', payload: { work: a.work, name: a.name, description: a.description, tasklistId: a.tasklistId, parentTaskId: a.parentTaskId, assigneeUserId: a.assigneeUserId, why: a.why } }],

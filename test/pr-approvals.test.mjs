@@ -161,3 +161,35 @@ test('every approval card offers a note next to Approve and Decline', () => {
   const page = readFileSync(new URL('../views/index.html', import.meta.url), 'utf8');
   for (const fn of ['decidePrs', 'decideTasks', 'decideAws', 'resolveThreads']) assert.match(page, new RegExp(`async function ${fn}\\(ids, [^)]*note`), fn);
 });
+
+test("local-head marks a record it creates from Alex's words as asked for, so it never reaches New PRs (W-424: W-406)", async () => {
+  const f = await serve();
+  const cfg2 = { roles: { 'local-head': 'local-head' } };
+  try {
+    const { commandsFor } = await import('../core/actions.mjs');
+    f.store.appendAll(commandsFor('create', { title: 'Report unclassified send failures to Sentry', kind: 'build', alexAsked: 'Alex, 11-11: "could we make a small task…"', by: 'local-head' }), { now: T, by: 'local-head' });
+    const id = Object.keys(f.store.state.work).at(-1);
+    f.store.append({ kind: 'event', target: id, payload: { type: 'transition', to: 'ready' } }, { now: T, by: 'test' });
+    assert.ok(f.store.state.work[id].alexAsked);
+    assert.ok(!(await f.board()).newPrs.some(p => p.id === id));
+    assert.throws(() => commandsFor('create', { title: 'x', alexAsked: ' ' }), /alexAsked/);
+  } finally { f.close(); }
+});
+
+test("local-head approves a New PR only on Alex's quoted word, and the record says it was Alex, via local-head (W-425)", async () => {
+  const f = await serve();
+  try {
+    const { refusal } = await import('../core/capabilities.mjs');
+    assert.equal(refusal('local-head', 'approve_pr', { work: 'W-1', decision: 'approve', quote: 'Approve all of the bugs from sentry' }), null);
+    assert.match(refusal('local-head', 'approve_pr', { work: 'W-1', decision: 'approve' }) || '', /quote/);
+    for (const role of ['board-lead', 'stream-supervisor', 'questions-router']) assert.ok(refusal(role, 'approve_pr', { work: 'W-1', decision: 'approve', quote: 'x' }), role);
+    const { commandsFor } = await import('../core/actions.mjs');
+    f.store.appendAll(commandsFor('approve_pr', { work: 'W-1', decision: 'approve', quote: 'Approve all of the bugs from sentry', note: 'one PR each' }), { now: T, by: 'local-head' });
+    const w = f.store.state.work['W-1'];
+    assert.ok(w.prApproval);
+    assert.ok(w.updates.some(u => /Alex approved \(via local-head\): "Approve all of the bugs from sentry"/.test(u.text) && /one PR each/.test(u.text)));
+    assert.ok(!(await f.board()).newPrs.some(p => p.id === 'W-1'));
+    f.store.appendAll(commandsFor('approve_pr', { work: 'W-2', decision: 'decline', quote: 'no, skip that one' }), { now: T, by: 'local-head' });
+    assert.match(f.store.state.work['W-2'].completion.withdrawn, /Alex declined \(via local-head\): "no, skip that one"/);
+  } finally { f.close(); }
+});
