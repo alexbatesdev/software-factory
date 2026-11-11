@@ -199,8 +199,9 @@
   },
   "_comment": "V2 owns its config (V1 is frozen, 10-30). Streams have no topic words (decision 8). roles maps a seat label to its role; every routing.supervisors label is a stream-supervisor.",
   "rerequest": {
-    "_doc": "W-426 (Alex, 11-11): re-request a non-approving human reviewer once their threads are resolved and the head moved, once per round; approvers, bots and the author never. Off: logs \"re-request (off): would re-request\" only.",
-    "enabled": false
+    "_doc": "W-426 (Alex, 11-11): re-request a non-approving human reviewer once their threads are resolved and the head moved, once per round; approvers, bots and the author never. Only rounds from the last maxAgeDays (Alex, 11-11: recent reviews only). With enabled false it only logs \"re-request (off): would re-request\".",
+    "enabled": true,
+    "maxAgeDays": 7
   },
   "seatRecycle": {
     "_doc": "Restart idle Claude seats (not stays) fresh once a day in this UTC hour; sbx workers use recycle instead.",

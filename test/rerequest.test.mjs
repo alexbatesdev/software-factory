@@ -52,3 +52,9 @@ test("the PR author's own replies count as reviews on GitHub; the author is neve
   const p = pr({ author: 'alexbatesdev', reviews: [review('alexbatesdev', 'COMMENTED', '2026-11-11T10:00:00Z')] });
   assert.deepEqual(rerequestPlan(rec(), [p]), []);
 });
+
+test('only a recent round is re-requested: a review older than the window is left alone (Alex, 11-11: recent reviews only)', () => {
+  const p = pr({ reviews: [review('sam-built', 'COMMENTED', '2026-10-22T19:11:37Z'), review('cbprice', 'CHANGES_REQUESTED', '2026-11-09T10:00:00Z')] });
+  const got = rerequestPlan(rec(), [p], { now: Date.parse('2026-11-11T23:00:00Z'), maxAgeMs: 7 * 86400000 });
+  assert.deepEqual(got.map(r => r.reviewer), ['cbprice']);
+});

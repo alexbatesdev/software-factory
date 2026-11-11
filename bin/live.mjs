@@ -219,7 +219,7 @@ async function rerequestTick() {
     .filter(u => openPrs.get(u)?.state === 'OPEN');
   const prs = [];
   for (const u of urls) { const p = await reviewState(u).catch(e => { once(`review state ${u}: ${e.message}`); return null; }); if (p?.open && p.author === config.githubLogin) prs.push(p); }
-  for (const r of rerequestPlan(s.work, prs)) {
+  for (const r of rerequestPlan(s.work, prs, { maxAgeMs: (config.rerequest?.maxAgeDays ?? 7) * 86400000 })) {
     if (!config.rerequest?.enabled || DRY) { once(`re-request (off): would re-request ${r.reviewer} on ${r.pr} (${r.work}, ${r.state} at ${r.reviewAt})`); continue; }
     const ok = await requestReview(r.pr, r.reviewer).catch(e => { log(`re-request ${r.reviewer} on ${r.pr}: ${e.message}`); return false; });
     if (ok) apply([{ kind: 'event', target: r.work, payload: { type: 'reviewer_rerequested', reviewer: r.reviewer, reviewAt: r.reviewAt, head: r.head, state: r.state } }], 'board (re-request)');
