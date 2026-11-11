@@ -149,3 +149,18 @@ test('the audit names a closed record that still has a live job (W-383)', () => 
   const state = { questions: {}, messages: {}, work: { 'W-128': { id: 'W-128', phase: 'done', updatedAt: '2026-11-02T00:00:00.000Z', updates: [], assignments: [{ id: 'R1', status: 'started', at: '2026-10-30T00:00:00.000Z' }] } } };
   assert.deepEqual(contradictions(state, { now: '2026-11-10T23:00:00.000Z' }).map(c => `${c.kind}/${c.id}`), ['closed-with-live-job/W-128']);
 });
+
+test("the board developer can mark two records as the same work, so a follow-up filed beside a PR's record closes when that PR merges (W-418: W-415 beside W-234 on teamwork-mini #1)", async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const { commandsFor } = await import('../core/actions.mjs');
+  const { sourceIndex } = await import('../core/correlate.mjs');
+  const s = openStore(':memory:'), c = { now: '2026-11-11T22:00:00.000Z', by: 'triage board worker' };
+  const PR1 = 'https://github.com/alexbatesdev/teamwork-mini-mcp/pull/1';
+  const owner = s.append({ kind: 'create', payload: { title: 'add create_task', source: { type: 'agent', by: 'local-head' }, links: { pr: PR1 } } }, c).id;
+  const follow = s.append({ kind: 'create', payload: { title: 'drop the tool' } }, c).id;
+  s.appendAll(commandsFor('relate', { work: follow, to: owner, note: 'its work is on #1' }), c);
+  const bySource = Object.fromEntries(sourceIndex(s.state));
+  const ids = mergeCloses(s.state.work, bySource, { prState: u => u === PR1 ? 'MERGED' : null, openQuestions: () => 0, track: () => 'stream' }).map(x => x.id).sort();
+  assert.deepEqual(ids, [owner, follow].sort());
+  assert.throws(() => commandsFor('relate', { work: follow }), /to/);
+});

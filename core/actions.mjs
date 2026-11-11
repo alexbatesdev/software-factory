@@ -91,6 +91,8 @@ const BUILD = {
   resolve_thread: a => [{ kind: 'thread_request', payload: { work: a.work, threadId: a.threadId, url: a.url, reviewer: a.reviewer, ask: a.ask, resolution: a.resolution } }],
   // Repair (board developer): a poller's duplicate record folds into the record that carries the work.
   absorb: a => { need(a, 'work', 'into'); return [ev(a.work, { type: 'absorb', into: a.into })]; },
+  // Two records that are one piece of work (a follow-up filed beside a PR's record): merge-close treats them together.
+  relate: a => { need(a, 'work', 'to', 'note'); return [ev(a.work, { type: 'relate', to: a.to, kind: 'same-work', evidence: a.note })]; },
   cancel: a => { need(a, 'work', 'assignmentId', 'evidence'); return [ev(a.work, { type: 'cancel_assignment', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, evidence: a.evidence })]; },
   settle_finding: a => { need(a, 'work', 'findingId', 'status', 'note'); if (!['resolved', 'accepted'].includes(a.status)) fail('A finding is settled as resolved or accepted.'); return [ev(a.work, { type: 'finding', findingId: a.findingId, status: a.status, note: a.note })]; },
   withdraw: a => { need(a, 'work', 'note'); return [ev(a.work, { type: 'withdraw', note: a.note })]; },

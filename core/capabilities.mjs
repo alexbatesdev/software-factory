@@ -1,5 +1,5 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
-export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task'];
+export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate'];
 
 export const ROLES = {
   'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner'],
@@ -21,7 +21,8 @@ export const isTrustedReviewSeat = label => /^(pr-\d+-trusted|trusted-review-\d+
 const ownAsk = (a, c) => { const id = a.withdraw || a.amend; return !id || (!!c.seat && c.questions?.[id]?.from === c.seat) || 'a seat withdraws or amends only questions it asked'; };
 const noPin = a => !a.pin || 'only local-head pins a stream, on Alex\'s word';
 const LIMITS = {
-  'local-head': { ask: ownAsk, set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word' },
+  'local-head': { ask: ownAsk, set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word',
+    progress: a => !['assignmentId', 'stage', 'waitingOn', 'discovery', 'branch'].some(k => a[k]) || 'local-head adds plain notes for Alex; reports, stages, waits and discoveries are other seats\''},
   'board-lead': { ask: (a, c) => !!a.amend && !a.withdraw || ownAsk(a, c), assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
     progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',
     ack: (a, c) => /^M-\d+$/.test(a.ref || '') || (!!c.seat && c.questions?.[a.ref]?.from === c.seat) || 'the board lead acks only messages addressed to it, and answers to its own questions' },
