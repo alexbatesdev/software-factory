@@ -166,3 +166,18 @@ test("a record closed as a duplicate hands its PR key to the record it duplicate
   assert.equal(sourceIndex(s.state).get('built-rails-9'), keep, 'repair: absorbing the closed record moves the key');
   assert.match(s.state.work[old].completion.withdrawn, /Duplicate/, 'the close reason stays');
 });
+
+test("the record a duplicate is folded into takes its PR link too, when it has none, so the ready gate can mark that PR (W-418: W-359 sat 24h with no PR)", async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = open(), c = { now: '2026-11-11T22:00:00.000Z', by: 'test' };
+  const pr = 'https://github.com/builtforteams/built-rails/pull/8699';
+  const keep = s.append({ kind: 'create', payload: { title: 'PortNOLA support', source: { type: 'teamwork', key: 'tw-41525276' }, links: { branch: 'hotfix/x' } } }, c).id;
+  const dup = s.append({ kind: 'create', payload: { title: 'PR 8699', source: { type: 'pr', key: 'built-rails-8699' }, links: { pr } } }, c).id;
+  s.appendAll(commandsFor('triage', { work: dup, bucket: 'close', reason: 'duplicate', of: keep, note: 'same PR' }), c);
+  assert.deepEqual([s.state.work[keep].links.pr, s.state.work[keep].links.branch], [pr, 'hotfix/x'], 'the PR moves; the branch the record has stays');
+  const other = 'https://github.com/builtforteams/built-rails/pull/9';
+  const keep2 = s.append({ kind: 'create', payload: { title: 'Has a PR', links: { pr: other } } }, c).id;
+  const dup2 = s.append({ kind: 'create', payload: { title: 'PR 10', source: { type: 'pr', key: 'built-rails-10' }, links: { pr: 'https://github.com/builtforteams/built-rails/pull/10' } } }, c).id;
+  s.append({ kind: 'event', target: dup2, payload: { type: 'absorb', into: keep2 } }, c);
+  assert.equal(s.state.work[keep2].links.pr, other, 'a record that has its own PR keeps it');
+});

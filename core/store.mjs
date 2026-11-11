@@ -48,6 +48,7 @@ export function derivedCtx(state, id, { prState = () => null, owner } = {}) {
 }
 
 // A record opened for a Teamwork task an earlier support record carried (a reopened investigation) is support too (W-405).
+const DUP_PR_FROM = '2026-11-11T21:20:00.000Z';
 const SUPPORT_REOPEN_FROM = '2026-11-11T16:30:00.000Z';
 const taskOf = w => w.source?.key?.startsWith('tw-') ? w.source.key : `tw-${String(w.links?.source || '').match(/teamwork\.com\/app\/tasks\/(\d+)/)?.[1]}`;
 function create(state, fields, ctx) {
@@ -139,6 +140,8 @@ export function fold(state, row, { supervisors = [] } = {}) {
       // The absorbing record takes the absorbed one's source key, so pollers find it there.
       const into = payload.type === 'absorb' ? payload.into : payload.type === 'withdraw' ? payload.duplicateOf : null;
       if (into && cur.source?.key && state.work[into]) state.work[into] = { ...state.work[into], aliases: [...new Set([...(state.work[into].aliases || []), cur.source.key])] };
+      // ...and its PR link when it has none, or the ready gate never sees that PR (W-418: W-359 waited 24h on #8699).
+      if (into && ctx.now >= DUP_PR_FROM && cur.links?.pr && state.work[into] && !state.work[into].links?.pr) state.work[into] = { ...state.work[into], links: { ...state.work[into].links, pr: cur.links.pr } };
       // The request ack is the seat's answer to the message about it; a still-open message would wake the seat for nothing.
       if (payload.type === 'ack') for (const m of Object.values(state.messages))
         if (!m.ackedAt && m.about?.requests === `${id}/${payload.requestId}`) state.messages[m.id] = { ...m, ackedAt: ctx.now, ackedBy: payload.by, outcome: 'request acked' };
