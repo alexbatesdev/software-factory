@@ -181,3 +181,15 @@ test("the record a duplicate is folded into takes its PR link too, when it has n
   s.append({ kind: 'event', target: dup2, payload: { type: 'absorb', into: keep2 } }, c);
   assert.equal(s.state.work[keep2].links.pr, other, 'a record that has its own PR keeps it');
 });
+
+test("a PR whose key a record already holds, on a record with no PR link, is linked on the next poll (W-418 repair: W-359 holds #8699's key since 11-10)", async () => {
+  const s = open(), c = { now: '2026-11-11T22:00:00.000Z', by: 'test' };
+  const keep = s.append({ kind: 'create', payload: { title: 'PortNOLA', source: { type: 'teamwork', key: 'tw-41525276' }, aliases: ['built-rails-8699'] } }, c).id;
+  const items = new Map([['built-rails-8699', pr(8699, 'alex/support/41525276-portnola-variable-pay')]]);
+  const cmds = sourceCommands(s.state, items, 'pr', () => [], { now: c.now });
+  assert.equal(cmds.length, 1, 'the poll asks to link it');
+  s.appendAll(cmds, c);
+  assert.equal(s.state.work[keep].links.pr, PR(8699));
+  assert.equal(sourceCommands(s.state, items, 'pr', () => [], { now: c.now }).length, 0, 'and then rests');
+  assert.equal(Object.keys(s.state.work).length, 1);
+});

@@ -191,7 +191,13 @@ function observeSource(state, item, ctx) {
   }
   const w = state.work[o.id];
   if (w.source?.key === item.id) { state.work[o.id] = refresh(w, item, parseAcs, ctx.now); return o.id; }
-  if ((w.aliases || []).includes(item.id)) return o.id;
+  if ((w.aliases || []).includes(item.id)) {
+    if (item.kind === 'pr' && !w.links?.pr && !W.TERMINAL.includes(w.phase) && ctx.now >= DUP_PR_FROM) {
+      state.work[o.id] = W.updateWork(w, { links: { pr: item.url, ...(w.links?.branch ? {} : { branch: item.branch }) } }, ctx);
+      state.work[o.id].updates.at(-1).text += ` ${item.ref} linked: this record holds its key (W-418).`;
+    }
+    return o.id;
+  }
   // Joining a record (e.g. a task's own PR, by branch): the key becomes an alias; the record keeps its title and an existing PR link.
   state.work[o.id] = W.updateWork(w, { aliases: [...(w.aliases || []), item.id], ...(item.kind === 'pr' && !w.links?.pr ? { links: { pr: item.url, branch: item.branch } } : {}), ...(linked && item.support ? { support: true } : {}) }, ctx);
   state.work[o.id].updates.at(-1).text += ` ${item.ref} joined: ${o.why}.`;

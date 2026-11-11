@@ -83,7 +83,9 @@ export function sourceCommands(state, items, sourceType, parseAcs, cfg = {}) {
   const idx = sourceIndex(state), cmds = [];
   for (const it of items.values()) {
     const o = ownerOf(state, it, idx), w = o && state.work[o.id];
-    if (!w || w.source?.key !== it.id && !(w.aliases || []).includes(it.id) || w.source?.key === it.id && JSON.stringify(refresh(w, it, parseAcs, cfg.now ?? new Date().toISOString())) !== JSON.stringify(w)) cmds.push({ kind: 'observe_source', payload: it });
+    // A PR key a live record holds with no PR link is linked by the next observe (W-418).
+    const unlinked = w && it.kind === 'pr' && (w.aliases || []).includes(it.id) && !w.links?.pr && !TERMINAL.includes(w.phase);
+    if (unlinked || !w || w.source?.key !== it.id && !(w.aliases || []).includes(it.id) || w.source?.key === it.id && JSON.stringify(refresh(w, it, parseAcs, cfg.now ?? new Date().toISOString())) !== JSON.stringify(w)) cmds.push({ kind: 'observe_source', payload: it });
   }
   for (const w of Object.values(state.work)) {
     if (w.source?.type === sourceType && w.upstream === 'open' && !items.has(w.source.key)) cmds.push({ kind: 'source_gone', target: w.id, payload: {} });
