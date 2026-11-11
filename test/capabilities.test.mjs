@@ -21,7 +21,7 @@ test('the board lead may queue work but not start it', () => {
 // The role files name their actions in prose; a file that drifts from this table is a second source of truth.
 test('every role file lists exactly the actions this table grants it', () => {
   for (const [role, actions] of Object.entries(ROLES)) {
-    if (actions === ACTIONS || role === 'sbx-worker') continue; // sbx workers get their instructions in the brief, not a role file
+    if (actions === ACTIONS || ['sbx-worker', 'agent-unblocker'].includes(role)) continue; // sbx workers get theirs in the brief, the unblocker in ~/Code/CLAUDE.md
     const text = readFileSync(join(homedir(), 'Code/.claude/agents', `${role}.md`), 'utf8');
     const line = text.match(/\*\*Board actions:\*\* (.*)/)?.[1];
     if (!actions.length) { assert.equal(line, undefined, `${role} has no board actions, so its file names none`); continue; }

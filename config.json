@@ -194,7 +194,8 @@
     "local-head": "local-head",
     "questions router": "questions-router",
     "board lead": "board-lead",
-    "triage board worker": "board-developer"
+    "triage board worker": "board-developer",
+    "agent-unblocker": "agent-unblocker"
   },
   "_comment": "V2 owns its config (V1 is frozen, 10-30). Streams have no topic words (decision 8). roles maps a seat label to its role; every routing.supervisors label is a stream-supervisor.",
   "seatRecycle": {

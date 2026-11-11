@@ -1,7 +1,7 @@
 // The factory's HTTP API: every write is a board action, checked against the caller's role, appended atomically.
 // The caller's seat comes from the x-seat header, which the MCP server fills from its pane. ponytail: trusted because
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
-import { refusal, isTrustedReviewSeat } from './capabilities.mjs';
+import { refusal, isTrustedReviewSeat, ROLES } from './capabilities.mjs';
 import { commandsFor } from './actions.mjs';
 import { readFileSync } from 'node:fs';
 import { boardView } from '../views/board.mjs';
@@ -32,6 +32,8 @@ export function createApi({ store, config, gh = null, tw = null, readPr = async 
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state, asking = action === 'ask' && !args.withdraw && !args.amend;
+    // A message waits in an inbox until acked, so it goes only to a seat that can read and ack one (W-414).
+    if (action === 'message' && !ROLES[roleOf(config, args.to)]?.includes('ack')) return [409, { error: `${args.to} can't read or ack factory messages (no board role with ack); reach it another way.` }];
     // A thread to resolve is a resolve_thread request on the dashboard, never a TB question (Alex, 11-09).
     if (asking && /\bresolve\b[^?]*\bthreads?\b/i.test(args.title || '')) return [409, { error: 'Resolving a review thread is not a question: file it with resolve_thread (work, threadId, url, reviewer, ask, resolution) and Alex resolves it from the dashboard.' }];
     // Factual PR-description fixes go through without asking (Alex, 11-09, W-212); a scope change is still a question.

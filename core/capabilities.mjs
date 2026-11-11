@@ -10,6 +10,8 @@ export const ROLES = {
   'trusted-reviewer': [], // PR review carve-out (Alex, 11-06): trusted reviews run off the board
   // A stream's sbx worker, on the sandbox port only. Its instructions come in its brief, not a role file.
   'sbx-worker': ['read', 'ack', 'progress'],
+  // The Codex agent unblocker (W-414): its policy is ~/Code/CLAUDE.md's Agent unblocker section, not a role file; it reads and acks board messages.
+  'agent-unblocker': ['read', 'ack'],
 };
 
 /** A trusted-review pane's label: `pr-<n>-trusted` (its role file) or `trusted-review-<n>` (older panes). */

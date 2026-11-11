@@ -344,3 +344,17 @@ test('the page loads its markdown libraries from the factory itself, never a CDN
     assert.equal((await fetch(`${base}/vendor/../core/api.mjs`)).status, 404);
   } finally { f.close(); }
 });
+
+test("a message goes only to a seat that can read and ack it; the agent unblocker can (W-414)", async () => {
+  const f = await serve();
+  try {
+    const [code, body] = await f.act('board lead', 'message', { to: 'stranger pane', text: 'hello' });
+    assert.equal(code, 409, JSON.stringify(body));
+    assert.match(body.error, /can't read or ack/);
+    const { ROLES } = await import('../core/capabilities.mjs');
+    assert.deepEqual(ROLES['agent-unblocker'], ['read', 'ack']);
+    const live = JSON.parse((await import('node:fs')).readFileSync(new URL('../config.json', import.meta.url), 'utf8'));
+    assert.equal(live.roles['agent-unblocker'], 'agent-unblocker');
+    assert.equal((await f.act('board lead', 'message', { to: S1, text: 'hi' }))[0], 200);
+  } finally { f.close(); }
+});
