@@ -19,6 +19,8 @@ const BUILD = {
   progress: a => {
     need(a, 'work'); if (a.discovery) need(a, 'text');
     // A wait on prose states whose action it is; a typed reference (question, record, PR) already says (W-317).
+    // A Teamwork task proposal is a receipt for the work, not permission to do it (Alex, 11-11): nothing waits on one.
+    if (/\bNT-\d+\b/.test(String(a.waitingOn || ''))) fail(`A task proposal (${String(a.waitingOn).match(/NT-\d+/)[0]}) is a receipt for the work, not a blocker: keep working and don't wait on it.`);
     const freeText = a.waitingOn && a.waitingOn !== 'clear' && !TYPED_WAIT.test(String(a.waitingOn).trim());
     if ((a.actor !== undefined && !ACTORS.includes(a.actor)) || (freeText && !a.actor)) fail(`A wait on "${a.waitingOn}" needs actor: "alex" or "other" (or wait on a TB-n, W-n or PR instead).`);
     const actor = a.actor ? { actor: a.actor } : {};

@@ -105,3 +105,16 @@ test('a proposal stuck mid-create (the server stopped) can be retried after two 
     assert.deepEqual([made, f.store.state.taskRequests['NT-1'].status], [1, 'created']);
   } finally { f.close(); }
 });
+
+test('a task proposal is a receipt for work, never a reason to stop it: nobody parks or holds a record on an NT-n (Alex, 11-11)', async () => {
+  const f = await serve(null);
+  try {
+    await f.act('propose_task', proposal);
+    const [code, body] = await f.act('progress', { work: 'W-1', waitingOn: 'NT-1', actor: 'alex', text: 'waiting for the task' });
+    assert.equal(code, 400, JSON.stringify(body));
+    assert.match(body.error, /receipt/);
+    assert.equal((await f.act('progress', { work: 'W-1', waitingOn: 'Teamwork task NT-1 approval', actor: 'alex' }))[0], 400);
+    const tool = readFileSync(new URL('../mcp/server.mjs', import.meta.url), 'utf8');
+    assert.match(tool, /propose_task: \['[^']*keep working/);
+  } finally { f.close(); }
+});
