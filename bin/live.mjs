@@ -198,7 +198,6 @@ async function githubTick() {
     apply(skipNotes(store.state.work, config), 'board (skip)');
     await mergeTick();
     holdTick();
-    await rerequestTick();
     // After merge-close, so a merge it just closed is not reported. Once per (kind, record), to the board lead (W-317).
     if (contradictionsDue) {
       contradictionsDue = false;
@@ -217,8 +216,11 @@ async function githubTick() {
 async function rerequestTick() {
   const s = store.state, urls = [...new Set(Object.values(s.work).filter(w => w.links?.pr && !TERMINAL.includes(w.phase) && trackOf(w, config) !== 'excluded').map(w => w.links.pr))]
     .filter(u => openPrs.get(u)?.state === 'OPEN');
+  // Its own loop, reading 8 PRs at a time, so 50-odd PR reads never hold up githubTick's ready marks and releases (W-428).
   const prs = [];
-  for (const u of urls) { const p = await reviewState(u).catch(e => { once(`review state ${u}: ${e.message}`); return null; }); if (p?.open && p.author === config.githubLogin) prs.push(p); }
+  for (let i = 0; i < urls.length; i += 8)
+    for (const p of await Promise.all(urls.slice(i, i + 8).map(u => reviewState(u).catch(e => { once(`review state ${u}: ${e.message}`); return null; }))))
+      if (p?.open && p.author === config.githubLogin) prs.push(p);
   for (const r of rerequestPlan(s.work, prs, { maxAgeMs: (config.rerequest?.maxAgeDays ?? 7) * 86400000 })) {
     if (!config.rerequest?.enabled || DRY) { once(`re-request (off): would re-request ${r.reviewer} on ${r.pr} (${r.work}, ${r.state} at ${r.reviewAt})`); continue; }
     const ok = await requestReview(r.pr, r.reviewer).catch(e => { log(`re-request ${r.reviewer} on ${r.pr}: ${e.message}`); return false; });
@@ -430,6 +432,7 @@ every(config.notify?.intervalMs ?? 15000, inboxTick);
 every(config.notify?.intervalMs ?? 15000, readyTick);
 every(config.notify?.intervalMs ?? 15000, questionHoldTick);
 every(config.poll.githubMs, githubTick);
+every(config.poll.githubMs, rerequestTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);
 every(60000, seatRestartTick);
