@@ -59,7 +59,7 @@ export async function decideAwsRequests(store, ids, decision, note, host, now) {
         await host.creds(r.sandbox, script);
         await host.allow(r.sandbox, hosts);
       } catch (e) {
-        const login = /refusing to run as this identity|sso|expired|Unable to locate credentials/i.test(e.message) ? ' The host AWS login looks missing or expired: run `aws sso login` with the Observer profile, then Retry.' : '';
+        const login = /refusing to run as this identity|sso|expired|Unable to locate credentials|NoCredentials/i.test(e.message) ? ` The host AWS login looks missing or expired: run \`aws sso login${host?.profile ? ` --profile ${host.profile}` : ''}\`, then Retry.` : '';
         store.append({ kind: 'aws_op', target: id, payload: { status: 'failed', detail: `${e.message.slice(0, 400)}${login}` } }, by);
         out.push({ id, error: e.message }); continue;
       }

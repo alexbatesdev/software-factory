@@ -68,3 +68,16 @@ test('only a stream supervisor asks, and the page lists requests with Approve an
   assert.match(page, /AWS read access/);
   assert.match(page, /\/api\/aws-requests/);
 });
+
+test('the script runs with the configured AWS profile, and a login failure names the exact command (Alex, 11-11: NoCredentials on first Approve)', async () => {
+  const seen = [];
+  const f = await serve({ profile: 'Observer-Alex', script: async () => SCRIPT, creds: async () => { throw new Error('aws: [ERROR]: An error occurred (NoCredentials): Unable to locate credentials.'); }, allow: async () => {} });
+  try {
+    await f.act(ask);
+    await f.decide({ ids: ['AR-1'], decision: 'approve' });
+    assert.match(f.store.state.awsRequests['AR-1'].detail, /aws sso login --profile Observer-Alex/);
+  } finally { f.close(); }
+  const { obsAccess } = await import('../hosts/sbx.mjs');
+  assert.equal(typeof obsAccess, 'function', 'built per profile');
+  assert.equal(obsAccess('Observer-Alex').profile, 'Observer-Alex');
+});
