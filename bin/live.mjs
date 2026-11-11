@@ -200,7 +200,7 @@ async function githubTick() {
       log(`audit: ${found.length} contradictions`);
       for (const c of found) apply([{ kind: 'message', payload: { to: lead, work: c.id, about: { contradiction: `${c.kind}/${c.id}` }, text: `[software factory, automated, not Alex] Contradiction on ${c.id} (${c.kind}): ${c.evidence}. Next: ${c.next}.` } }], 'board (audit)');
     }
-    await syncResolvedThreads(store, gh, now);
+    await syncResolvedThreads(store, gh, now, { me: config.githubLogin });
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
 }

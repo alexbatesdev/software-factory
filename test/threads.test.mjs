@@ -4,6 +4,7 @@ import http from 'node:http';
 import { openStore } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
+import { readFileSync } from 'node:fs';
 
 const S1 = 'triage board worker', PR = 'https://github.com/builtforteams/built-rails/pull/8635', T = '2026-11-09T18:00:00.000Z';
 const config = { roles: { 'triage board worker': 'board-developer' }, routing: { supervisors: {} } };
@@ -103,8 +104,44 @@ test("a thread request's last five messages are read from GitHub on demand, only
   try {
     await f.act('resolve_thread', request);
     const [rt] = Object.keys(f.store.state.threads);
-    assert.deepEqual(await f.comments(rt), { comments: msgs });
+    assert.deepEqual(await f.comments(rt), { comments: msgs.map(m => ({ ...m, mine: false })) });
     assert.deepEqual(asked, ['PRRT_abc'], 'asks GitHub for the thread the request names');
     assert.equal((await f.comments('RT-99')).error, 'There is no thread request RT-99.');
   } finally { f.close(); }
+});
+
+test("a codex review thread we replied to resolves itself; a person's thread, or a codex thread with no reply from us, waits for Alex (Alex, 11-11)", async () => {
+  let resolved = false, first = 'chatgpt-codex-connector', last = 'alexbatesdev';
+  const gh = { thread: async () => ({ pr: PR, isResolved: resolved, first, last }), resolveThread: async () => { resolved = true; } };
+  const f = await serve(gh);
+  try {
+    await f.act('resolve_thread', request);
+    last = 'chatgpt-codex-connector';
+    await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev' });
+    assert.equal(f.store.state.threads['RT-1'].status, 'requested', 'no reply from us yet');
+    first = 'jmcdonald-ut'; last = 'alexbatesdev';
+    await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev' });
+    assert.equal(f.store.state.threads['RT-1'].status, 'requested', "a person's thread is Alex's click");
+    first = 'chatgpt-codex-connector';
+    await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev' });
+    const t = f.store.state.threads['RT-1'];
+    assert.deepEqual([t.status, t.approvedBy, resolved], ['resolved', 'board (auto: codex thread we replied to)', true]);
+  } finally { f.close(); }
+});
+
+test("a thread's messages say which are ours, so the page can tell them apart", async () => {
+  const gh = { thread: async () => ({ pr: PR, isResolved: false }), threadComments: async () => [{ by: 'chatgpt-codex-connector', body: 'P1' }, { by: 'alexbatesdev', body: 'Fixed' }] };
+  const store = openStore(':memory:', { supervisors: [S1] });
+  const ctx = { now: T, by: 'test' };
+  store.append({ kind: 'create', payload: { title: 'x', links: { pr: PR }, stream: S1 } }, ctx);
+  store.append({ kind: 'observe_head', target: 'W-1', payload: { sha: 'aaaaaaa1', via: 'github', isDraft: false } }, ctx);
+  store.append({ kind: 'observe_health', target: 'W-1', payload: { head: 'aaaaaaa1', threads: [{ id: 'PRRT_abc', by: 'x', url: request.url }] } }, ctx);
+  store.append({ kind: 'thread_request', payload: request }, ctx);
+  const server = http.createServer(createApi({ store, config: { ...config, githubLogin: 'alexbatesdev' }, gh, now: () => T }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  try {
+    const r = await (await fetch(`http://127.0.0.1:${server.address().port}/api/threads/RT-1/comments`)).json();
+    assert.deepEqual(r.comments.map(c => c.mine), [false, true]);
+    assert.match(readFileSync(new URL('../views/index.html', import.meta.url), 'utf8'), /\.msg\.mine/);
+  } finally { server.close(); }
 });

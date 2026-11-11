@@ -72,6 +72,7 @@ details summary { cursor: pointer; }
 details.msgs { margin-top: 4px; font-size: 13px; }
 .msg { border: 1px solid var(--line); border-left: 3px solid var(--factory); border-radius: 6px; margin: 8px 0; background: var(--card); overflow: hidden; }
 .msg + .msg { margin-top: 10px; }
+.msg.mine { border-left-color: var(--merge); } .msg.mine .mhead { background: var(--merge-bg); } .msg.mine .mhead b { color: var(--merge); }
 .msg .mhead { display: flex; justify-content: space-between; gap: 8px; padding: 4px 10px; background: var(--bg); border-bottom: 1px solid var(--line); font-size: 12px; }
 .msg .mhead b { color: var(--ink); } .msg .mhead span { color: var(--mute); }
 .msg .mbody { padding: 6px 10px; overflow-wrap: anywhere; }
@@ -247,7 +248,7 @@ function threadMessages(id) {
   const d = el('details', 'msgs'), body = el('div');
   d.append(el('summary', 'mute', 'Last 5 messages'), body); d.open = openMsgs.has(id);
   const fill = list => body.replaceChildren(...(list.error ? [el('div', 'fail', list.error)] : list.map(c => {
-    const m = el('div', 'msg'), h = el('div', 'mhead');
+    const m = el('div', c.mine ? 'msg mine' : 'msg'), h = el('div', 'mhead');
     h.append(el('b', null, c.by), el('span', null, new Date(c.at).toLocaleString()));
     m.append(h, mdBody(c.body)); return m; })));
   const load = async () => {

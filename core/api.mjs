@@ -129,7 +129,7 @@ export function createApi({ store, config, gh = null, tw = null, readPr = async 
         const t = store.state.threads?.[tc[1]];
         if (!t) return send(res, 404, { error: `There is no thread request ${tc[1]}.` });
         if (!gh?.threadComments) return send(res, 405, { error: 'This factory does not read GitHub.' });
-        return send(res, 200, { comments: await gh.threadComments(t.threadId) });
+        return send(res, 200, { comments: (await gh.threadComments(t.threadId)).map(c => ({ ...c, mine: c.by === config.githubLogin })) });
       }
       if (req.method === 'POST' && url.pathname === '/api/threads/resolve') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });

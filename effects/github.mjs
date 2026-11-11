@@ -12,10 +12,10 @@ export const gh = {
   /** A review thread's PR and resolved state, or null when the id isn't a review thread. */
   thread: async id => {
     // gh exits 1 on an unknown id but still prints the {node: null} answer.
-    const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved pullRequest{url}}}}', '-f', `id=${id}`], { timeout: 20000 })
+    const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved pullRequest{url} first:comments(first:1){nodes{author{login}}} last:comments(last:1){nodes{author{login}}}}}}', '-f', `id=${id}`], { timeout: 20000 })
       .catch(e => { if (/NOT_FOUND/.test(e.stdout || '')) return { stdout: e.stdout }; throw e; });
     const n = JSON.parse(stdout).data?.node;
-    return n?.pullRequest ? { pr: n.pullRequest.url, isResolved: n.isResolved } : null;
+    return n?.pullRequest ? { pr: n.pullRequest.url, isResolved: n.isResolved, first: n.first?.nodes?.[0]?.author?.login || null, last: n.last?.nodes?.[0]?.author?.login || null } : null;
   },
   /** A review thread's last five comments, oldest first. */
   threadComments: async id => {
