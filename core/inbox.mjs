@@ -88,12 +88,15 @@ export function inboxCommands(state, cfg, fleet = null) {
     const owners = planIdleOwners({ seats: (fleet.others || []).filter(a => !unread.has(a.label) && !isTrustedReviewSeat(a.label)), works: state.work, watch: watches.idleOwners, now: fleet.now });
     for (const d of owners.due) cmds.push(msg(d.to, d.work, { idleOwner: `${d.to}/${fleet.now}` }, `You're idle and own ${d.count} open record(s). Next: ${d.work} ${quote(d.title)}. Work it, or park it with progress waitingOn (what blocks it) so it stops counting.`));
     watches = { workerStops: stops.watch, blockedWorkers: blocked.watch, idleQueues: idle.watch, idleOwners: owners.watch };
+    const GHOST_GRACE_MS = 5 * 60000;
     // A started assignment whose owner has no pane will never report (W-178). Stream workers have their own stop check.
     // ponytail: "sbx: " prefix stands in for "a stream's worker"; pass the worker labels if another worker naming appears.
     const live = new Set([...(fleet.others || []), ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => a.label));
     const lead = cfg.triage?.seat || 'board lead';
     for (const w of Object.values(state.work).filter(x => !['done', 'cancelled'].includes(x.phase))) for (const a of w.assignments || []) {
       const key = `${w.id}/${a.id}/v${a.version ?? 1}`;
+      // A supervisor may record the worker before spawning its pane (host streams, W-417): give the pane time to appear.
+      if (fleet.now - Date.parse(a.at) < GHOST_GRACE_MS) continue;
       if (a.status !== 'started' || !a.owner || live.has(a.owner) || (cfg.seats || []).includes(a.owner) || /^sbx: /.test(a.owner) || told.has(`ghost:${key}`)) continue;
       cmds.push(msg(lead, w.id, { ghost: key }, `${w.id} ${a.id} (${a.kind}) is started by ${a.owner}, but no pane has that label, so it will never report. Re-dispatch it or have it cancelled (board developer: cancel).`));
     }

@@ -264,3 +264,14 @@ test('an answer to a supervisor with support queued on its stream says to start 
   const text = plan(s).cmds.find(c => c.payload.about?.answers).payload.text;
   assert.match(text, /Support first \(Alex, 11-09\): start W-301 R1 before resuming W-262; W-262 resumes after it\./);
 });
+
+test('a just-started assignment gets five minutes for its pane to appear before it counts as a ghost (W-417: W-408 R2 flagged 0.6s after start)', async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const start = Date.parse('2026-11-11T18:37:01.648Z');
+  const work = { id: 'W-408', title: 'KAI', phase: 'review', requests: [], assignments: [{ id: 'R2', kind: 'review', owner: 'tw-41529214-kai-review', status: 'started', version: 1, at: '2026-11-11T18:37:01.648Z' }] };
+  const state = { work: { 'W-408': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: [], seats: ['board lead'], triage: { seat: 'board lead' } };
+  const ghosts = now => inboxCommands(state, cfg, { units: [], others: [{ label: 'board lead', status: 'working' }], now, watches: {} }).cmds.filter(c => c.payload.about?.ghost).length;
+  assert.equal(ghosts(start + 640), 0, 'the pane is still being spawned');
+  assert.equal(ghosts(start + 5 * 60000), 1, 'still missing after the grace');
+});
