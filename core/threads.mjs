@@ -23,7 +23,8 @@ export function foldThread(state, { kind, target, payload: p, ctx }) {
     if (!['requested', 'failed'].includes(t.status)) fail(`${target} is ${t.status}.`);
     state.threads[target] = { ...t, status: 'approved', approvedBy: ctx.by, approvedAt: ctx.now };
   } else {
-    if (!['resolved', 'failed'].includes(p.status)) fail('A thread outcome is resolved or failed.');
+    // dismissed: its PR merged or closed, so there is nothing left to resolve (Alex, 11-11).
+    if (!['resolved', 'failed', 'dismissed'].includes(p.status)) fail('A thread outcome is resolved, failed or dismissed.');
     state.threads[target] = { ...t, status: p.status, detail: p.detail || null, doneAt: ctx.now };
   }
   return target;

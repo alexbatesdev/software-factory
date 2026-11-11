@@ -191,7 +191,9 @@ async function githubTick() {
       for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
     }
     // PR states for the page and merge close: every PR a live record links.
-    const links = [...new Set([...watchedPrs(store.state.work, Object.fromEntries(sourceIndex(store.state))), ...holdReleases(store.state.work, owner).urls])];
+    // Open thread requests' PRs too: a merge closes their record, and the request must still see it (dismissal).
+    const links = [...new Set([...watchedPrs(store.state.work, Object.fromEntries(sourceIndex(store.state))), ...holdReleases(store.state.work, owner).urls,
+      ...Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status)).map(t => t.pr)])];
     openPrs = new Map((await readPrs(links)).map(p => [p.url, p]));
     prsReadAt = Date.now();
     reviewTick();
@@ -208,7 +210,7 @@ async function githubTick() {
       log(`audit: ${found.length} contradictions`);
       for (const c of found) apply([{ kind: 'message', payload: { to: lead, work: c.id, about: { contradiction: `${c.kind}/${c.id}` }, text: `[software factory, automated, not Alex] Contradiction on ${c.id} (${c.kind}): ${c.evidence}. Next: ${c.next}.` } }], 'board (audit)');
     }
-    await syncResolvedThreads(store, gh, now, { me: config.githubLogin });
+    await syncResolvedThreads(store, gh, now, { me: config.githubLogin, prState: u => openPrs.get(u)?.state || null });
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
 }

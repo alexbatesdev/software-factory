@@ -28,7 +28,12 @@ export async function resolveThreads(store, ids, gh, now, by = BY) {
 const CODEX = 'chatgpt-codex-connector', AUTO = 'board (auto: codex thread we replied to)';
 
 /** Requests whose thread Alex resolved on GitHub himself close as resolved, and replied codex threads resolve (at most `limit` reads per call). */
-export async function syncResolvedThreads(store, gh, now, { me, limit = 20 } = {}) {
+export async function syncResolvedThreads(store, gh, now, { me, limit = 20, prState = () => null } = {}) {
+  // A request on a PR that merged or closed is dismissed, with no GitHub read or write (Alex, 11-11).
+  for (const t of Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status))) {
+    const st = prState(t.pr);
+    if (['MERGED', 'CLOSED'].includes(st)) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'dismissed', detail: `Dismissed: ${t.pr} was ${st.toLowerCase()} before it was resolved.` } }, { now: now(), by: 'board (thread sync)' });
+  }
   const open = Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status)).slice(0, limit);
   for (const t of open) {
     const th = await gh.thread(t.threadId).catch(() => null);

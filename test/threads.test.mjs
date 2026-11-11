@@ -145,3 +145,18 @@ test("a thread's messages say which are ours, so the page can tell them apart", 
     assert.match(readFileSync(new URL('../views/index.html', import.meta.url), 'utf8'), /\.msg\.mine/);
   } finally { server.close(); }
 });
+
+test('a resolve request on a PR that has merged or closed is dismissed: nothing is written to GitHub and it leaves the panel (Alex, 11-11)', async () => {
+  let wrote = false;
+  const gh = { thread: async () => ({ pr: PR, isResolved: false, first: 'sam-built', last: 'alexbatesdev' }), resolveThread: async () => { wrote = true; } };
+  const f = await serve(gh);
+  try {
+    await f.act('resolve_thread', request);
+    await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev', prState: () => 'OPEN' });
+    assert.equal(f.store.state.threads['RT-1'].status, 'requested');
+    await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev', prState: u => u === PR ? 'MERGED' : null });
+    const t = f.store.state.threads['RT-1'];
+    assert.deepEqual([t.status, /merged/.test(t.detail), wrote], ['dismissed', true, false]);
+    assert.deepEqual((await f.board()).threads, [], 'gone from Approvals');
+  } finally { f.close(); }
+});

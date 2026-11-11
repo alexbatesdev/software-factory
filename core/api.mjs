@@ -121,7 +121,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
           newPrs: Object.values(s.work).filter(w => awaitsPrApproval(prGateView(s, w), config.prApproval)).map(w => ({ id: w.id, title: w.title, objective: w.objective || null, from: w.proposedFrom || w.source?.by || w.source?.type || null, repo: w.repo || null, support: supportOf(s, w.id), proposal: w.proposal || null })),
           awsRequests: Object.values(s.awsRequests || {}).filter(r => ['requested', 'approved', 'failed'].includes(r.status)).map(r => ({ ...r, title: s.work[r.work]?.title || null, support: supportOf(s, r.work) })),
           taskRequests: Object.values(s.taskRequests || {}).filter(t => ['requested', 'approved', 'failed'].includes(t.status)).map(t => ({ ...t, stuck: t.status === 'approved' && Date.parse(now()) - Date.parse(t.approvedAt) > STUCK_MS, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
-          threads: Object.values(s.threads || {}).filter(t => t.status !== 'resolved').map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
+          threads: Object.values(s.threads || {}).filter(t => !['resolved', 'dismissed'].includes(t.status)).map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o }) });
       }
       if (req.method === 'GET' && url.pathname === '/api/escapes') {
