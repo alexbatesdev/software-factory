@@ -97,10 +97,12 @@ export async function slotFor(seat, herdr, cwd = seat.cwd) {
  * @param agents [{label, ref, status}] from the fleet read @param state {messages, work}
  * @param opts {now, hourUtc, enabled, done: {label: 'YYYY-MM-DD' last restarted}} @returns [{seat, pane}]
  */
-export function planSeatRestarts(seats, agents, state, { now, hourUtc = 10, enabled = false, done = {} }) {
-  const day = String(now).slice(0, 10);
-  if (!enabled || new Date(now).getUTCHours() !== hourUtc) return [];
-  return seats.filter(s => s.kind === 'claude' && !s.stays && done[s.label] !== day).flatMap(seat => {
+export function planSeatRestarts(seats, agents, state, { now, hourUtc = 10, enabled = false, done = {}, toolsOf = null, toolsDone = {} }) {
+  const day = String(now).slice(0, 10), daily = new Date(now).getUTCHours() === hourUtc;
+  if (!enabled) return [];
+  // A seat whose role's board tools changed since it started (W-431) restarts at its next gap, whatever the hour.
+  const due = s => (daily && done[s.label] !== day) || (!!toolsOf && toolsDone[s.label] !== toolsOf(s));
+  return seats.filter(s => s.kind === 'claude' && !s.stays && due(s)).flatMap(seat => {
     const a = agents.find(x => x.label === seat.label);
     if (!a || !['idle', 'done'].includes(a.status)) return [];
     if (Object.values(state.messages).some(m => m.to === seat.label && !m.ackedAt)) return [];

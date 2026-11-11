@@ -25,6 +25,8 @@ import { readPrLines, readPrHealth, readPrs, readMainGreen, readCompare } from '
 import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask } from '../sources/teamwork.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
+import { toolsFor } from '../mcp/server.mjs';
+import { roleOf } from '../core/api.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
@@ -411,16 +413,21 @@ async function recycleTick() {
 // Persisted, so a server restart inside the quiet hour can't restart a seat twice the same day.
 const RESTARTED = join(dirname(DB), 'seat-restarts.json');
 const restartedOn = (() => { try { return JSON.parse(readFileSync(RESTARTED, 'utf8')); } catch { return {}; } })();
+// The board tools each seat was last started with (W-431): a changed role restarts the seat at its next gap.
+const SEAT_TOOLS = join(dirname(DB), 'seat-tools.json');
+const toolsDone = (() => { try { return JSON.parse(readFileSync(SEAT_TOOLS, 'utf8')); } catch { return {}; } })();
+const toolsOf = seat => toolsFor(roleOf(config, seat.label)).map(t => t.name).sort().join(',');
 async function seatRestartTick() {
   if (!fleet) return;
   const agents = [...fleet.others, ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))];
-  for (const { seat, pane } of planSeatRestarts(seatsOf(config), agents, store.state, { now: now(), ...config.seatRecycle, done: restartedOn })) {
-    restartedOn[seat.label] = now().slice(0, 10);
-    writeFileSync(RESTARTED, JSON.stringify(restartedOn));
+  for (const { seat, pane } of planSeatRestarts(seatsOf(config), agents, store.state, { now: now(), ...config.seatRecycle, done: restartedOn, toolsOf, toolsDone })) {
+    const why = toolsDone[seat.label] !== toolsOf(seat) ? 'its board tools changed' : 'daily fresh start';
+    restartedOn[seat.label] = now().slice(0, 10); toolsDone[seat.label] = toolsOf(seat);
+    writeFileSync(RESTARTED, JSON.stringify(restartedOn)); writeFileSync(SEAT_TOOLS, JSON.stringify(toolsDone));
     if (DRY) { once(`dry run: would restart ${seat.label}`); continue; }
     const stopped = await stopSeat(seat, pane, herdrRaw).catch(e => { log(`seat restart ${seat.label}: ${e.message}`); return false; });
     const started = stopped && await startSeat(seat, pane, herdrRaw).then(() => true, e => { log(`seat restart ${seat.label}: start failed: ${e.message}`); return false; });
-    log(`seat restart ${seat.label}: ${started ? 'fresh session' : stopped ? 'STOPPED, NOT STARTED: run factory.mjs up' : 'did not exit; left running'}`);
+    log(`seat restart ${seat.label} (${why}): ${started ? 'fresh session' : stopped ? 'STOPPED, NOT STARTED: run factory.mjs up' : 'did not exit; left running'}`);
   }
 }
 

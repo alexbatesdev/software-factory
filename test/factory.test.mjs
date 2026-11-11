@@ -132,3 +132,15 @@ test("a fixed seat that runs Codex is woken as Codex (W-413: the agent unblocker
   const cfg = { routing: { supervisors: {} }, factory: { seats: [{ label: 'agent-unblocker', kind: 'codex' }, { label: 'board lead', kind: 'claude' }, { label: 'script', kind: 'shell' }] } };
   assert.deepEqual(['agent-unblocker', 'board lead', 'local-head'].map(l => agentOf(cfg, l)), ['codex', 'claude', 'claude']);
 });
+
+test("a seat whose role's board tools changed restarts at its next idle gap, outside the daily hour, once (W-431: request_aws never reached the supervisors)", () => {
+  const seats = [{ label: 'board lead', kind: 'claude', role: 'board-lead' }, { label: 'sup: s1', kind: 'claude', role: 'stream-supervisor' }, { label: 'local-head', kind: 'claude', stays: true }];
+  const agents = [{ label: 'board lead', ref: 'p1', status: 'idle' }, { label: 'sup: s1', ref: 'p2', status: 'idle' }, { label: 'local-head', ref: 'p3', status: 'idle' }];
+  const state = { messages: {}, work: { 'W-1': { id: 'W-1', stream: 'sup: s1', assignments: [{ id: 'R1', status: 'started' }] } } };
+  const toolsOf = s => ({ 'board-lead': 'a', 'stream-supervisor': 'b2' })[s.role] || 'x';
+  const plan = (st, toolsDone) => planSeatRestarts(seats, agents, st, { now: '2026-11-11T23:00:00.000Z', hourUtc: 10, enabled: true, toolsOf, toolsDone }).map(r => r.seat.label);
+  assert.deepEqual(plan(state, { 'board lead': 'a', 'sup: s1': 'b1' }), [], 'the supervisor is mid-job, so it waits');
+  assert.deepEqual(plan({ ...state, work: {} }, { 'board lead': 'a', 'sup: s1': 'b1' }), ['sup: s1'], 'free: restarts for its new tools');
+  assert.deepEqual(plan({ ...state, work: {} }, { 'board lead': 'a', 'sup: s1': 'b2' }), [], 'once');
+  assert.deepEqual(plan({ ...state, work: {} }, {}), ['board lead', 'sup: s1'], 'never recorded: restart once to be sure; a stays seat never');
+});
