@@ -47,7 +47,7 @@ const BUILD = {
   // Correlation and ownership (aliases, PR links, owner, parent) come only from their own commands, which check them.
   create: a => {
     const { pr, branch, ...links } = a.links || {};
-    const keep = Object.fromEntries(['title', 'objective', 'kind', 'repo', 'priority', 'criteria', 'deps'].filter(k => a[k] !== undefined).map(k => [k, a[k]]));
+    const keep = Object.fromEntries(['title', 'objective', 'kind', 'repo', 'priority', 'criteria', 'deps', 'model', 'effort'].filter(k => a[k] !== undefined).map(k => [k, a[k]]));
     return [{ kind: 'create', payload: { ...keep, links, source: { type: 'agent', by: a.by }, ...(a.phase === 'proposed' ? { phase: 'proposed' } : {}) } }];
   },
   set_owner: a => { need(a, 'work', 'owner'); return [setOwner(a)]; },
@@ -79,7 +79,9 @@ const BUILD = {
     if (a.reviewBy && !a.reviewer) fail('reviewBy needs a reviewer: the seat that reviews the hold on that date.');
     const holds = [...(prs.length ? [{ prs }] : []), ...(questions.length ? [{ questions }] : []), ...(a.reviewBy ? [{ review: { by: a.reviewBy, reviewer: a.reviewer } }] : []), ...(a.deferredTo ? [{ deferred: String(a.deferredTo) }] : [])];
     // A support task that didn't come through the Teamwork poller is marked here (W-353).
-    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), ...(a.support === true ? [{ kind: 'update', target: a.work, payload: { support: true } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
+    // "default" puts the worker back on its usual model or effort (deep-model, Alex 11-11).
+    const tuning = Object.fromEntries(['model', 'effort'].filter(k => a[k] !== undefined).map(k => [k, a[k] === 'default' ? null : a[k]]));
+    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), ...(Object.keys(tuning).length ? [{ kind: 'update', target: a.work, payload: tuning }] : []), ...(a.support === true ? [{ kind: 'update', target: a.work, payload: { support: true } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   // A new Teamwork task waits for Alex's click on the dashboard (W-382); the factory creates it, never a seat.

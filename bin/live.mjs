@@ -64,6 +64,10 @@ let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = nul
 const RC = { enabled: false, threshold: 0.75, host: 'sbx', healthMs: 300000, ...config.recycle };
 const host = RC.enabled ? await import(`../hosts/${RC.host}.mjs`) : null;
 let health = {}, recycling = {}, drain = new Map();
+// Each sbx worker's model and effort (deep-model, Alex 11-11): what it was last started with, and restarts a record asked for.
+const TUNED = join(dirname(DB), 'worker-tuning.json');
+const tuned = (() => { try { return JSON.parse(readFileSync(TUNED, 'utf8')); } catch { return {}; } })();
+const retune = new Map();
 // A refusal that repeats every tick is logged once.
 const seen = new Set(), once = line => { if (!seen.has(line)) { seen.add(line); log(line); } };
 const quiet = {}, screens = {};
@@ -92,8 +96,9 @@ function autoDispatchTick() {
   const prs = { owner: config.githubOwner, prState: u => openPrs.get(u)?.state || null };
   const views = Object.values(s.work).map(w => ({ ...prGateView(s, w), ...derivedCtx(s, w.id, prs) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
-  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], drain, prApproval: config.prApproval }, { terminals });
+  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], drain, prApproval: config.prApproval, running: tuned }, { terminals });
   lastPlan = plan;
+  for (const p of plan.filter(p => p.action === 'retune')) if (!retune.has(p.to)) { retune.set(p.to, p); log(`retune ${p.to} for ${p.id}: ${p.reason}`); }
   for (const p of plan.filter(p => p.action === 'resume')) {
     const key = `${p.id}/${p.assignmentId}/v${p.version}`;
     if (Object.values(store.state.messages).some(m => m.about?.resume === key)) continue;
@@ -342,6 +347,17 @@ async function recycleTick() {
   const sessions = Object.fromEntries(Object.entries(health).filter(([, h]) => h?.agentSince).map(([k, h]) => [k, h.agentSince]));
   const plan = planRecycles({ units: fleet.units, health, works: store.state.work, threshold: RC.threshold, recycling, supervisors, sessions, restartStale: !!RC.restartStale });
   drain = plan.drain;
+  // A record's model or effort: restart its stream's free worker with them, then the next dispatch tick sends it.
+  for (const [to, p] of retune) {
+    const u = fleet.units.find(x => x.supervisor?.label === to);
+    if (!u?.worker || !['idle', 'done'].includes(u.worker.status) || plan.due.some(d => d.unit === u.id)) continue;
+    retune.delete(to);
+    if (DRY) { once(`dry run: would restart ${u.worker.label} with ${JSON.stringify(p.want)}`); continue; }
+    const r = await host.restart(u.worker, p.want).catch(e => ({ ok: false, detail: e.message }));
+    log(`retune ${u.worker.label} for ${p.id}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
+    if (r.ok) { tuned[to] = p.want; writeFileSync(TUNED, JSON.stringify(tuned, null, 2)); delete health[u.id]; }
+    else if (!Object.values(store.state.messages).some(m => m.about?.retuneFailed === `${to}/${p.id}`)) apply([{ kind: 'message', payload: { to: config.boardLead?.seat || 'board lead', work: p.id, about: { retuneFailed: `${to}/${p.id}` }, text: `[software factory] Restarting ${u.worker.label} with model ${p.want.model || 'default'}, effort ${p.want.effort || 'default'} for ${p.id} failed: ${r.detail}. ${p.id} waits; file a factory record if it repeats.` } }], 'board');
+  }
   for (const d of plan.due) {
     const tell = (to, about, text) => apply([{ kind: 'message', payload: { to, about, text: `[software factory] ${text}` } }], 'board');
     if (d.restart) {

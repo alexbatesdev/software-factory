@@ -161,7 +161,7 @@ export function boardView(state, { supervisors = [], units = [], prs = new Map()
     const heldOn = (w.externalDeps || []).map(d => d.question).find(id => state.questions[id]?.status === 'open') || null;
     if (heldOn) st.waiting = { who: 'you', text: `Waiting on you: ${heldOn} (${state.questions[heldOn].title})` };
     const c = { id: w.id, title: w.title, kind: w.kind, running: started && !W.TERMINAL.includes(w.phase) ? { id: started.id, kind: started.kind, owner: started.owner } : null, queue: q || null, priority: w.priority === 1, phase: w.phase, phaseLabel: PHASE_LABEL[w.phase], stream: w.stream || null, pr: w.links?.pr || null,
-      label: st.label, heldOn, approval: approvalNote(w, state, prApproval), waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, mergeReady: !!st.waiting?.ready && st.category !== 'in-unit', category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null), support: supportOf(state, w.id) };
+      label: st.label, heldOn, approval: approvalNote(w, state, prApproval), waiting: st.waiting && { who: st.waiting.who, text: st.waiting.text }, mergeReady: !!st.waiting?.ready && st.category !== 'in-unit', category: st.category, needs: st.needs, unverified: unverifiedOf(w), updatedAt: w.updatedAt, project: w.project?.name || (w.kind === 'factory' ? 'Software factory' : null), support: supportOf(state, w.id), tuning: [w.model, w.effort && `effort ${w.effort}`].filter(Boolean).join(' · ') || null };
     return { ...c, section: sectionOf(c) };
   });
 }

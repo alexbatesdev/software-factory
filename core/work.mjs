@@ -64,7 +64,10 @@ const rank = w => Math.min(w.priority ?? 3, w.support ? 2 : 3);
 export const queueOrder = (a, b) => rank(a) - rank(b) || (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2));
 // A dependency counts as finished once its work is through internal review.
 export const SATISFIES_DEPS = ['ready_for_human', 'awaiting_human_approval', 'done'];
-const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'streamPin', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases', 'support'];
+const UPDATABLE = ['title', 'objective', 'priority', 'deps', 'owner', 'stream', 'streamPin', 'parent', 'links', 'kind', 'checksApplicable', 'requiredChecks', 'repo', 'externalDeps', 'aliases', 'support', 'model', 'effort'];
+// What a record may ask its worker to run with (Alex, 11-11, deep-model): a Claude model alias, and an effort both agents accept.
+export const TUNING = { model: ['sonnet', 'opus', 'haiku'], effort: ['low', 'medium', 'high', 'xhigh'] };
+const checkTuning = f => { for (const k of Object.keys(TUNING)) if (f[k] != null && !TUNING[k].includes(f[k])) fail(`${k} is one of ${TUNING[k].join(', ')} (or default); not "${f[k]}".`); };
 // Phases a reconcile may record. Ready-for-review and done always go through their gates.
 const RECONCILABLE = ['intake', 'clarification', 'ready', 'queued', 'implementation', 'review'];
 
@@ -91,6 +94,8 @@ export function createWork(f, ctx) {
     externalDeps: f.externalDeps || [], aliases: f.aliases || [], reconciled: null, retro: null, coverage: null, related: [], assignments: [], upstream: f.source?.type && f.source.type !== 'manual' ? 'open' : null,
     createdAt: ctx.now, updatedAt: ctx.now,
   };
+  checkTuning(f);
+  for (const k of Object.keys(TUNING)) if (f[k]) w[k] = f[k];
   note(w, ctx, phase === 'proposed' ? `Proposed${w.proposedFrom ? ` from ${w.proposedFrom}` : ''}.` : 'Created.');
   return w;
 }
@@ -101,6 +106,7 @@ export function updateWork(work, fields, ctx) {
     if (k === 'addCriteria') continue;
     if (!UPDATABLE.includes(k)) fail(`"${k}" can't be changed with an update; use a lifecycle event.`);
   }
+  checkTuning(fields);
   const started = !['proposed', ...PRE_QUEUE].includes(w.phase);
   if (started && 'kind' in fields && fields.kind !== w.kind) fail(`${w.id} has started; its kind can't change (that would change how it finishes).`);
   if (started && 'checksApplicable' in fields && fields.checksApplicable !== w.checksApplicable) fail(`${w.id} has started; whether checks apply can't change now.`);

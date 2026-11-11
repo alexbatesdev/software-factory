@@ -223,13 +223,34 @@ async function exitAgent(worker) {
   return atShell(worker);
 }
 
-/** A fresh agent session in the same sandbox: its disk, repo and installed board MCP stay; its context doesn't. */
-export async function restart(worker) {
+// A record's model and effort (deep-model, Alex 11-11) live in the sandbox agent's own config, read at start; the
+// plugin's launch line is shared by every stream. Unset keys mean the agent's defaults.
+// ponytail: a model or effort Alex set by hand in a sandbox is overwritten; keep the original aside if he ever does.
+const CLAUDE_SETTINGS = '/home/agent/.claude/settings.json';
+export function claudeTuned(text, { model = null, effort = null }) {
+  const s = JSON.parse(text || '{}');
+  delete s.model; delete s.effortLevel;
+  return JSON.stringify({ ...s, ...(model ? { model } : {}), ...(effort ? { effortLevel: effort } : {}) }, null, 2);
+}
+export function codexTuned(text, { effort = null }) {
+  const rest = text.split('\n').filter((l, i, all) => !(/^model_reasoning_effort\s*=/.test(l) && !all.slice(0, i).some(x => /^\[/.test(x)))).join('\n');
+  return effort ? `model_reasoning_effort = "${effort}"\n${rest}` : rest;
+}
+async function tune(worker, want) {
+  const codex = worker.agent === 'codex', path = codex ? CODEX_CONFIG : CLAUDE_SETTINGS;
+  const cur = await run('sbx', ['exec', worker.sandbox, 'cat', path], { timeout: 60000 }).then(r => r.stdout);
+  const next = codex ? codexTuned(cur, want) : claudeTuned(cur, want);
+  if (next !== cur) await sbxPut(worker.sandbox)(path, next);
+}
+
+/** A fresh agent session in the same sandbox: its disk, repo and installed board MCP stay; its context doesn't. `want` sets its model and effort. */
+export async function restart(worker, want = null) {
   const line = await bridgeLine(worker);
   if (!(await atShell(worker)) && !(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit' };
   if (worker.agent !== 'codex') await markNudgeSeen(worker.sandbox).catch(() => {}); // the unblocker rule still covers the dialog if this fails
+  if (want) try { await tune(worker, want); } catch (e) { return { ok: false, detail: `couldn't set model/effort: ${e.message}` }; }
   await herdr('pane', 'run', worker.ref, line);
-  for (let i = 0; i < 20; i++) { await pause(3000); if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}` }; }
+  for (let i = 0; i < 20; i++) { await pause(3000); if (!(await atShell(worker))) return { ok: true, detail: `fresh session in ${worker.sandbox}${want ? ` (model ${want.model || 'default'}, effort ${want.effort || 'default'})` : ''}` }; }
   return { ok: false, detail: `no agent running in ${worker.sandbox} a minute after the restart` };
 }
 

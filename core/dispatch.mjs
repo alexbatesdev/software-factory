@@ -94,21 +94,31 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     // A pin to a host stream is a person's deliberate choice (W-356: Alex put OSUP on the host); the host reaches every repo, a sandbox doesn't.
     const hostPin = w.streamPin && (cfg.supervisors[bound?.to]?.repos || cfg.supervisors[bound?.to]?.branches);
     if (bound && !hostPin && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || 'built-rails'}; re-route it`); return; }
+    // A model is a Claude alias, so a Codex stream can't run one (deep-model, Alex 11-11); effort suits both.
+    const runsModel = l => !(w.model && cfg.supervisors[l]?.agent === 'codex');
+    if (bound && !runsModel(bound.to)) { wait(`${bound.to} runs Codex and can't take model ${w.model}; clear the model or re-route it`); return; }
     if (bound && declined.has(bound.to) && !w.streamPin) { wait(`${bound.to} declined it; re-route or pin it`); return; }
     if (bound && holds.has(bound.to)) { wait(`${bound.to} is busy with ${holds.get(bound.to)}; waits its turn (${bound.why})`); return; }
     // ponytail: ties go to config order, not the stream idle longest; add last-dispatch times if one stream keeps winning ties.
     const here = routeOf(w, labels), mine = STREAM_LOAD.includes(w.phase) ? here : null;
     const cost = l => load[l] // this record's own slot doesn't count against its stream
       - (l === mine ? 1 : 0);
-    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors)).sort((a, b) => cost(a) - cost(b))[0];
+    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors) && runsModel(l)).sort((a, b) => cost(a) - cost(b))[0];
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     busy.set(to, w.id); runningOn.set(to, w.id);
+    // An sbx worker restarts with the record's model and effort before it's dispatched; a host worker is started with them.
+    const want = { model: w.model || null, effort: w.effort || null }, have = { model: null, effort: null, ...cfg.running?.[to] };
+    if (cfg.supervisors[to]?.worker && (want.model !== have.model || want.effort !== have.effort)) {
+      out.push({ id: w.id, action: 'retune', to, want, reason: `${cfg.supervisors[to].worker} restarts first with model ${want.model || 'default'}, effort ${want.effort || 'default'}` });
+      return;
+    }
+    const flags = !cfg.supervisors[to]?.worker && (w.model || w.effort) ? `; start its worker with ${[w.model && `--model ${w.model}`, w.effort && `--effort ${w.effort}`].filter(Boolean).join(' ')}` : '';
     const spread = labels.map(l => `${l}: ${cost(l)}`).join(', ');
     if (mine) load[mine]--;
     load[to]++;
     const owner = to !== w.stream ? to : undefined;
     out.push({ id: w.id, action: w.phase === 'ready' ? 'queue' : 'request', owner, to,
-      reason: `${w.priority === 1 ? 'priority: ' : ''}${w.phase}, no open questions or dependencies, ${to} is free${bound ? ` (${bound.why})` : `, least loaded (${spread})`}` });
+      reason: `${w.priority === 1 ? 'priority: ' : ''}${w.phase}, no open questions or dependencies, ${to} is free${bound ? ` (${bound.why})` : `, least loaded (${spread})`}${flags}` });
   };
   // Priority and support work go before any job not mid-flight, a parked job's resume included (Alex, 11-09).
   const first = w => w.priority === 1 || w.support;
