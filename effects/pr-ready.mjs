@@ -20,8 +20,6 @@ async function markReadyLocked(store, id, gh, now) {
   const op = e => store.append({ kind: 'event', target: id, payload: { ...e, type: 'pr_ready_op' } }, { now: now(), by: BY });
   let w = store.state.work[id];
   const url = w.links?.pr, pinned = w.head;
-  const done = w.prReadyOps.find(o => o.prUrl === url && o.head === pinned && o.status === 'confirmed');
-  if (done) return { status: 'confirmed', op: done.id };
   const open = w.prReadyOps.find(o => ['inflight', 'uncertain'].includes(o.status));
   if (open) return { status: open.status, op: open.id };
   const remote = await gh.view(url).catch(() => null);

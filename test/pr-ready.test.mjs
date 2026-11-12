@@ -72,3 +72,12 @@ test('a question filed on a record awaiting approval leaves it awaiting: the PR 
   s.append({ kind: 'ask', payload: { title: 'Confirm in prod before replying on Teamwork?', options: ['run it', 'skip'], recommend: 'run it', work: id, promptedBy: 'F2', wwbd: 'checked', why: 'prod only', recommendWhy: 'cheap' } }, { now: '2026-11-12T07:00:00.000Z', by: 'sup: stream-2' });
   assert.equal(s.state.work[id].phase, 'awaiting_human_approval');
 });
+
+test('a record back in ready_for_human at a head already confirmed ready moves on to approval without touching GitHub (W-457: W-291, W-194)', async () => {
+  const { s, id } = readyRecord(), gh = fakeGh({ head: 'aaa1111', isDraft: true });
+  await autoReadyTick(s, gh, { standing, now: () => ctx.now });
+  Object.assign(s.state.work[id], { phase: 'ready_for_human', approvalWait: null });
+  await autoReadyTick(s, gh, { standing, now: () => ctx.now });
+  assert.equal(gh.calls, 1, 'no second mutation');
+  assert.equal(s.state.work[id].phase, 'awaiting_human_approval');
+});
