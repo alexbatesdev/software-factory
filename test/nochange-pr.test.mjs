@@ -169,3 +169,17 @@ test('heal returns a ready PR with a waiver at its head and nothing open to appr
  assert.equal(x.phase,'awaiting_human_approval');assert.equal(x.requests.length,w.requests.length,'no review request');
  assert.equal(ev(w,{type:'heal',isDraft:true},{...ctx,now:'2026-11-06T21:30:00Z'}).phase,'rereview','a draft PR still gets its review');
 });
+
+test('feedback that lands while the fixes job is parked on a question files a new fixes request, so the supervisor hears of it (W-454: W-439 F3/F4 behind TB-228)', () => {
+ const at = { ...ctx, now: '2026-11-12T20:40:00Z' };
+ let w = W.observeHealth(ready(), { head, conflict: false, failing: [], comments: [{ id: 'C1', by: 'jm', url: 'u1', text: 'Two PRs?' }] }, at);
+ w.requests.at(-1).ack = { by: 'sup', outcome: 'received', at: at.now };
+ w = ev(w, { type: 'assign', assignmentId: 'R5', kind: 'fixes', status: 'queued', owner: 'worker', evidence: 'answer F1' }, at);
+ w = ev(w, { type: 'progress', assignmentId: 'R5', expectedVersion: 1, stage: 'blocked', waitingOn: 'TB-228', text: 'parked' }, at);
+ const before = w.requests.length;
+ const x = W.observeHealth(w, { head, conflict: false, failing: [], changesRequested: [{ id: 'RV1', by: 'jm', url: 'u2', at: at.now }] }, at);
+ assert.equal(x.requests.length, before + 1);
+ assert.deepEqual([x.requests.at(-1).type, x.requests.at(-1).ack], ['fixes', null]);
+ const running = ev(w, { type: 'progress', assignmentId: 'R5', expectedVersion: 2, stage: 'started', text: 'resumed' }, at);
+ assert.equal(W.observeHealth(running, { head, conflict: false, failing: [], threads: [{ id: 'T1', by: 'sam', url: 'u3' }] }, at).requests.length, before, 'a running fixes job picks it up when it reports done');
+});

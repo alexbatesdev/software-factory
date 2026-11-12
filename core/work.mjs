@@ -136,6 +136,7 @@ export function updateWork(work, fields, ctx) {
 // W-446: a question filed on ready work (a prod check, a reply's wording) holds marking ready, but never revokes a label
 // the PR evidence still supports. Gated for replay.
 const QUESTIONS_KEEP_READY_FROM = '2026-11-12T06:15:00.000Z';
+const PARKED_FIXES_HEAR_FROM = '2026-11-12T20:30:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
@@ -894,6 +895,10 @@ export function observeHealth(work, { head, conflict, failing = [], changesReque
   if (HEALTH_REOPENS.includes(w.phase)) {
     w.phase = 'fixes'; w.approvalWait = null;
     w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by || 'github', delivery: 'pending', ack: null, head: w.head });
+  } else if (w.phase === 'fixes' && ctx.now >= PARKED_FIXES_HEAR_FROM) {
+    // A parked fixes job never reports done, so the open-findings request on done can't tell the supervisor (W-454).
+    const live = liveAssignment(w);
+    if (!live || parked(live)) requestFixes(w, { ...ctx, by: ctx.by || 'github' });
   }
   return normalize(w, ctx);
 }
