@@ -47,7 +47,7 @@ export const wouldAwaitPrApproval = (w, cfg) => !(w.assignments || []).length &&
 export const awaitsPrApproval = (w, cfg) => ['ready', 'queued'].includes(w.phase) && wouldAwaitPrApproval(w, cfg);
 
 export function trackOf(w, cfg = {}) {
-  if ((cfg.exclude || cfg.autoDispatch?.exclude || []).includes(w.id)) return 'excluded';
+  if ((cfg.exclude || []).includes(w.id)) return 'excluded';
   if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '') || isTrustedReviewSeat(w.owner)) return 'trusted-review';
   return 'stream';
 }
@@ -56,7 +56,7 @@ const SKIP_NOTE = 'Skipped by the factory: excluded';
 /** One note per live record the factory leaves alone as excluded, naming why. */
 export function skipNotes(works, cfg = {}) {
   return Object.values(works).filter(w => !TERMINAL.includes(w.phase) && trackOf(w, cfg) === 'excluded' && !(w.updates || []).some(u => u.text?.startsWith(SKIP_NOTE)))
-    .map(w => ({ kind: 'event', target: w.id, payload: { type: 'note', text: `${SKIP_NOTE} (listed in autoDispatch.exclude). No dispatch, notices or auto-ready.` } }));
+    .map(w => ({ kind: 'event', target: w.id, payload: { type: 'note', text: `${SKIP_NOTE} (support paused on the dashboard, or listed in autoDispatch.exclude). No dispatch, notices or auto-ready.` } }));
 }
 /** Queue order everywhere work waits for a stream: priority 1 (Alex's "priority") first, then oldest record. */
 // Support work goes ahead of ordinary work (Alex, 11-09); priority 1 still cuts in first.

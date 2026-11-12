@@ -166,7 +166,7 @@ export function inboxCommands(state, cfg, fleet = null) {
   }
   // New work waits in intake for triage (V1's triage runs are gone): tell the triage seat once per record.
   if (cfg.triage?.since) for (const w of Object.values(state.work))
-    if (['intake', 'proposed'].includes(w.phase) && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`))
+    if (['intake', 'proposed'].includes(w.phase) && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`) && !(cfg.exclude || []).includes(w.id))
       cmds.push(msg(cfg.triage.seat, w.id, { intake: w.id }, `${w.id} ${quote(w.title)} is in intake: triage it (ready, clarify with a question for Alex, or leave in intake with a note).${dupeNote(w, state.work)}`));
   // The board lead's hourly check-in (Alex, 2026-11-04): at most one message per hour, delivered like any other.
   const hour = cfg.checkIn?.now?.slice(0, 13);

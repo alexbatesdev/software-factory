@@ -69,7 +69,7 @@ details summary { cursor: pointer; }
 #side .feed h3 { margin: 0 0 2px; font-size: 16px; color: var(--acc); display: flex; gap: 8px; align-items: baseline; } #side .feed h3 .n { font-size: 13px; color: var(--mute); font-weight: 400; }
 #side .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 #side .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-#approvalsBtn { margin-left: auto; } #approvalsBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
+#supportBtn { margin-left: auto; margin-right: 8px; } #supportBtn.on { font-weight: 700; color: var(--you); border-color: var(--you); } #approvalsBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
 details.msgs { margin-top: 4px; font-size: 13px; }
 .msg { border: 1px solid var(--line); border-left: 3px solid var(--factory); border-radius: 6px; margin: 8px 0; background: var(--card); overflow: hidden; }
 .msg + .msg { margin-top: 10px; }
@@ -94,7 +94,7 @@ button:disabled { opacity: .5; cursor: default; }
 <script src="/vendor/purify-3.1.6.min.js"></script>
 </head>
 <body>
-<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="approvalsBtn">Approvals</button></header>
+<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="supportBtn" title="Pause: the factory leaves every support task alone (no dispatch, notices, auto-ready or reviewer re-requests) so you can work them with your own agent.">Pause support</button><button id="approvalsBtn">Approvals</button></header>
 <section class="you" id="you" hidden>
   <div class="head"><span class="big" id="youCount"></span><h2>waiting on you</h2><span class="mute" style="margin-left:10px">Ask local-head "what's waiting on me" to answer them.</span></div>
   <div class="groups" id="youGroups"></div>
@@ -189,6 +189,8 @@ async function render() {
   document.getElementById('twN').textContent = (b.taskRequests || []).length;
   document.getElementById('prN').textContent = (b.newPrs || []).length; document.getElementById('thrN').textContent = (b.threads || []).length;
   const pending = (b.newPrs || []).length + (b.threads || []).filter(t => t.status !== 'approved').length + (b.taskRequests || []).filter(t => t.status !== 'approved').length + (b.awsRequests || []).filter(r => r.status !== 'approved').length, ab = document.getElementById('approvalsBtn');
+  const sb = document.getElementById('supportBtn'), sp = b.supportPause;
+  sb.textContent = sp ? `Support paused since ${sp.at.slice(11, 16)}Z: resume` : 'Pause support'; sb.classList.toggle('on', !!sp); sb.dataset.paused = sp ? '1' : '';
   ab.textContent = `Approvals (${pending})`; ab.classList.toggle('has', pending > 0);
   const board = document.getElementById('board'); board.replaceChildren();
   const order = b.buckets.order;
@@ -338,6 +340,10 @@ function awsPanel(list) {
   }
   if (!list.length) box.append(el('div', 'mute', 'None.'));
 }
+document.getElementById('supportBtn').onclick = async e => {
+  await fetch('/api/support-pause', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ paused: !e.target.dataset.paused }) });
+  render();
+};
 document.getElementById('approvalsBtn').onclick = () => { document.getElementById('side').hidden = false; };
 document.getElementById('sideClose').onclick = () => { document.getElementById('side').hidden = true; };
 render(); setInterval(render, 15000);

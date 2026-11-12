@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import http from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openStore, derivedCtx, supportOf, prGateView } from '../core/store.mjs';
+import { openStore, derivedCtx, supportOf, prGateView, skippedIds } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 import { createMcp } from '../mcp/server.mjs';
 import { sandboxSeat } from '../core/sandbox-seat.mjs';
@@ -59,6 +59,8 @@ const apply = (cmds, who) => { for (const c of cmds) try { store.append(c, by(wh
 
 mkdirSync(dirname(DB), { recursive: true });
 const store = openStore(DB, { supervisors });
+// What the factory leaves alone this tick: the exclude list, plus support records while Alex has support paused.
+const skipped = () => ({ exclude: skippedIds(store.state, config) });
 log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
@@ -100,7 +102,7 @@ function autoDispatchTick() {
   const prs = { owner: config.githubOwner, prState: u => openPrs.get(u)?.state || null };
   const views = Object.values(s.work).map(w => ({ ...prGateView(s, w), ...derivedCtx(s, w.id, prs) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
-  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, exclude: config.autoDispatch.exclude || [], drain, prApproval: config.prApproval, running: tuned }, { terminals });
+  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, ...skipped(), drain, prApproval: config.prApproval, running: tuned }, { terminals });
   lastPlan = plan;
   for (const p of plan.filter(p => p.action === 'retune')) if (!retune.has(p.to)) { retune.set(p.to, p); log(`retune ${p.to} for ${p.id}: ${p.reason}`); }
   for (const p of plan.filter(p => p.action === 'resume')) {
@@ -135,7 +137,7 @@ async function inboxTick() {
   const workers = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.worker).map(([sup, s]) => [s.worker, sup]));
   const developer = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
   const hostHowTo = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.howTo).map(([l, s]) => [l, s.howTo]));
-  const plan = inboxCommands(store.state, { supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
+  const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
     fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
@@ -147,7 +149,7 @@ async function inboxTick() {
 }
 
 // Marking PRs ready waits on GitHub; on its own loop so a slow GitHub never holds up messages and wakes (W-199).
-const readyTick = () => autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, config) === 'excluded', now, log: once });
+const readyTick = () => autoReadyTick(store, gh, { standing: config.prReady?.enabled ? config.prReady.standing : null, isMutation: w => trackOf(w, skipped()) === 'excluded', now, log: once });
 
 // A stranded record (fixes/review with nothing live or pending) gets one heal after a grace period, so a seat mid-way
 // through recording a step isn't overtaken (W-208 follow-up).
@@ -156,7 +158,7 @@ function healTick() {
   const t = Date.now();
   for (const w of Object.values(store.state.work)) {
     // Only open PRs on a stream: a closed PR's record is the merge/close path's, a trusted review is Alex's to rerun.
-    if (!stranded(w, new Date(t).toISOString()) || trackOf(w, config) !== 'stream' || openPrs.get(w.links?.pr)?.state !== 'OPEN'
+    if (!stranded(w, new Date(t).toISOString()) || trackOf(w, skipped()) !== 'stream' || openPrs.get(w.links?.pr)?.state !== 'OPEN'
       || derivedCtx(store.state, w.id).openQuestions) { delete strandedSince[w.id]; continue; } // an open question: it waits on the answer
     strandedSince[w.id] ??= t;
     if (t - strandedSince[w.id] < (config.notify?.strandedGraceMs ?? 600000)) continue;
@@ -179,15 +181,15 @@ async function githubTick() {
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
     if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), exclude: config.autoDispatch?.exclude, mainGreen, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
-    apply(sourceCommands(store.state, prs, 'pr', parseAcs, { exclude: config.autoDispatch?.exclude }), 'poller');
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
+    apply(sourceCommands(store.state, prs, 'pr', parseAcs, skipped()), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {
       lastAudit = Date.now();
       contradictionsDue = true;
       const dev = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
       const told = new Set(Object.values(store.state.messages).map(m => m.about?.missed).filter(Boolean));
-      const missed = auditMissed(store.state, own, health, { owner, exclude: config.autoDispatch?.exclude, prs }).filter(m => !told.has(`${m.key}/${m.id}`));
+      const missed = auditMissed(store.state, own, health, { owner, ...skipped(), prs }).filter(m => !told.has(`${m.key}/${m.id}`));
       log(`audit: ${missed.length} missed`);
       for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
     }
@@ -200,7 +202,7 @@ async function githubTick() {
     reviewTick();
     healTick();
     try { const n = syncStandards(); if (n.length) log(`standards mirrored: ${n.join(', ')}`); } catch (e) { log(`standards: ${e.message}`); }
-    apply(skipNotes(store.state.work, config), 'board (skip)');
+    apply(skipNotes(store.state.work, skipped()), 'board (skip)');
     await mergeTick();
     holdTick();
     // After merge-close, so a merge it just closed is not reported. Once per (kind, record), to the board lead (W-317).
@@ -219,7 +221,7 @@ async function githubTick() {
 // W-426 (Alex, 11-11): re-request a non-approving reviewer once their threads are resolved and the head moved, once
 // per round. Off by default: with config.rerequest.enabled false it only logs who it would ask.
 async function rerequestTick() {
-  const s = store.state, urls = [...new Set(Object.values(s.work).filter(w => w.links?.pr && !TERMINAL.includes(w.phase) && trackOf(w, config) !== 'excluded').map(w => w.links.pr))]
+  const s = store.state, urls = [...new Set(Object.values(s.work).filter(w => w.links?.pr && !TERMINAL.includes(w.phase) && trackOf(w, skipped()) !== 'excluded').map(w => w.links.pr))]
     .filter(u => openPrs.get(u)?.state === 'OPEN');
   // Its own loop, reading 8 PRs at a time, so 50-odd PR reads never hold up githubTick's ready marks and releases (W-428).
   const prs = [];
@@ -238,7 +240,7 @@ async function rerequestTick() {
 async function mergeTick() {
   if (!config.mergeClose?.enabled) return;
   const s = store.state, bySource = Object.fromEntries(sourceIndex(s));
-  for (const c of mergeCloses(s.work, bySource, { prState: u => openPrs.get(u)?.state || null, openQuestions: id => derivedCtx(s, id).openQuestions, track: w => trackOf(w, config) })) {
+  for (const c of mergeCloses(s.work, bySource, { prState: u => openPrs.get(u)?.state || null, openQuestions: id => derivedCtx(s, id).openQuestions, track: w => trackOf(w, skipped()) })) {
     if (c.raise) {
       if (!Object.values(s.messages).some(m => m.about?.mergedPartial === c.id))
         apply([{ kind: 'message', payload: { to: 'local-head', work: c.id, about: { mergedPartial: c.id }, text: `[software factory] ${c.id}'s PR ${c.prs.join(', ')} merged, but the record covers work beyond it (coverage ${s.work[c.id].coverage?.state}), so it stays open. Ask Alex whether it's done.` } }], 'board');

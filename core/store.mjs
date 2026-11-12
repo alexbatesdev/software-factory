@@ -25,6 +25,13 @@ export function supportOf(state, id, seen = new Set()) {
   return !!w.support || [w.proposedFrom, w.parent, ...(w.related || []).filter(r => r.kind === 'same-work').map(r => r.to)].some(r => r && supportOf(state, r, seen));
 }
 
+/** Records the factory leaves alone: the config's exclude list, plus every support record while Alex has support paused. */
+export function skippedIds(state, config) {
+  const ids = new Set(config.autoDispatch?.exclude || []);
+  if (state.supportPause) for (const id of Object.keys(state.work)) if (supportOf(state, id)) ids.add(id);
+  return [...ids];
+}
+
 /** prState and owner come only from a live GitHub read; the reducer passes neither, so replay never sees PR state. */
 const ANSWERED = ['answered', 'settled'];
 /** Work that carries out one of Alex's answers was asked for (W-333): an answered question on the record, or one it names with carriesOut. */
@@ -94,6 +101,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   if (THREAD_KINDS.includes(kind)) { const t = foldThread(state, row); state.seq = row.seq; return t; }
   if (TASK_KINDS.includes(kind)) { const t = foldTaskRequest(state, row); state.seq = row.seq; return t; }
   if (AWS_KINDS.includes(kind)) { const t = foldAwsRequest(state, row); state.seq = row.seq; return t; }
+  if (kind === 'support_pause') { state.supportPause = payload.paused ? { at: observed.now, by: observed.by } : null; state.seq = row.seq; return null; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
   if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close', 'question_amend'].includes(kind)) {
     const q = foldQuestion(state, row);

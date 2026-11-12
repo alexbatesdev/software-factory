@@ -130,7 +130,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
           awsRequests: Object.values(s.awsRequests || {}).filter(r => ['requested', 'approved', 'failed'].includes(r.status)).map(r => ({ ...r, title: s.work[r.work]?.title || null, support: supportOf(s, r.work) })),
           taskRequests: Object.values(s.taskRequests || {}).filter(t => ['requested', 'approved', 'failed'].includes(t.status)).map(t => ({ ...t, stuck: t.status === 'approved' && Date.parse(now()) - Date.parse(t.approvedAt) > STUCK_MS, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           threads: Object.values(s.threads || {}).filter(t => !['resolved', 'dismissed'].includes(t.status)).map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
-          drain: Object.fromEntries(o.drain || []), disk, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o }) });
+          drain: Object.fromEntries(o.drain || []), disk, supportPause: s.supportPause || null, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o }) });
       }
       if (req.method === 'GET' && url.pathname === '/api/escapes') {
         const items = Object.values(store.state.work).flatMap(escapes), count = k => items.reduce((m, e) => ({ ...m, [e[k]]: (m[e[k]] || 0) + 1 }), {});
@@ -153,6 +153,13 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
         const results = await resolveThreads(store, ids, gh, now);
         for (const w of new Set(ids.map(id => store.state.threads[id]?.work))) alexNote(w, note, 'Alex, resolving its review threads');
         return send(res, 200, { results });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/support-pause') {
+        if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
+        if (readOnly) return send(res, 405, { error: 'This factory does not write.' });
+        const { paused } = await readBody(req);
+        store.append({ kind: 'support_pause', payload: { paused: !!paused } }, { now: now(), by: 'Alex (dashboard)' });
+        return send(res, 200, { supportPause: store.state.supportPause });
       }
       if (req.method === 'POST' && url.pathname === '/api/aws-requests') {
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
