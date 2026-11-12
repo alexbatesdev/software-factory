@@ -24,7 +24,7 @@ const BUILD = {
     const freeText = a.waitingOn && a.waitingOn !== 'clear' && !TYPED_WAIT.test(String(a.waitingOn).trim());
     if ((a.actor !== undefined && !ACTORS.includes(a.actor)) || (freeText && !a.actor)) fail(`A wait on "${a.waitingOn}" needs actor: "alex" or "other" (or wait on a TB-n, W-n or PR instead).`);
     const actor = a.actor ? { actor: a.actor } : {};
-    return [...branchLink(a.work, a.branch), ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text, ...actor } : a.discovery ? { type: 'discovery', text: a.discovery, objective: a.text } : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn, ...actor } : { type: 'note', text: a.text })];
+    return [...branchLink(a.work, a.branch), ev(a.work, a.assignmentId ? { type: 'progress', assignmentId: a.assignmentId, expectedVersion: a.expectedVersion, stage: a.stage, waitingOn: a.waitingOn, text: a.text, ...actor } : a.discovery ? (a.inScope ? { type: 'discovery', inScope: true, text: a.text ? `${a.discovery}: ${a.text}` : a.discovery } : { type: 'discovery', text: a.discovery, objective: a.text }) : a.waitingOn === 'clear' ? { type: 'wait', clear: true, evidence: a.text } : a.waitingOn ? { type: 'wait', who: a.waitingOn, what: a.text || 'parked', evidence: a.text || a.waitingOn, ...actor } : { type: 'note', text: a.text })];
   },
   done: a => {
     need(a, 'work');

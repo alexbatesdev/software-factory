@@ -358,3 +358,15 @@ test('a shared PR passing internal review on one record settles that review roun
   assert.match(s.state.work[b].findings[0].note, new RegExp(`${a}`));
   assert.equal(s.state.work[b].phase, 'ready_for_human');
 });
+
+test("a find the record's own rule covers is filed in scope: an open finding on that record for its PR, not a new record (W-450: W-449 split out of W-221)", async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = openStore();
+  const { id } = s.append(build, ctx());
+  const before = Object.keys(s.state.work).length;
+  s.appendAll(commandsFor('progress', { work: id, discovery: 'ADP backfill workerID shows Person#employee_id', text: 'source_meta.backfill_worker_positions[].workerID: same rule, same method', inScope: true }), ctx({ by: 'sbx: stream-1' }));
+  assert.equal(Object.keys(s.state.work).length, before, 'no new record');
+  assert.deepEqual(s.state.work[id].findings.map(f => [f.status, f.text]), [['open', 'ADP backfill workerID shows Person#employee_id: source_meta.backfill_worker_positions[].workerID: same rule, same method']]);
+  const { readFileSync } = await import('node:fs');
+  assert.match(readFileSync(new URL('../mcp/server.mjs', import.meta.url), 'utf8'), /inScope/);
+});
