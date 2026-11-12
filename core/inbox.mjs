@@ -154,10 +154,10 @@ export function inboxCommands(state, cfg, fleet = null) {
       });
     }
   }
-  // local-head's notes and Alex's dashboard notes carry his words (W-416, W-423): each reaches the record's owner
-  // (with none: whoever proposed it, else the board lead, who triages it), open or done, once.
+  // local-head's notes and Alex's dashboard notes carry his words (W-416, W-423): each reaches the record's supervisor,
+  // never its worker (W-453), else its owner (with none: whoever proposed it, else the board lead), open or done, once.
   for (const w of Object.values(state.work)) {
-    const to = w.owner || w.stream || (w.source?.type === 'agent' ? w.source.by : null) || cfg.triage?.seat || 'board lead';
+    const to = routeOf(w, cfg.supervisors) || w.owner || w.stream || (w.source?.type === 'agent' ? w.source.by : null) || cfg.triage?.seat || 'board lead';
     if (!to || to === 'local-head' || to === cfg.developer) continue;
     (w.updates || []).forEach((u, i) => {
       if (!['local-head', 'Alex (dashboard)'].includes(u.by) || u.at < LOCAL_HEAD_NOTES_FROM || told.has(`localHeadNote:${w.id}/${i}`)) return;
