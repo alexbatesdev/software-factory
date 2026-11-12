@@ -2,6 +2,7 @@
 // Live mode: V2 is the system of record; only this process writes the log. It polls, decides, messages and wakes seats, dispatches, marks PRs ready.
 // Run: FACTORY_MODE=live node --env-file="$HOME/Code/repos/teamwork mini mcp/.env" bin/live.mjs
 if (process.env.FACTORY_MODE !== 'live') { console.error('Refusing to run: set FACTORY_MODE=live.'); process.exit(2); }
+import { homedir } from 'node:os';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
@@ -335,7 +336,15 @@ async function fleetTick() {
   } catch (e) { log(`fleet: ${e.message}`); }
 }
 
-http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
+http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, onMain: async (repo, m) => {
+  // W-435: is this line of code in this file at this commit, and is that commit on origin/main?
+  const dir = repo === 'built-rails' ? join(homedir(), 'Code/repos/built-rails-a') : Object.values(config.routing.supervisors).map(s => s.repos?.[repo]).find(Boolean)?.replace(/^~/, homedir());
+  if (!dir) return true; // ponytail: a repo with no checkout here can't be checked; the fields are still required
+  const git = (...a) => run('git', ['-C', dir, ...a], { timeout: 60000, maxBuffer: 1 << 24 });
+  await git('fetch', '-q', 'origin', 'main').catch(() => {});
+  if (!(await git('merge-base', '--is-ancestor', m.sha, 'origin/main').then(() => true, () => false))) return false;
+  return (await git('show', `${m.sha}:${m.path}`).then(r => r.stdout, () => '')).includes(String(m.code).trim());
+}, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
   observed: () => ({ units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 

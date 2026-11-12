@@ -358,3 +358,23 @@ test("a message goes only to a seat that can read and ack it; the agent unblocke
     assert.equal((await f.act('board lead', 'message', { to: S1, text: 'hi' }))[0], 200);
   } finally { f.close(); }
 });
+
+test('a review discovery claimed as pre-existing on main must show the faulty code on origin/main, which the factory checks (W-435: W-434 came from the PR itself)', async () => {
+  const store = openStore(':memory:', { supervisors: [S1] });
+  store.append({ kind: 'create', payload: { title: 'Phase 10', stream: S1 } }, { now: '2026-11-12T00:00:00.000Z', by: 'test' });
+  const seen = [];
+  const onMain = async (repo, m) => { seen.push([repo, m.sha, m.path]); return m.code === 'reject_terminated(worker)'; };
+  const server = http.createServer(createApi({ store, config, onMain, now: () => '2026-11-12T00:30:00.000Z' }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const act = async args => { const r = await fetch(`http://127.0.0.1:${server.address().port}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-seat': S1, 'x-factory': '1' }, body: JSON.stringify({ action: 'progress', args: { work: 'W-1', ...args } }) }); return [r.status, await r.json()]; };
+  try {
+    const d = { discovery: 'Terminated-today workers keep their seats', text: 'Pre-existing since phase 9 on main.' };
+    let [code, body] = await act(d);
+    assert.equal(code, 409); assert.match(body.error, /onMain/);
+    [code, body] = await act({ ...d, onMain: { sha: 'a5b21fd', path: 'app/adp_workers_adapter.rb', code: 'worker_section_for(w)' } });
+    assert.equal(code, 409, 'the quoted code is not on main at that sha'); assert.match(body.error, /isn't on origin\/main/);
+    assert.equal((await act({ ...d, onMain: { sha: 'a5b21fd', path: 'app/adp_workers_adapter.rb', code: 'reject_terminated(worker)' } }))[0], 200);
+    assert.equal((await act({ discovery: 'A new edge case', text: 'Found while testing.' }))[0], 200, 'a discovery that claims nothing about main needs no proof');
+    assert.deepEqual(seen[0], ['built-rails', 'a5b21fd', 'app/adp_workers_adapter.rb']);
+  } finally { server.close(); }
+});

@@ -24,7 +24,7 @@ export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config
  * @param readOnly the shadow runner serves the page and reads only; every write is refused
  * @param observed () => {units, prs} from the latest fleet and GitHub reads, for the views
  */
-export function createApi({ store, config, gh = null, tw = null, awsHost = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
+export function createApi({ store, config, gh = null, tw = null, awsHost = null, onMain = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -36,6 +36,14 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state, asking = action === 'ask' && !args.withdraw && !args.amend;
+    // A discovery split out as pre-existing must show the faulty code on origin/main, checked here (W-435: W-434's
+    // "pre-existing on main" was code the PR under review introduced). Otherwise the PR under review fixes it.
+    if (action === 'progress' && args.discovery && /pre-?existing|\bon (origin\/)?main\b|already (on|in) main/i.test(`${args.discovery} ${args.text || ''}`)) {
+      const m = args.onMain;
+      if (!m?.sha || !m?.path || !String(m?.code || '').trim()) return [409, { error: 'A discovery called pre-existing needs onMain: {sha (on origin/main), path, code (a line of the faulty code, verbatim)}. Check origin/main first; if the code only exists on the PR under review, fix it in that PR instead of splitting it out.' }];
+      const repo = s.work[args.work]?.repo || 'built-rails';
+      if (onMain && !(await onMain(repo, m).catch(() => false))) return [409, { error: `That code isn't on origin/main: "${m.code}" isn't in ${m.path} at ${m.sha}, or ${m.sha} isn't on origin/main. If the PR under review introduced it, fix it there.` }];
+    }
     // A message waits in an inbox until acked, so it goes only to a seat that can read and ack one (W-414).
     if (action === 'message' && !ROLES[roleOf(config, args.to)]?.includes('ack')) return [409, { error: `${args.to} can't read or ack factory messages (no board role with ack); reach it another way.` }];
     // A thread to resolve is a resolve_thread request on the dashboard, never a TB question (Alex, 11-09).
