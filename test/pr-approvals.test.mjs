@@ -68,7 +68,7 @@ test("a record can't be marked ready into New PRs without its breakdown, and the
   try {
     const [code, body] = await triage({});
     assert.equal(code, 409); assert.match(body.error, /proposal/);
-    const proposal = { prompted: 'p', addresses: 'a', whyThisFix: 'w', since: 's', customerImpact: 'none' };
+    const proposal = { prompted: 'p', addresses: 'a', whyThisFix: 'w', since: 's', customerImpact: 'none', duplicateSearch: 'none found' };
     assert.equal((await triage({ proposal }))[0], 200);
     const b = await (await fetch(`${base}/api/board`)).json();
     assert.deepEqual(b.newPrs[0].proposal, { ...proposal, by: 'board lead', at: T });

@@ -710,7 +710,7 @@ export function applyEvent(work, e, ctx) {
       break;
     }
     case 'proposal':
-      w.proposal = { prompted: e.prompted, addresses: e.addresses, whyThisFix: e.whyThisFix, since: e.since, customerImpact: e.customerImpact, by: ctx.by, at: ctx.now };
+      w.proposal = { prompted: e.prompted, addresses: e.addresses, whyThisFix: e.whyThisFix, since: e.since, customerImpact: e.customerImpact, ...(e.duplicateSearch && { duplicateSearch: e.duplicateSearch }), by: ctx.by, at: ctx.now };
       note(w, ctx, `New-PR breakdown recorded by ${ctx.by}.`);
       break;
     case 'pr_approved': {

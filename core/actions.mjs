@@ -2,7 +2,7 @@
 // so a role granted `progress` can't send an `await_approval` by naming it.
 const fail = msg => { throw new Error(msg); };
 const TYPED_WAIT = /^(TB-\d+|W-\d+|#\d+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+)$/, ACTORS = ['alex', 'other'];
-export const PROPOSAL_FIELDS = ['prompted', 'addresses', 'whyThisFix', 'since', 'customerImpact'];
+export const PROPOSAL_FIELDS = ['prompted', 'addresses', 'whyThisFix', 'since', 'customerImpact', 'duplicateSearch'];
 const ev = (target, payload) => ({ kind: 'event', target, payload });
 const need = (args, ...keys) => { for (const k of keys) if (args[k] === undefined || args[k] === '') fail(`Missing "${k}".`); };
 
@@ -63,8 +63,9 @@ const BUILD = {
     if (a.bucket === 'close') {
       const why = { duplicate: 'Duplicate', 'wont-build': "Won't build", 'no-code': 'No code to write' }[a.reason] || fail('Closing needs a reason: duplicate, wont-build or no-code.');
       need(a, 'note');
-      if (a.reason === 'duplicate' && !/^W-\d+$/.test(a.of || '')) fail('A duplicate names the record it duplicates in "of".');
-      return [ev(a.work, { type: 'withdraw', note: `${why}${a.of ? ` of ${a.of}` : ''}: ${a.note}`, ...(a.reason === 'duplicate' && { duplicateOf: a.of }) })];
+      // Another author's open PR that already carries the fix closes a proposal too (W-460, Alex 11-12): its URL, and the matching diff line in note.
+      if (a.reason === 'duplicate' && !/^W-\d+$|^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(a.of || '')) fail('A duplicate names what it duplicates in "of": a W-n or a PR URL.');
+      return [ev(a.work, { type: 'withdraw', note: `${why}${a.of ? ` of ${a.of}` : ''}: ${a.note}`, ...(a.reason === 'duplicate' && /^W-/.test(a.of) && { duplicateOf: a.of }) })];
     }
     if (!['ready', 'clarify', 'intake'].includes(a.bucket)) fail('Triage a record ready, clarify, intake or close.');
     // W-292: a hold "until #N merges" is structured, so the poller can release it.

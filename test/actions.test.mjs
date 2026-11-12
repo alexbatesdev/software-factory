@@ -93,10 +93,10 @@ test('triage releaseHold clears a settled hold by its text, so a free-text hold 
 
 test('triage carries a new-PR breakdown as its own event (Alex, 11-09)', async () => {
   const { applyEvent, createWork } = await import('../core/work.mjs');
-  const proposal = { prompted: 'A worker review of #8631', addresses: 'iCIMS send drops row keys', whyThisFix: 'One guard where all callers route', since: 'Since #8402 (2026-09-14)', customerImpact: 'None: same payload for valid rows' };
+  const proposal = { prompted: 'A worker review of #8631', addresses: 'iCIMS send drops row keys', whyThisFix: 'One guard where all callers route', since: 'Since #8402 (2026-09-14)', customerImpact: 'None: same payload for valid rows', duplicateSearch: 'Open PRs from every author: none' };
   const cs = commandsFor('triage', { work: 'W-1', bucket: 'ready', note: 'n', proposal });
   assert.deepEqual(cs.at(-1).payload, { type: 'proposal', ...proposal });
-  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'ready', proposal: { prompted: 'x' } }), /addresses, whyThisFix, since, customerImpact/);
+  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'ready', proposal: { prompted: 'x' } }), /addresses, whyThisFix, since, customerImpact, duplicateSearch/);
   const c = { now: '2026-11-09T23:00:00.000Z', by: 'board lead' };
   assert.deepEqual(applyEvent(createWork({ id: 'W-1', title: 'x' }, c), cs.at(-1).payload, c).work.proposal, { ...proposal, by: 'board lead', at: c.now });
 });
@@ -132,4 +132,19 @@ test("done replacesPr moves a record from the PR Alex replaced to the new one; i
   s.appendAll(cmds.filter(x => x.kind === 'update'), c);
   assert.equal(s.state.work[id].links.pr, NEW);
   assert.throws(() => s.appendAll(commandsFor('done', { work: id, pr: OLD, head: 'abc1234' }).filter(x => x.kind === 'update'), c), /already carries/, 'without replacesPr the one-PR rule still holds');
+});
+
+test("a New-PR breakdown carries the duplicate search it ran, and a proposal another author's open PR already fixes closes as its duplicate (W-460, Alex 11-12)", async () => {
+  const { applyEvent, createWork } = await import('../core/work.mjs');
+  const proposal = { prompted: 'p', addresses: 'a', whyThisFix: 'w', since: 's', customerImpact: 'none' };
+  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'ready', note: 'n', proposal }), /duplicateSearch/);
+  const duplicateSearch = 'Open built-rails PRs from every author, diffs checked for adp_workers_adapter.rb job_level: none carries it.';
+  const cs = commandsFor('triage', { work: 'W-1', bucket: 'ready', note: 'n', proposal: { ...proposal, duplicateSearch } });
+  const c = { now: '2026-11-12T23:40:00.000Z', by: 'board lead' };
+  assert.equal(applyEvent(createWork({ id: 'W-1', title: 'x' }, c), cs.at(-1).payload, c).work.proposal.duplicateSearch, duplicateSearch);
+  const pr = 'https://github.com/builtforteams/built-rails/pull/8790';
+  const [close] = commandsFor('triage', { work: 'W-1', bucket: 'close', reason: 'duplicate', of: pr, note: "sam-built's diff adds the same guard at adp_workers_adapter.rb:212" });
+  assert.deepEqual([close.payload.type, close.payload.duplicateOf], ['withdraw', undefined]);
+  assert.match(close.payload.note, /Duplicate of https:\/\/github\.com\/builtforteams\/built-rails\/pull\/8790: sam-built's diff/);
+  assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'close', reason: 'duplicate', of: '#8790', note: 'x' }), /W-n or a PR URL/);
 });

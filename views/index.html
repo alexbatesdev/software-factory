@@ -284,8 +284,8 @@ function newPrsPanel(list) {
     const row = el('div', 'thread pr'), left = el('div'), acts = el('div', 'acts');
     if (p.support) { row.classList.add('support'); left.append(el('span', 'stag', 'Support')); }
     left.append(el('div', 'ask', `${p.id} · ${p.title}`), el('div', 'res', [p.repo, p.from && `from ${p.from}`].filter(Boolean).join(' · ')));
-    const BREAKDOWN = [['prompted', 'What prompted it'], ['addresses', 'What it addresses'], ['whyThisFix', 'Why this fix'], ['since', 'How long'], ['customerImpact', 'Change for customers']];
-    if (p.proposal) { const dl = el('dl', 'bd'); for (const [k, label] of BREAKDOWN) dl.append(el('dt', null, label), el('dd', null, p.proposal[k])); left.append(dl); }
+    const BREAKDOWN = [['prompted', 'What prompted it'], ['addresses', 'What it addresses'], ['whyThisFix', 'Why this fix'], ['since', 'How long'], ['customerImpact', 'Change for customers'], ['duplicateSearch', 'Duplicate check']];
+    if (p.proposal) { const dl = el('dl', 'bd'); for (const [k, label] of BREAKDOWN) if (p.proposal[k]) dl.append(el('dt', null, label), el('dd', null, p.proposal[k])); left.append(dl); }
     else { left.append(el('div', 'fail', 'No breakdown yet: the board lead adds it at triage.')); if (p.objective) left.append(el('div', 'res', p.objective.slice(0, 400))); }
     left.append(noteBox(p.id));
     const ok = el('button', null, 'Approve'), no = el('button', null, 'Decline');
