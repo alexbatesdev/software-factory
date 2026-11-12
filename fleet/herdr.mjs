@@ -40,14 +40,17 @@ async function sandboxOf(paneId) {
   return argv[0] === 'sbx' && argv.includes('--') ? argv[argv.indexOf('--') - 1] : null;
 }
 
+/** Panes that are seats: any running an agent, plus a stream worker's pane whose agent died, so it can be restarted. */
+export const seatPanes = (panes, agents) => { const has = new Set(agents.map(a => a.pane_id)); return panes.filter(p => has.has(p.pane_id) || WORKER.test(p.label || '')); };
+
 /** @param {Record<string, ManualPair>} pairs @returns {Promise<Fleet>} */
 export async function list(pairs = {}) {
   const [{ panes }, { agents }, { tabs }, { workspaces }] = await Promise.all([herdr('pane', 'list'), herdr('agent', 'list'), herdr('tab', 'list'), herdr('workspace', 'list')]);
   const byPane = new Map(agents.map(a => [a.pane_id, a]));
   const tabById = new Map(tabs.map(t => [t.tab_id, t]));
   const wsById = new Map(workspaces.map(w => [w.workspace_id, w]));
-  const all = panes.filter(p => byPane.has(p.pane_id)).map(p => {
-    const a = byPane.get(p.pane_id);
+  const all = seatPanes(panes, agents).map(p => {
+    const a = byPane.get(p.pane_id) || {};
     return { ref: p.pane_id, label: p.label || `${wsById.get(p.workspace_id)?.label || p.workspace_id} / ${tabById.get(p.tab_id)?.label || p.tab_id}`,
       status: ['working', 'idle', 'blocked', 'done'].includes(a.agent_status) ? a.agent_status : 'unknown',
       now: (a.terminal_title_stripped || p.terminal_title || '').replace(/^[^\w#]+/, ''), sandbox: null, session: a.agent_session?.value || null,

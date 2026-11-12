@@ -50,3 +50,9 @@ test('layout: a host stream supervisor needs no sbx worker beside it (TB-159)', 
   const units = [{ name: 'Host', paired: null, supervisor: { label: 'sup: host', workspace: 'Host' }, worker: null }];
   assert.deepEqual(layoutIssues({ workspaces: [], tabs: [], agents: [], units }), []);
 });
+
+test("a stream worker's pane with no agent running still counts as the worker, so the factory can restart it (11-11: stream-2's Codex died at bootstrap and vanished)", async () => {
+  const { seatPanes } = await import('../fleet/herdr.mjs');
+  const panes = [{ pane_id: 'p1', label: 'sup: stream-2' }, { pane_id: 'p2', label: 'sbx: stream-2' }, { pane_id: 'p3', label: 'zsh' }];
+  assert.deepEqual(seatPanes(panes, [{ pane_id: 'p1' }]).map(p => p.pane_id), ['p1', 'p2'], 'a plain shell pane is still ignored');
+});
