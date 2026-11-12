@@ -130,6 +130,18 @@ test('a new comment (PR conversation or Teamwork task) reopens approval-wait wor
  assert.equal(W.observeHealth(fb, { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-3', by: 'x', url: 'u' }] }, later), fb, 'told once');
 });
 
+test("a comments finding quotes each comment's text, and an open one holding only ids gets the text on the next read (W-445: W-439 and W-440 parked when teamwork-mini was down)", () => {
+ const later = { ...ctx, now: '2026-11-12T05:00:00Z' };
+ const old = W.observeHealth(ready(), { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-3', by: 'teamwork user 7', url: 'u' }] }, later);
+ assert.doesNotMatch(old.findings.at(-1).text, /Still active/);
+ const quoted = W.observeHealth(old, { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-3', by: 'teamwork user 7', url: 'u', text: 'Still active today' }] }, later);
+ assert.match(quoted.findings.at(-1).text, /teamwork user 7 u: "Still active today"/);
+ assert.equal(quoted.findings.length, old.findings.length, 'the same finding, not a second one');
+ assert.equal(W.observeHealth(quoted, { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-3', by: 'teamwork user 7', url: 'u', text: 'Still active today' }] }, later), quoted, 'quoted once');
+ const fresh = W.observeHealth(ready(), { head, conflict: false, failing: [], comments: [{ id: 'tw-comment-4', by: 'teamwork user 7', url: 'u', text: 'Hide it' }] }, later);
+ assert.match(fresh.findings.at(-1).text, /"Hide it"/);
+});
+
 test('feedback raised while the latest internal review was clean is an escape, credited to that review (W-154, W-193)', () => {
  const at = now => ({ ...ctx, now });
  let w = ready(); w.reviews = [{ head: 'old0000', result: 'clean', by: 'sbx: s internal-review', at: '2026-11-06T01:00:00Z' }];

@@ -144,6 +144,12 @@ test("a Teamwork task's feedback: others' comments after Alex last spoke and aft
   assert.match(got[0].url, /^https:\/\/acme\.teamwork\.com\/app\/tasks\/41/);
 });
 
+test("a Teamwork comment's feedback carries its text as plain words, so a fixes round needs no Teamwork read (W-445)", async () => {
+  const { taskFeedback } = await import('../sources/teamwork.mjs');
+  const [c] = taskFeedback('41', [{ id: 9, postedByUserId: 7, postedDateTime: '2026-11-12T04:00:00Z', body: '<p>Terminated today still shows&nbsp;<b>active</b></p>' }], { me: 99, site: 'acme.teamwork.com' });
+  assert.equal(c.text, 'Terminated today still shows active');
+});
+
 test('the audit names what the GitHub read saw but no record holds: an own PR with no live record, or feedback never recorded (excluded records aside)', async () => {
   const { auditMissed } = await import('../core/observe.mjs');
   const rec = (id, n, extra = {}) => ({ ...createWork({ id, title: 'x', kind: 'build', links: { pr: PR(n), branch: 'b' } }, ctx), phase: 'awaiting_human_approval', ...extra });

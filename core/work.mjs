@@ -848,7 +848,7 @@ const HEALTH_TEXT = {
 const FEEDBACK_TEXT = {
   changes_requested: rs => `Changes requested by ${rs.map(r => `${r.by} (${r.url})`).join(', ')}. Work the review round (review-round skill): verify each thread at the head, fix what's real red-first, post factual replies; resolving threads waits for Alex.`,
   threads: ts => `${ts.length} new unresolved review thread(s): ${ts.map(t => `${t.by} ${t.url}`).join('; ')}. Work them as a review round (review-round skill); resolving waits for Alex.`,
-  comments: cs => `${cs.length} new comment(s) on the PR or its Teamwork task: ${cs.map(c => `${c.by} ${c.url}`).join('; ')}. Read each; fix what's real red-first, and answer factually where it asks something.`,
+  comments: cs => `${cs.length} new comment(s) on the PR or its Teamwork task: ${cs.map(c => `${c.by} ${c.url}${c.text ? `: "${c.text}"` : ''}`).join('; ')}. Read each; fix what's real red-first, and answer factually where it asks something.`,
 };
 /** Feedback from people (and review bots) on a record's PR or task, as finding source types. */
 export const FEEDBACK_TYPES = ['changes_requested', 'threads', 'comments'];
@@ -868,12 +868,21 @@ export function observeHealth(work, { head, conflict, failing = [], changesReque
   // W-208: CI still red at a head whose failure was judged "red on main", and main is green now: merging main reruns CI.
   const redOnMain = (work.findings || []).some(f => f.source?.type === 'ci' && sameSha(f.source.head, head) && f.status === 'accepted' && /red on main/i.test(f.note || ''));
   const mergeMain = !!(mainGreen && failing.length && redOnMain && !(work.findings || []).some(f => f.source?.type === 'merge_main' && f.source.main === mainGreen));
-  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain) return work;
+  // W-445: a comments finding that holds only ids takes the comments' text when a read brings it.
+  const byId = new Map(comments.filter(c => c.text).map(c => [c.id, c]));
+  const unquoted = (work.findings || []).filter(f => f.status === 'open' && f.source?.type === 'comments' && !f.source.quoted && f.source.ids.some(id => byId.has(id)));
+  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length) return work;
   const w = structuredClone(work);
+  for (const f of w.findings.filter(x => unquoted.some(u => u.id === x.id))) {
+    f.text = FEEDBACK_TEXT.comments(f.source.ids.map(id => byId.get(id) || { by: 'comment', url: id }));
+    f.source.quoted = true;
+    note(w, ctx, `Finding ${f.id} now quotes its comments.`);
+  }
+  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain) return w;
   if (mergeMain) w.findings.push({ id: nextId(w.findings, 'F'), text: `main is green again at ${mainGreen.slice(0, 7)}, and CI at ${head.slice(0, 7)} failed only on what was red on main. Merge origin/main into the branch (merge, never rebase or force push) and push, so CI reruns.`, severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'merge_main', head, main: mainGreen } });
   for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
   if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id), at: ctx.now } });
-  if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id), at: ctx.now } });
+  if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id), at: ctx.now, quoted: newComments.some(c => c.text) || undefined } });
   if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id), at: ctx.now } });
   const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main'),
     ...(mergeMain ? ['main is green again: merge it in'] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : []), ...(newComments.length ? [`${newComments.length} new comment(s)`] : [])];

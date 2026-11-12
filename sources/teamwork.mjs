@@ -2,6 +2,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { stripHtml } from '../core/observe.mjs';
 
 const TW_DIR = join(homedir(), 'Code/repos/teamwork mini mcp');
 
@@ -53,7 +54,7 @@ export function taskFeedback(taskId, comments, { me, since = '', site }) {
   const after = [since, ...mine].sort().at(-1) || '';
   return comments.filter(c => c.postedByUserId !== me && !c.deleted && c.postedDateTime > after && !SYNC_NOTICE.test(c.body || ''))
     .sort((a, b) => a.postedDateTime.localeCompare(b.postedDateTime))
-    .map(c => ({ id: `tw-comment-${c.id}`, by: `teamwork user ${c.postedByUserId}`, url: `https://${site}/app/tasks/${taskId}?c=${c.id}` }));
+    .map(c => ({ id: `tw-comment-${c.id}`, by: `teamwork user ${c.postedByUserId}`, url: `https://${site}/app/tasks/${taskId}?c=${c.id}`, text: stripHtml(c.body).replace(/\s+/g, ' ').slice(0, 1500) }));
 }
 
 /** taskId → its feedback (taskFeedback), for each of these tasks. An unreadable task is left out. */

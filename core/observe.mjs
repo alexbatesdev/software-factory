@@ -3,7 +3,7 @@
 import * as W from './work.mjs';
 import { sourceIndex } from './correlate.mjs';
 
-const stripHtml = s => String(s || '').replace(/<br\s*\/?>|<\/p>|<\/li>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
+export const stripHtml = s => String(s || '').replace(/<br\s*\/?>|<\/p>|<\/li>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\n{3,}/g, '\n\n').trim();
 
 export const prUrlKey = (u, owner) => { const m = String(u || '').match(new RegExp(`^https://github\\.com/${owner}/([\\w.-]+)/pull/(\\d+)(?:[/?#]|$)`)); return m ? `${m[1]}:${m[2]}` : null; };
 export const recordPrKey = (w, owner) => w.source?.type === 'pr' ? w.source.key.replace(/-(\d+)$/, ':$1') : prUrlKey(w.links?.pr, owner);
