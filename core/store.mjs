@@ -6,7 +6,7 @@ import { parseAcs } from './derive.mjs';
 import { inferStream } from './notifier.mjs';
 import { sourceIndex, ownerOf, claimPr, refresh } from './correlate.mjs';
 import { foldQuestion } from './questions.mjs';
-import { PR_REF, prRefUrl } from './units.mjs';
+import { PR_REF, prRefUrl, prKey } from './units.mjs';
 import { foldThread, THREAD_KINDS } from './threads.mjs';
 import { foldTaskRequest, TASK_KINDS } from './task-requests.mjs';
 import { foldAwsRequest, AWS_KINDS } from './aws-access.mjs';
@@ -144,6 +144,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
       if (into && cur.source?.key && state.work[into]) state.work[into] = { ...state.work[into], aliases: [...new Set([...(state.work[into].aliases || []), cur.source.key])] };
       // ...and its PR link when it has none, or the ready gate never sees that PR (W-418: W-359 waited 24h on #8699).
       if (into && ctx.now >= DUP_PR_FROM && cur.links?.pr && state.work[into] && !state.work[into].links?.pr) state.work[into] = { ...state.work[into], links: { ...state.work[into].links, pr: cur.links.pr } };
+      if (ctx.now >= SHARED_REVIEW_FROM && cur.phase !== 'ready_for_human' && work.phase === 'ready_for_human') settlePartners(state, id, ctx);
       // The request ack is the seat's answer to the message about it; a still-open message would wake the seat for nothing.
       if (payload.type === 'ack') for (const m of Object.values(state.messages))
         if (!m.ackedAt && m.about?.requests === `${id}/${payload.requestId}`) state.messages[m.id] = { ...m, ackedAt: ctx.now, ackedBy: payload.by, outcome: 'request acked' };
@@ -174,6 +175,24 @@ function finish(state, row, observed, touched, supervisors) {
     if (['ready_for_human', 'awaiting_human_approval'].includes(w.phase)) state.work[wid] = W.normalize(w, { now: observed.now, by: 'board', ...derivedCtx(state, wid) });
   }
   state.seq = row.seq;
+}
+
+// One PR's internal review counts once for every record on it (W-438): when one passes, its same-work partners on that PR
+// settle the findings that review round raised. Gated for replay.
+const SHARED_REVIEW_FROM = '2026-11-12T02:30:00.000Z';
+function settlePartners(state, id, ctx) {
+  const w = state.work[id], heads = w.reviews.map(r => r.head);
+  const sameWork = x => (x.related || []).filter(r => r.kind === 'same-work').map(r => r.to);
+  const partners = new Set([...sameWork(w), ...Object.values(state.work).filter(x => sameWork(x).includes(id)).map(x => x.id)]);
+  for (const pid of partners) {
+    const p = state.work[pid];
+    if (!p || W.TERMINAL.includes(p.phase) || !p.links?.pr || prKey(p.links.pr) !== prKey(w.links?.pr)) continue;
+    const open = p.findings.filter(f => f.status === 'open' && heads.some(h => W.sameSha(h, f.reviewHead)));
+    if (!open.length) continue;
+    const note = `Settled on ${id} (same PR): its internal review passed at ${w.head}.`;
+    const next = { ...p, findings: p.findings.map(f => open.includes(f) ? { ...f, status: 'resolved', note, at: ctx.now } : f), updates: [...p.updates, { at: ctx.now, by: 'board', text: `Findings ${open.map(f => f.id).join(', ')} ${note}` }] };
+    state.work[pid] = W.normalize(next, { now: ctx.now, by: 'board', ...derivedCtx(state, pid) });
+  }
 }
 
 // A task or PR seen by a poller: refresh its record, attach it to the record that carries it, or open a new one.

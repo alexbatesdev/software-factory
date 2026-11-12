@@ -336,3 +336,25 @@ test("an answered question releases a record wait that names it (W-375: W-316 st
   s.append({ kind: 'answer', target: q, payload: { choice: 'a' } }, c);
   assert.equal(s.state.work[id].waitingOn, null);
 });
+
+test('a shared PR passing internal review on one record settles that review round on its same-work partner (W-438: W-44 stuck in fixes after W-74 passed on #8301)', async () => {
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = openStore();
+  const pr = 'https://github.com/builtforteams/built-rails/pull/8301';
+  const at = now => ctx({ now, by: 'sup: stream-1' });
+  const T = '2026-11-12T03:00:00.000Z';
+  const a = s.append({ kind: 'create', payload: { title: 'Seat lock', kind: 'build', links: { pr } } }, at(T)).id;
+  const b = 'W-9'; s.append({ kind: 'import', target: 'work/W-9', payload: { id: 'W-9', title: 'Termination step', phase: 'intake', kind: 'build', links: { pr }, assignments: [], requests: [], updates: [], aliases: [], reviews: [], findings: [], checks: [], criteria: [], related: [] } }, at(T));
+  s.appendAll(commandsFor('relate', { work: b, to: a, note: 'one PR' }), at(T));
+  for (const id of [a, b]) {
+    for (const to of ['ready', 'queued', 'implementation']) s.append(ev(id, { type: 'transition', to, owner: 'sup: stream-1' }), at(T));
+    s.append(ev(id, { type: 'implementation_done', head: 'aaa1111' }), at(T));
+    s.append(ev(id, { type: 'review', head: 'aaa1111', by: 'sbx: stream-1 internal-review', result: 'findings', findings: [{ text: `${id}: race` }] }), at(T));
+  }
+  assert.deepEqual([s.state.work[a].phase, s.state.work[b].phase], ['fixes', 'fixes']);
+  s.append(ev(a, { type: 'finding', findingId: 'F1', status: 'resolved', note: 'fixed in bbb2222' }), at(T));
+  assert.equal(s.state.work[a].phase, 'ready_for_human');
+  assert.deepEqual(s.state.work[b].findings.map(f => f.status), ['resolved']);
+  assert.match(s.state.work[b].findings[0].note, new RegExp(`${a}`));
+  assert.equal(s.state.work[b].phase, 'ready_for_human');
+});
