@@ -108,13 +108,13 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
     const own = state.work[idx.get(key.replace(':', '-'))], w = fixer || (acting(own) ? own : ws[0]);
     const h = health.get(key);
     if (!h || W.trackOf(w, { exclude }) === 'excluded') continue;
-    // A stacked PR's CI and conflicts are judged against its base, not main; its review feedback is still ours to work.
+    // A stacked PR's CI is judged against its base, not main; GitHub already reads its conflict against that base (W-459).
     const onMain = h.base === 'main';
     // W-375: a stacked PR's failing check is ours when its base PR (read this tick) passes it.
     const repo = key.split(':')[0], baseId = !onMain && [...branches].find(([id, b]) => b === h.base && id.startsWith(`${repo}-`))?.[0];
     const baseFailing = baseId && health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing;
     const failing = onMain ? h.failing : baseFailing ? h.failing.filter(f => !baseFailing.includes(f)) : [];
-    const payload = { head: h.head, conflict: onMain && h.conflict, failing, changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(key.split(':')[0]) || null };
+    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(key.split(':')[0]) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   return cmds;

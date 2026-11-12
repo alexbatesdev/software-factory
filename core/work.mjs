@@ -847,7 +847,7 @@ export function observeHead(work, { sha, via, isDraft, ancestry }, ctx) {
 
 // Steps a worker follows before touching code, so a red build from main or a flake is noted, never "fixed" (Alex, 2026-11-02).
 const HEALTH_TEXT = {
-  conflict: head => `Conflicts with main at ${head.slice(0, 7)}. Merge origin/main into the branch (merge, never rebase or force push), resolve, run the specs for the files the conflict touched, push.`,
+  conflict: (head, failing, base = 'main') => `Conflicts with ${base} at ${head.slice(0, 7)}. Merge origin/${base} into the branch (merge, never rebase or force push), resolve, run the specs for the files the conflict touched, push.`,
   ci: (head, failing) => `CI is red at ${head.slice(0, 7)}: ${failing.join(', ')}. Assess once for this commit before changing code. 1) Find the failing tests: GitHub Actions via gh run view --log-failed; CircleCI via the circleci MCP, read only (list_runs on the branch, list_run_workflows, list_workflow_jobs, list_job_tests on the failed job; never rerun or cancel), read by the supervisor and put in the brief when the worker can't reach it. 2) Re-run each failure once locally. 3) Passes locally: accept this finding as "flake: <test>". 4) Fails on origin/main too: accept it as "red on main: <test>" and change nothing. 5) Fails only on this branch: fix it red-first. Anything outside this PR's scope is a discovery, never a fix.`,
 };
 const FEEDBACK_TEXT = {
@@ -861,7 +861,7 @@ export const FEEDBACK_TYPES = ['changes_requested', 'threads', 'comments'];
 export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, failing = [], changesRequested = [], threads = [], comments = [], mainGreen = null }, ctx) {
+export function observeHealth(work, { head, conflict, base, failing = [], changesRequested = [], threads = [], comments = [], mainGreen = null }, ctx) {
   const atHead = !!head && sameSha(head, work.head);
   if (TERMINAL.includes(work.phase) || !head || (!atHead && ctx.now < FEEDBACK_ANY_HEAD_FROM)) return work;
   if (!atHead) { conflict = false; failing = []; mainGreen = null; } // CI and conflicts are judged at the record's head only
@@ -885,11 +885,11 @@ export function observeHealth(work, { head, conflict, failing = [], changesReque
   }
   if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain) return w;
   if (mergeMain) w.findings.push({ id: nextId(w.findings, 'F'), text: `main is green again at ${mainGreen.slice(0, 7)}, and CI at ${head.slice(0, 7)} failed only on what was red on main. Merge origin/main into the branch (merge, never rebase or force push) and push, so CI reruns.`, severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'merge_main', head, main: mainGreen } });
-  for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
+  for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing, base), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
   if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id), at: ctx.now } });
   if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id), at: ctx.now, quoted: newComments.some(c => c.text) || undefined } });
   if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id), at: ctx.now } });
-  const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : 'conflicts with main'),
+  const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : `conflicts with ${base || 'main'}`),
     ...(mergeMain ? ['main is green again: merge it in'] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : []), ...(newComments.length ? [`${newComments.length} new comment(s)`] : [])];
   note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${said.join('; ')}.`);
   if (HEALTH_REOPENS.includes(w.phase)) {

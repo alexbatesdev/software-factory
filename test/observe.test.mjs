@@ -35,13 +35,13 @@ test('heads only produce commands when they change a record', () => {
   assert.deepEqual(headCommands(seen, new Map(), opts).map(c => c.kind), ['unverify_head']);
 });
 
-test('health is judged only for PRs into main, and never for an excluded record', async () => {
+test('a conflict is judged for PRs into main and stacked PRs alike (W-459), never for an excluded record', async () => {
   const { healthCommands } = await import('../core/observe.mjs');
   const rec = (id, n, branch) => ({ ...createWork({ id, title: 'x', kind: 'build', links: { pr: PR(n), branch } }, ctx), phase: 'rereview', head: 'ddddddd4' });
   const state = { work: { 'W-1': rec('W-1', 1, 'b'), 'W-2': rec('W-2', 2, 'b'), 'W-3': rec('W-3', 3, 'alex/mutation-tester') } };
   const h = base => ({ head: 'ddddddd4', base, conflict: true, failing: [] });
   const health = new Map([['built-rails:1', h('main')], ['built-rails:2', h('alex/stack-base')], ['built-rails:3', h('main')]]);
-  assert.deepEqual(healthCommands(state, health, { owner: OWNER, now: ctx.now, exclude: ['W-3'] }).map(c => c.target), ['W-1']);
+  assert.deepEqual(healthCommands(state, health, { owner: OWNER, now: ctx.now, exclude: ['W-3'] }).map(c => c.target), ['W-1', 'W-2']);
 });
 
 test('a PR carried by several records gets one health finding: its own record if in play, else the record doing the work', async () => {
@@ -89,13 +89,16 @@ test("main counts as green only when its latest commit's checks passed (W-208)",
   for (const s of ['FAILURE', 'PENDING', null]) assert.equal((await readMainGreen(['built-rails'], 'o', reply(s))).get('built-rails'), null, String(s));
 });
 
-test("a stacked PR's review feedback is still read; only its CI and conflicts are main's business (#8588, #8244)", async () => {
+test("a stacked PR's review feedback is read, and its conflict with its own base is ours to fix by merging that base; only its CI is main's business (#8588, #8244, W-459: #8591)", async () => {
   const { healthCommands } = await import('../core/observe.mjs');
   const rec = { ...createWork({ id: 'W-1', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'b' } }, ctx), phase: 'awaiting_human_approval', head: 'ddddddd4' };
   const health = new Map([['built-rails:1', { head: 'ddddddd4', base: 'alex/stack-base', conflict: true, failing: ['rspec'], changesRequested: [], threads: [{ id: 'T1', by: 'codex', url: 'u' }] }]]);
   const [c] = healthCommands({ work: { 'W-1': rec } }, health, { owner: OWNER, now: ctx.now });
   assert.equal(c.target, 'W-1');
-  assert.deepEqual([c.payload.conflict, c.payload.failing, c.payload.threads.map(t => t.id)], [false, [], ['T1']]);
+  assert.deepEqual([c.payload.conflict, c.payload.base, c.payload.failing, c.payload.threads.map(t => t.id)], [true, 'alex/stack-base', [], ['T1']]);
+  const { observeHealth } = await import('../core/work.mjs');
+  const f = observeHealth(rec, c.payload, ctx).findings.find(x => x.source.type === 'conflict');
+  assert.match(f.text, /Conflicts with alex\/stack-base .*Merge origin\/alex\/stack-base into the branch/);
 });
 
 test('the health read counts conversation comments and review summaries from others after Alex last spoke, plus codex findings, never bot noise (#8577)', async () => {
