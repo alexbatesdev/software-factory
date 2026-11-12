@@ -164,3 +164,13 @@ test("the board developer can mark two records as the same work, so a follow-up 
   assert.deepEqual(ids, [owner, follow].sort());
   assert.throws(() => commandsFor('relate', { work: follow }), /to/);
 });
+
+test('a record parked with waitingOn a PR is released when it merges and reported when it closes (W-436: W-422 sat on merged #8722)', () => {
+  const works = { 'W-422': { id: 'W-422', phase: 'ready', repo: 'built-rails', links: {}, externalDeps: [], assignments: [], waitingOn: { who: '#8722', what: 'close no-change once it merges', by: 'sup: stream-2' } },
+    'W-9': { id: 'W-9', phase: 'ready', links: {}, externalDeps: [], assignments: [], waitingOn: { who: 'QA owner', what: 'x', by: 'sup: s1' } } };
+  const url = 'https://github.com/builtforteams/built-rails/pull/8722';
+  const r = holdReleases(works, 'builtforteams', u => u === url ? 'MERGED' : null);
+  assert.ok(r.urls.includes(url), 'the PR is read');
+  assert.deepEqual(r.waitsMerged, [{ id: 'W-422', pr: '#8722', to: 'sup: stream-2' }]);
+  assert.deepEqual(holdReleases(works, 'builtforteams', u => u === url ? 'CLOSED' : null).waitsClosed, [{ id: 'W-422', pr: '#8722', to: 'sup: stream-2' }]);
+});

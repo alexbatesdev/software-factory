@@ -66,8 +66,11 @@ export function holdReleases(works, owner, prState = () => null) {
   const live = Object.values(works).filter(w => !TERMINAL.includes(w.phase));
   const holds = live.flatMap(w => (w.externalDeps || []).filter(d => d.pr).map(d => ({ id: w.id, pr: d.pr, url: prRefUrl(w, d.pr, owner) })));
   const parkedOn = live.flatMap(w => (w.assignments || []).filter(a => a.status === 'blocked' && PR_REF.test(a.waitingOn || '')).map(a => prRefUrl(w, a.waitingOn, owner)));
-  return { urls: [...new Set([...holds.map(h => h.url), ...parkedOn])], released: holds.filter(h => prState(h.url) === 'MERGED').map(({ id, pr }) => ({ id, pr })),
-    closed: holds.filter(h => prState(h.url) === 'CLOSED').map(({ id, pr }) => ({ id, pr })) };
+  // A record parked with waitingOn a PR (W-436): released on merge, reported on close, to whoever parked it.
+  const waits = live.filter(w => PR_REF.test(w.waitingOn?.who || '')).map(w => ({ id: w.id, pr: w.waitingOn.who, to: w.waitingOn.by, url: prRefUrl(w, w.waitingOn.who, owner) }));
+  const on = st => waits.filter(x => prState(x.url) === st).map(({ id, pr, to }) => ({ id, pr, to }));
+  return { urls: [...new Set([...holds.map(h => h.url), ...parkedOn, ...waits.map(x => x.url)])], released: holds.filter(h => prState(h.url) === 'MERGED').map(({ id, pr }) => ({ id, pr })),
+    closed: holds.filter(h => prState(h.url) === 'CLOSED').map(({ id, pr }) => ({ id, pr })), waitsMerged: on('MERGED'), waitsClosed: on('CLOSED') };
 }
 
 /** Question holds (Alex, 11-09): the {id, question} holds whose question Alex answered (`released`) or that closed unanswered (`closed`). */

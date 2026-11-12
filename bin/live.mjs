@@ -264,7 +264,16 @@ function reviewTick() {
 // A record held until a PR merges (W-292) is released on the merge, and the board lead re-triages it.
 function holdTick() {
   const lead = Object.entries(config.roles || {}).find(([, r]) => r === 'board-lead')?.[0];
-  const { released, closed } = holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null);
+  const { released, closed, waitsMerged, waitsClosed } = holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null);
+  // W-436: a record-level wait on a PR clears when it merges; its parker hears either way.
+  for (const { id, pr, to } of waitsMerged)
+    apply([{ kind: 'event', target: id, payload: { type: 'wait', clear: true, evidence: `${pr} merged (GitHub)` } },
+      { kind: 'message', payload: { to: to || lead, work: id, text: `[software factory, automated, not Alex] ${id}: ${pr} merged, so its wait is cleared. Act on it now (close it, resume it, or re-triage).` } }], 'poller (hold)');
+  for (const { id, pr, to } of waitsClosed) {
+    const key = `${id}/${pr}/wait`;
+    if (!Object.values(store.state.messages).some(m => m.about?.holdClosed === key))
+      apply([{ kind: 'message', payload: { to: to || lead, work: id, about: { holdClosed: key }, text: `[software factory, automated, not Alex] ${id}: it waits on ${pr}, which closed without merging, so the wait will never clear. Re-point or close it.` } }], 'poller (hold)');
+  }
   for (const { id, pr } of closed) {
     const key = `${id}/${pr}`;
     if (lead && !Object.values(store.state.messages).some(m => m.about?.holdClosed === key))
