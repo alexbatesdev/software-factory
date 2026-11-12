@@ -166,3 +166,10 @@ test("a quit command left sitting in Codex's input box is submitted again, so th
   assert.equal(exitChoice('• Final report.\n\n› \n', '/quit'), null, 'an empty input box needs nothing');
   assert.equal(exitChoice('Background work is running\n  1. Exit and stop tasks\n', '/exit'), '1', 'the dialog answer still wins');
 });
+
+test("a sandbox's baseline puts the worker's skills in its skills dir (W-444: after the 02:44Z recycle sbx: stream-1 had no internal-review)", async () => {
+  const { installSkills } = await import('../hosts/sbx.mjs');
+  const wrote = {};
+  await installSkills('box', async (p, t) => { wrote[p] = t; });
+  assert.match(wrote['/home/agent/.claude/skills/internal-review/SKILL.md'] || '', /^---\nname: internal-review/);
+});

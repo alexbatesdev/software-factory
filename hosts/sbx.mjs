@@ -6,8 +6,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
 import { sandboxToken } from '../core/sandbox-seat.mjs';
 import { STANDARDS, MIRROR, IN_SANDBOX, CODEX_REVIEW, standardsClaudeMd } from './standards.mjs';
 import { QUIT } from '../fleet/factory.mjs';
@@ -143,6 +143,12 @@ export async function installStandards(sandbox, put = sbxPut(sandbox), agent = '
   await put(`${IN_SANDBOX}/${CODEX_REVIEW}`, readFileSync(join(MIRROR, CODEX_REVIEW), 'utf8'));
   await put('/home/agent/.codex/AGENTS.md', codexAgentsMd());
 }
+// The sandbox's built-rails checkout brings its project skills; the board's own skills come from Alex's host (W-444).
+const SKILLS = ['internal-review'];
+export async function installSkills(sandbox, put = sbxPut(sandbox), from = join(homedir(), '.claude/skills')) {
+  for (const name of SKILLS) for (const f of readdirSync(join(from, name), { recursive: true, withFileTypes: true }).filter(e => e.isFile()))
+    await put(`/home/agent/.claude/skills/${name}/${relative(join(from, name), join(f.parentPath, f.name))}`, readFileSync(join(f.parentPath, f.name), 'utf8'));
+}
 const sbxPut = sandbox => (path, text) => new Promise((resolve, reject) => {
   const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `mkdir -p "$(dirname ${path})" && cat > ${path}`], { timeout: 60000 }, e => e ? reject(e) : resolve());
   p.stdin.end(text);
@@ -166,6 +172,7 @@ export async function restoreBaseline(sandbox, agent = 'claude', { put = sbxPut(
   const cur = await run('sbx', ['exec', sandbox, 'cat', '/home/agent/.claude/settings.json'], { timeout: 60000 }).then(r => JSON.parse(r.stdout), () => ({}));
   await put('/home/agent/.claude/settings.json', JSON.stringify(withBaseline(cur), null, 2) + '\n');
   await installStandards(sandbox, put);
+  await installSkills(sandbox, put);
   await installBoardMcp(sandbox);
   await markNudgeSeen(sandbox);
   await secrets(sandbox);
@@ -281,7 +288,9 @@ export async function recycle(worker, log = () => {}) {
       const hook = await restoreBaseline(worker.sandbox, worker.agent).then(() => 'baseline restored', e => `baseline NOT restored: ${e.message}`);
       // A fresh VM has no Codex login, and Codex reads its config only at start.
       if (worker.agent === 'codex') return { ok: true, detail: `${worker.sandbox} recreated; ${hook}. Codex needs Alex: bin/sbx-codex-login ${worker.sandbox} from built-rails-a, then a restart to load its board tools` };
-      return { ok: true, detail: `${worker.sandbox} recreated and its agent started; ${hook}` };
+      // ...but its MCP servers and skills only at start, and this one started before the baseline went in (W-444).
+      const fresh = await restart(worker).catch(e => ({ ok: false, detail: e.message }));
+      return { ok: true, detail: `${worker.sandbox} recreated; ${hook}; ${fresh.ok ? 'agent restarted to load its board tools and skills' : `agent NOT restarted, so it has no board tools until its next restart: ${fresh.detail}`}` };
     }
   }
   return { ok: false, detail: `${worker.sandbox} not running with an agent after 20 minutes` };
