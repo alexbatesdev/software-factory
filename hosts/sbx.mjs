@@ -160,12 +160,13 @@ const sbxRead = sandbox => path => run('sbx', ['exec', sandbox, 'cat', path], { 
  * A sandbox's baseline for its agent. Claude: the comment hook and its settings entry, standards, board MCP, nudge seen.
  * Codex: standards and the 🤖 rule in AGENTS.md, the review prompt, and the board server in its config.toml.
  */
-export async function restoreBaseline(sandbox, agent = 'claude', { put = sbxPut(sandbox), read = sbxRead(sandbox), secret, secrets = gemSecrets, mcpLoad = loadMcp } = {}) {
+export async function restoreBaseline(sandbox, agent = 'claude', { put = sbxPut(sandbox), read = sbxRead(sandbox), secret, secrets = gemSecrets, mcpLoad = loadMcp, tools = pinnedTools } = {}) {
   if (agent === 'codex') {
     await installStandards(sandbox, put, agent);
     await put(CODEX_CONFIG, withBoardMcpToml(noUpdateCheck(await read(CODEX_CONFIG)), boardMcp(sandbox, { secret })));
     await secrets(sandbox);
     await mcpLoad('sentry', sandbox);
+    await tools(sandbox);
     return;
   }
   await put(HOOK_PATH, readFileSync(join(homedir(), '.claude/hooks/require-robot-wrapper.sh'), 'utf8'));
@@ -176,12 +177,16 @@ export async function restoreBaseline(sandbox, agent = 'claude', { put = sbxPut(
   await installBoardMcp(sandbox);
   await markNudgeSeen(sandbox);
   await secrets(sandbox);
+  await tools(sandbox);
 }
 
 // built-rails' own script: GraphQL Pro and Sidekiq Pro credentials from the host's bundler config into the sandbox.
 const BUILT_RAILS = join(homedir(), 'Code/repos/built-rails-a');
 // Codex has no claude.ai connectors: Sentry comes through the sandbox's gateway (registered once with `sbx mcp add`, W-306).
 const loadMcp = (name, sandbox) => run('sbx', ['mcp', 'load', name, '--sandbox', sandbox], { timeout: 60000 });
+// The image compiles Ruby (MISE_RUBY_COMPILE=true), but a sandbox can't reach ruby-lang.org; a prebuilt one comes from GitHub (W-448).
+export const pinnedToolsCommand = `cd '${BUILT_RAILS}' && MISE_RUBY_COMPILE=false mise install`;
+const pinnedTools = sandbox => run('sbx', ['exec', sandbox, 'bash', '-lc', pinnedToolsCommand], { timeout: 900000 });
 const gemSecrets = sandbox => run(join(BUILT_RAILS, 'bin/sbx-secrets'), [sandbox], { cwd: BUILT_RAILS, timeout: 120000 });
 
 /** The worker's way onto the board: the factory's sandbox port, with this sandbox's name and token (sbx-workers-on-the-board). */
