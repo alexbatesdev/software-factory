@@ -740,6 +740,16 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Absorbed into ${e.into}, which carries this work.`);
       break;
     }
+    case 'exit_report': {
+      // The DoD exit report as a record of its run (evolution phase 1): work/assignment/version/attempt, kept structured;
+      // the note carries the same prose old readers parse.
+      const a = (w.assignments || []).find(x => x.id === e.assignmentId);
+      const run = { work: w.id, assignment: e.assignmentId || null, version: e.version ?? a?.version ?? null, attempt: a ? (a.history || []).filter(h => h.status === 'started').length || 1 : null };
+      const f = k => String(e[k] ?? '').trim();
+      w.reports = [...(w.reports || []), { run, changed: f('changed'), proven: f('proven'), unverified: f('unverified'), risk: f('risk'), head: e.head || null, at: ctx.now, by: ctx.by }];
+      note(w, ctx, `Exit report. Changed: ${f('changed')} Proven: ${f('proven')} Unverified: ${f('unverified')} Risk: ${f('risk')}`);
+      break;
+    }
     case 'reviewer_rerequested': {
       // W-426: the board re-requested a non-approving reviewer whose feedback is addressed; one per review round.
       w.rerequests = [...(w.rerequests || []), { reviewer: e.reviewer, reviewAt: e.reviewAt, head: e.head, at: ctx.now }];

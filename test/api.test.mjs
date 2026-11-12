@@ -378,3 +378,20 @@ test('a review discovery claimed as pre-existing on main must show the faulty co
     assert.deepEqual(seen[0], ['built-rails', 'a5b21fd', 'app/adp_workers_adapter.rb']);
   } finally { server.close(); }
 });
+
+test('an exit report is kept as a structured record of its run, and still reads as the same note (evolution phase 1, step 1)', async () => {
+  const f = await serveWith({ readPr: async url => ({ url, head: 'bbb2222', state: 'OPEN', isDraft: true }) });
+  try {
+    started(f);
+    const a = f.store.state.work['W-1'].assignments.find(x => x.status === 'started');
+    const report = { changed: 'guarded the export', proven: 'spec red then green', unverified: 'large-tenant timing', risk: 'none known' };
+    assert.equal((await f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'bbb2222', report }))[0], 200);
+    const w = f.store.state.work['W-1'];
+    assert.equal(w.reports.length, 1);
+    const r = w.reports[0];
+    assert.deepEqual(r.run, { work: 'W-1', assignment: a.id, version: a.version, attempt: 1 });
+    assert.deepEqual([r.changed, r.proven, r.unverified, r.risk, r.head], [report.changed, report.proven, report.unverified, report.risk, 'bbb2222']);
+    assert.equal(w.updates.filter(u => /^Exit report\./.test(u.text)).at(-1).text, 'Exit report. Changed: guarded the export Proven: spec red then green Unverified: large-tenant timing Risk: none known', 'old readers see the same note');
+    assert.deepEqual(f.store.replay().work['W-1'].reports, w.reports, 'replay rebuilds it');
+  } finally { f.close(); }
+});

@@ -16,8 +16,11 @@ export const sectionOf = c => c.support && c.category !== 'history' ? 'support'
   : c.waiting?.who && !AGENT.test(c.waiting.who) ? 'others'
   : c.category === 'parked' ? 'parked' : 'factory';
 
-// The "Unverified:" part of the newest DoD exit report note (core/api.mjs writes it), unless it says nothing.
+// What the newest DoD exit report leaves unverified, unless it says nothing: the structured report (evolution phase 1),
+// else the "Unverified:" part of an older note-only report.
 function unverifiedOf(w) {
+  const r = w.reports?.at(-1)?.unverified;
+  if (r !== undefined) return r && !/^nothing\W*$/i.test(r) ? r : null;
   const note = [...(w.updates || [])].reverse().find(u => /^Exit report\./.test(u.text || ''));
   const m = note?.text.match(/Unverified: (.*?) Risk: /s)?.[1].trim();
   return m && !/^nothing\W*$/i.test(m) ? m : null;

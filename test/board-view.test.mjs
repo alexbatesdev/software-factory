@@ -297,3 +297,12 @@ test("a done record never shows a running job, and its leftover job can be cance
   s.append({ kind: 'event', target: id, payload: { type: 'cancel_assignment', assignmentId: 'R1', expectedVersion: 1, evidence: 'pane gone since the 11-06 carve-out' } }, c);
   assert.deepEqual([s.state.work[id].assignments[0].status, s.state.work[id].phase], ['cancelled', 'done']);
 });
+
+test("a card reads unverified from the structured exit report first, and still reads an old note-only report", () => {
+  const s = openStore(':memory:', { supervisors: [S1] });
+  s.append({ kind: 'create', payload: { title: 'x', stream: S1 } }, ctx());
+  s.append({ kind: 'event', target: 'W-1', payload: { type: 'note', text: 'Exit report. Changed: a. Proven: b. Unverified: old note text. Risk: low.' } }, ctx());
+  assert.equal(card(s, 'W-1').unverified, 'old note text.');
+  s.append({ kind: 'event', target: 'W-1', payload: { type: 'exit_report', changed: 'a', proven: 'b', unverified: 'Unverified: has a colon. Risk: inside the text', risk: 'low' } }, ctx());
+  assert.equal(card(s, 'W-1').unverified, 'Unverified: has a colon. Risk: inside the text', 'the structured field, not a regex over prose');
+});

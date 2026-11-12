@@ -106,7 +106,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     // PR work whose PR was closed unmerged (Alex's call, e.g. TB-126 a) resolves once GitHub confirms it closed.
     if (action === 'resolve' && rec?.links?.pr && (await readPr(rec.links.pr))?.state === 'CLOSED')
       cmds = cmds.map(c => c.payload?.type === 'resolve' ? { ...c, payload: { ...c.payload, prClosed: rec.links.pr } } : c);
-    if (exitReport) { const r = args.report; cmds = [...cmds, { kind: 'event', target: args.work, payload: { type: 'note', text: `Exit report. Changed: ${r.changed} Proven: ${r.proven} Unverified: ${r.unverified} Risk: ${r.risk}` } }]; }
+    if (exitReport) { const r = args.report; cmds = [...cmds, { kind: 'event', target: args.work, payload: { type: 'exit_report', assignmentId: args.assignmentId, version: args.expectedVersion, head: args.head, changed: r.changed, proven: r.proven, unverified: r.unverified, risk: r.risk } }]; }
     return [200, { ok: true, results: store.appendAll(cmds, ctx) }];
   }
 
