@@ -47,7 +47,7 @@ export const wouldAwaitPrApproval = (w, cfg) => !(w.assignments || []).length &&
 export const awaitsPrApproval = (w, cfg) => ['ready', 'queued'].includes(w.phase) && wouldAwaitPrApproval(w, cfg);
 
 export function trackOf(w, cfg = {}) {
-  if ((cfg.exclude || []).includes(w.id)) return 'excluded';
+  if ((cfg.exclude || cfg.autoDispatch?.exclude || []).includes(w.id)) return 'excluded';
   if ((w.reviews || []).some(r => r.forAlex) || /^Trusted review/i.test(w.title || '') || /trusted-review$/.test(w.owner || '') || isTrustedReviewSeat(w.owner)) return 'trusted-review';
   return 'stream';
 }

@@ -183,3 +183,7 @@ test('feedback that lands while the fixes job is parked on a question files a ne
  const running = ev(w, { type: 'progress', assignmentId: 'R5', expectedVersion: 2, stage: 'started', text: 'resumed' }, at);
  assert.equal(W.observeHealth(running, { head, conflict: false, failing: [], threads: [{ id: 'T1', by: 'sam', url: 'u3' }] }, at).requests.length, before, 'a running fixes job picks it up when it reports done');
 });
+
+test('a record in autoDispatch.exclude is excluded when the caller passes the whole config, so auto-ready and reviewer re-requests leave it alone too', () => {
+ assert.equal(W.trackOf({ id: 'W-7' }, { autoDispatch: { exclude: ['W-7'] } }), 'excluded');
+});
