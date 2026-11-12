@@ -64,3 +64,11 @@ test('without the standing authorization nothing is marked', async () => {
   await autoReadyTick(s, gh, { standing: null, now: () => ctx.now });
   assert.equal(gh.calls, 0);
 });
+
+test('a question filed on a record awaiting approval leaves it awaiting: the PR evidence has not changed (W-446: W-440 stranded in rereview by TB-227)', async () => {
+  const { s, id } = readyRecord(), gh = fakeGh({ head: 'aaa1111', isDraft: true });
+  await autoReadyTick(s, gh, { standing, now: () => ctx.now });
+  assert.equal(s.state.work[id].phase, 'awaiting_human_approval');
+  s.append({ kind: 'ask', payload: { title: 'Confirm in prod before replying on Teamwork?', options: ['run it', 'skip'], recommend: 'run it', work: id, promptedBy: 'F2', wwbd: 'checked', why: 'prod only', recommendWhy: 'cheap' } }, { now: '2026-11-12T07:00:00.000Z', by: 'sup: stream-2' });
+  assert.equal(s.state.work[id].phase, 'awaiting_human_approval');
+});

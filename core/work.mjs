@@ -133,11 +133,15 @@ export function updateWork(work, fields, ctx) {
 }
 
 /** A ready label never outlives evidence that invalidates it. */
+// W-446: a question filed on ready work (a prod check, a reply's wording) holds marking ready, but never revokes a label
+// the PR evidence still supports. Gated for replay.
+const QUESTIONS_KEEP_READY_FROM = '2026-11-12T06:15:00.000Z';
 export function normalize(w, ctx = {}) {
+  const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
     const wait = w.approvalWait;
     const waived = (w.internalReviewWaivers || []).some(x => x.head === w.head && x.prUrl === w.links?.pr);
-    if (wait?.head === w.head && wait.prUrl === w.links?.pr && w.headVerified && (waived || gate(w, ctx).ok)) return w;
+    if (wait?.head === w.head && wait.prUrl === w.links?.pr && w.headVerified && (waived || gate(w, kept).ok)) return w;
     w.phase = 'rereview'; w.approvalWait = null;
     if (ctx.now) note(w, ctx, 'Approval wait invalidated: current PR/head or internal evidence no longer matches. Historical waivers remain history.');
     return w;
@@ -154,7 +158,7 @@ export function normalize(w, ctx = {}) {
     return w;
   }
   if (w.phase !== 'ready_for_human') return w;
-  const g = gate(w, ctx);
+  const g = gate(w, kept);
   if (g.ok) return w;
   w.phase = 'rereview';
   requestRereview(w, ctx);
