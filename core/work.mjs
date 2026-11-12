@@ -861,10 +861,10 @@ export const FEEDBACK_TYPES = ['changes_requested', 'threads', 'comments'];
 export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, base, failing = [], changesRequested = [], threads = [], comments = [], mainGreen = null }, ctx) {
+export function observeHealth(work, { head, conflict, base, failing = [], inherited = [], changesRequested = [], threads = [], comments = [], mainGreen = null }, ctx) {
   const atHead = !!head && sameSha(head, work.head);
   if (TERMINAL.includes(work.phase) || !head || (!atHead && ctx.now < FEEDBACK_ANY_HEAD_FROM)) return work;
-  if (!atHead) { conflict = false; failing = []; mainGreen = null; } // CI and conflicts are judged at the record's head only
+  if (!atHead) { conflict = false; failing = []; inherited = []; mainGreen = null; } // CI and conflicts are judged at the record's head only
   const seen = type => (work.findings || []).some(f => f.source?.type === type && sameSha(f.source.head, head));
   const fresh = [conflict && 'conflict', failing.length && 'ci'].filter(t => t && !seen(t));
   // Reviewer feedback (W-207) is news once per review and per thread, whatever the head.
@@ -876,8 +876,11 @@ export function observeHealth(work, { head, conflict, base, failing = [], change
   // W-445: a comments finding that holds only ids takes the comments' text when a read brings it.
   const byId = new Map(comments.filter(c => c.text).map(c => [c.id, c]));
   const unquoted = (work.findings || []).filter(f => f.status === 'open' && f.source?.type === 'comments' && !f.source.quoted && f.source.ids.some(id => byId.has(id)));
-  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length) return work;
+  const inheritedNote = inherited.length ? `${inherited.join(', ')} also fails on ${base || 'main'} at ${head.slice(0, 7)}: not this PR's to fix. ${base ? 'Its base PR handles it.' : 'The board proposes it as separate work for Alex.'}` : null;
+  const newInherited = inheritedNote && !(work.updates || []).some(u => u.text === inheritedNote);
+  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length && !newInherited) return work;
   const w = structuredClone(work);
+  if (newInherited) note(w, ctx, inheritedNote);
   for (const f of w.findings.filter(x => unquoted.some(u => u.id === x.id))) {
     f.text = FEEDBACK_TEXT.comments(f.source.ids.map(id => byId.get(id) || { by: 'comment', url: id }));
     f.source.quoted = true;

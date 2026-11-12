@@ -97,10 +97,10 @@ export function ancestryWanted(state, heads, owner) {
  * observe_health commands for Alex's PRs into main whose merge or CI state at the record's head needs work.
  * @param health Map(repo:num → {head, base, conflict, failing}); a PR GitHub hasn't finished computing says neither.
  */
-export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map(), branches = new Map() }) {
+export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map(), mainFailing = new Map(), branches = new Map() }) {
   const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
-  const byPr = new Map();
+  const byPr = new Map(), fromMain = new Map();
   for (const w of Object.values(state.work)) { const k = recordPrKey(w, owner); if (k && acting(w)) byPr.set(k, [...(byPr.get(k) || []), w]); }
   for (const [key, ws] of byPr) {
     // The record already fixing this PR takes its new findings (W-377), else the PR's own record, else the first in play.
@@ -108,14 +108,24 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
     const own = state.work[idx.get(key.replace(':', '-'))], w = fixer || (acting(own) ? own : ws[0]);
     const h = health.get(key);
     if (!h || W.trackOf(w, { exclude }) === 'excluded') continue;
-    // A stacked PR's CI is judged against its base, not main; GitHub already reads its conflict against that base (W-459).
-    const onMain = h.base === 'main';
-    // W-375: a stacked PR's failing check is ours when its base PR (read this tick) passes it.
-    const repo = key.split(':')[0], baseId = !onMain && [...branches].find(([id, b]) => b === h.base && id.startsWith(`${repo}-`))?.[0];
-    const baseFailing = baseId && health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing;
-    const failing = onMain ? h.failing : baseFailing ? h.failing.filter(f => !baseFailing.includes(f)) : [];
-    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(key.split(':')[0]) || null };
+    // Conflicts and red CI are handled on every PR, stacked or not (W-459); GitHub judges mergeable against the PR's own base.
+    const onMain = h.base === 'main', repo = key.split(':')[0];
+    // A check also red on the base isn't this PR's (W-375, W-459): main's go to Alex as a proposal, a base PR's stay with it.
+    // A tracked base PR not read this tick claims nothing; a base with no tracked PR is handled like main.
+    const baseId = !onMain && [...branches].find(([id, b]) => b === h.base && id.startsWith(`${repo}-`))?.[0];
+    const baseFailing = onMain ? mainFailing.get(repo) || [] : baseId ? health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing : [];
+    const inherited = h.failing.filter(f => (baseFailing || []).includes(f)), failing = baseFailing ? h.failing.filter(f => !inherited.includes(f)) : [];
+    if (onMain) for (const f of inherited) fromMain.set(`${repo}:${f}`, [...(fromMain.get(`${repo}:${f}`) || []), key]);
+    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, ...(inherited.length ? { inherited } : {}), changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(repo) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
+  }
+  // One proposal per check red on main, while no open record holds it (Alex, 11-12: unrelated fixes are his to approve).
+  const held = new Set(Object.values(state.work).filter(w => !W.TERMINAL.includes(w.phase)).flatMap(w => [w.source?.key, ...(w.aliases || [])]).filter(k => k?.startsWith('ci:')));
+  for (const [k, prs] of fromMain) {
+    const [repo, check] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
+    if (held.has(`ci:${k}`)) continue;
+    cmds.push({ kind: 'create', payload: { title: `"${check}" is red on ${repo} main`, kind: 'build', repo, source: { type: 'agent', by: 'board (ci)', key: `ci:${k}` },
+      objective: `The "${check}" check fails on ${repo} main, so every PR based on main inherits it (${prs.map(p => `#${p.split(':')[1]}`).join(', ')}). It isn't caused by those PRs' diffs, so the board doesn't queue fixes on them. Fix it at its source in its own PR, or decline this.` } });
   }
   return cmds;
 }

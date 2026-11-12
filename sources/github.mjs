@@ -44,6 +44,8 @@ export async function readPrs(urls, run = exec) {
 }
 
 const RED = ['FAILURE', 'ERROR', 'TIMED_OUT', 'STARTUP_FAILURE'];
+const CONTEXTS = 'contexts(first:50){nodes{... on CheckRun{name conclusion} ... on StatusContext{context state}}}';
+const redChecks = roll => (roll?.contexts?.nodes || []).filter(c => RED.includes(c.conclusion || c.state)).map(c => c.name || c.context);
 /** Merge and CI state of each repo:num spec at its head, 30 per GraphQL call. `conflict` is only true once GitHub has computed it. */
 /** @param me Alex's login: his own reviews and threads are not feedback to act on. */
 // A bot (a GitHub app, or a 🤖-signed account like Hermes) counts only when it reports a finding.
@@ -54,12 +56,12 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
   const out = new Map();
   for (let i = 0; i < specs.length; i += 30) {
     const chunk = specs.slice(i, i + 30).map(x => x.split(':'));
-    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} refs: timelineItems(last:50,itemTypes:[CROSS_REFERENCED_EVENT]){nodes{... on CrossReferencedEvent{source{... on Issue{${ISSUE} subIssues(first:50){nodes{${ISSUE}}}}}}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state contexts(first:50){nodes{... on CheckRun{name conclusion} ... on StatusContext{context state}}}}}}}}}`).join(' ')}}`;
+    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} refs: timelineItems(last:50,itemTypes:[CROSS_REFERENCED_EVENT]){nodes{... on CrossReferencedEvent{source{... on Issue{${ISSUE} subIssues(first:50){nodes{${ISSUE}}}}}}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state ${CONTEXTS}}}}}}}`).join(' ')}}`;
     const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000, maxBuffer: 1 << 23 })).stdout);
     chunk.forEach(([repo, n], j) => {
       const p = data?.[`p${j}`]?.pullRequest; if (!p) return;
       const roll = p.commits?.nodes?.[0]?.commit?.statusCheckRollup;
-      const failing = (roll?.contexts?.nodes || []).filter(c => RED.includes(c.conclusion || c.state)).map(c => c.name || c.context);
+      const failing = redChecks(roll);
       // Only named checks count: a cancelled bot run (Teamwork Sync) turns the rollup red without any CI failing.
       const by = x => x?.author?.login || 'ghost';
       // Feedback still to act on: a change request on the current head (a later push answered older ones), and an
@@ -83,9 +85,10 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
 }
 
 /** repo → the oid of main's latest commit when its checks passed, else null (red, pending or unknown). */
-export async function readMainGreen(repos, owner, run = exec) {
+/** Main's head per repo: its sha when CI is green, and the checks failing there (a pending check isn't failing). */
+export async function readMain(repos, owner, run = exec) {
   if (!repos.length) return new Map();
-  const q = `query{${repos.map((r, i) => `r${i}: repository(owner:"${owner}",name:"${r}"){ref(qualifiedName:"refs/heads/main"){target{... on Commit{oid statusCheckRollup{state}}}}}`).join(' ')}}`;
+  const q = `query{${repos.map((r, i) => `r${i}: repository(owner:"${owner}",name:"${r}"){ref(qualifiedName:"refs/heads/main"){target{... on Commit{oid statusCheckRollup{state ${CONTEXTS}}}}}}`).join(' ')}}`;
   const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000 })).stdout);
-  return new Map(repos.map((r, i) => { const t = data?.[`r${i}`]?.ref?.target; return [r, t?.statusCheckRollup?.state === 'SUCCESS' ? t.oid : null]; }));
+  return new Map(repos.map((r, i) => { const t = data?.[`r${i}`]?.ref?.target; return [r, { green: t?.statusCheckRollup?.state === 'SUCCESS' ? t.oid : null, failing: redChecks(t?.statusCheckRollup) }]; }));
 }

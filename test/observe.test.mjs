@@ -83,19 +83,19 @@ test("the health read carries other people's change requests on the head and the
 });
 
 test("main counts as green only when its latest commit's checks passed (W-208)", async () => {
-  const { readMainGreen } = await import('../sources/github.mjs');
+  const { readMain } = await import('../sources/github.mjs');
   const reply = state => async () => ({ stdout: JSON.stringify({ data: { r0: { ref: { target: { oid: 'main0001', statusCheckRollup: state && { state } } } } } }) });
-  assert.equal((await readMainGreen(['built-rails'], 'o', reply('SUCCESS'))).get('built-rails'), 'main0001');
-  for (const s of ['FAILURE', 'PENDING', null]) assert.equal((await readMainGreen(['built-rails'], 'o', reply(s))).get('built-rails'), null, String(s));
+  assert.equal((await readMain(['built-rails'], 'o', reply('SUCCESS'))).get('built-rails').green, 'main0001');
+  for (const s of ['FAILURE', 'PENDING', null]) assert.equal((await readMain(['built-rails'], 'o', reply(s))).get('built-rails').green, null, String(s));
 });
 
-test("a stacked PR's review feedback is read, and its conflict with its own base is ours to fix by merging that base; only its CI is main's business (#8588, #8244, W-459: #8591)", async () => {
+test("a stacked PR's review feedback is read, and and its conflict and red CI are handled like a PR into main's; a base with no tracked PR inherits nothing (#8588, #8244, W-459: #8591)", async () => {
   const { healthCommands } = await import('../core/observe.mjs');
   const rec = { ...createWork({ id: 'W-1', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'b' } }, ctx), phase: 'awaiting_human_approval', head: 'ddddddd4' };
   const health = new Map([['built-rails:1', { head: 'ddddddd4', base: 'alex/stack-base', conflict: true, failing: ['rspec'], changesRequested: [], threads: [{ id: 'T1', by: 'codex', url: 'u' }] }]]);
   const [c] = healthCommands({ work: { 'W-1': rec } }, health, { owner: OWNER, now: ctx.now });
   assert.equal(c.target, 'W-1');
-  assert.deepEqual([c.payload.conflict, c.payload.base, c.payload.failing, c.payload.threads.map(t => t.id)], [true, 'alex/stack-base', [], ['T1']]);
+  assert.deepEqual([c.payload.conflict, c.payload.base, c.payload.failing, c.payload.threads.map(t => t.id)], [true, 'alex/stack-base', ['rspec'], ['T1']]);
   const { observeHealth } = await import('../core/work.mjs');
   const f = observeHealth(rec, c.payload, ctx).findings.find(x => x.source.type === 'conflict');
   assert.match(f.text, /Conflicts with alex\/stack-base .*Merge origin\/alex\/stack-base into the branch/);
@@ -204,7 +204,7 @@ test("a stacked PR's failing check is ours when its base PR doesn't fail it; unr
   const br = new Map([['built-rails-8242', 'alex/ped/2'], ['built-rails-8244', 'alex/ped/3']]);
   assert.deepEqual(run(['Audit Ruby'], br), ['ci/circleci: test'], 'only what the base passes');
   assert.equal(run(null, br), undefined, 'base not read: nothing claimed');
-  assert.equal(run(['ci/circleci: test', 'Audit Ruby'], br), undefined, 'every failure is the base\'s too');
+  assert.deepEqual(run(['ci/circleci: test', 'Audit Ruby'], br), [], 'every failure is the base\'s too: noted on the record, nothing claimed');
 });
 
 test("a PR's new health finding lands on the record already fixing it, not a second record (W-377)", async () => {
@@ -220,4 +220,42 @@ test("a PR its record replaced (done replacesPr) is accounted for after that rec
   const w = { ...createWork({ id: 'W-354', title: 'OSUP', kind: 'build', links: { pr: PR(8707) } }, ctx), phase: 'done', aliases: ['built-rails-8694', 'built-rails-8707'] };
   assert.deepEqual(auditMissed({ work: { 'W-354': w } }, new Set(['built-rails:8694']), new Map(), { owner: OWNER }), []);
   assert.deepEqual(auditMissed({ work: { 'W-354': { ...w, links: { pr: PR(8694) } } } }, new Set(['built-rails:8694']), new Map(), { owner: OWNER }).map(m => m.id), ['pr'], 'its own PR still open after close is a gap');
+});
+
+test("red CI on any PR: what also fails on its base is proposed once as separate work for Alex, what the PR causes gets a fixes round (W-459: #8593-#8628 Audit Ruby)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const { observeHealth } = await import('../core/work.mjs');
+  const rec = (id, n, branch) => ({ ...createWork({ id, title: 'x', kind: 'build', links: { pr: PR(n), branch } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' });
+  const h = (base, failing) => ({ head: 'aaaaaaa1', base, conflict: false, failing, changesRequested: [], threads: [], comments: [] });
+  const work = { 'W-1': rec('W-1', 1, 'a/1'), 'W-2': rec('W-2', 2, 'a/2'), 'W-3': rec('W-3', 3, 'a/3') };
+  const health = new Map([['built-rails:1', h('main', ['Audit Ruby', 'rspec'])], ['built-rails:2', h('main', ['Audit Ruby'])], ['built-rails:3', h('someone/untracked', ['Audit Ruby'])]]);
+  const cmds = healthCommands({ work }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['built-rails', ['Audit Ruby']]]) });
+  const of = id => cmds.find(c => c.target === id)?.payload;
+  assert.deepEqual([of('W-1').failing, of('W-1').inherited], [['rspec'], ['Audit Ruby']]);
+  assert.deepEqual([of('W-2').failing, of('W-2').inherited], [[], ['Audit Ruby']]);
+  assert.deepEqual(of('W-3').failing, ['Audit Ruby'], 'a base with no tracked PR: handled like main, the PR\'s own');
+  const creates = cmds.filter(c => c.kind === 'create');
+  assert.deepEqual(creates.map(c => [c.payload.source.key, c.payload.source.by, c.payload.kind]), [['ci:built-rails:Audit Ruby', 'board (ci)', 'build']], 'one proposal per check, not per PR');
+  const held = { ...work, 'W-9': { ...createWork({ id: 'W-9', title: 'Audit', kind: 'build', source: { type: 'manual', key: 'ci:built-rails:Audit Ruby' } }, ctx) } };
+  const aliased = { ...work, 'W-379': { ...createWork({ id: 'W-379', title: 'Bundler Audit', kind: 'build', aliases: ['ci:built-rails:Audit Ruby'] }, ctx) } };
+  assert.equal(healthCommands({ work: aliased }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['built-rails', ['Audit Ruby']]]) }).filter(c => c.kind === 'create').length, 0, 'a record that took the check as an alias holds it too');
+  assert.equal(healthCommands({ work: held }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['built-rails', ['Audit Ruby']]]) }).filter(c => c.kind === 'create').length, 0, 'an open record for the check already holds it');
+  const w2 = observeHealth(work['W-2'], of('W-2'), ctx);
+  assert.equal(w2.phase, 'awaiting_human_approval', 'no fixes round for an inherited failure');
+  assert.match(w2.updates.at(-1).text, /Audit Ruby also fails on main/);
+  assert.equal(observeHealth(w2, of('W-2'), ctx), w2, 'said once per head');
+  assert.equal(observeHealth(work['W-1'], of('W-1'), ctx).phase, 'fixes', 'its own failure still gets a fixes round');
+});
+
+test('a CI proposal waits in New PRs for Alex, like any new PR nobody asked for (W-459)', async () => {
+  const { needsPrApproval } = await import('../core/work.mjs');
+  const w = createWork({ id: 'W-9', title: 'Audit Ruby fails on main', kind: 'build', source: { type: 'agent', by: 'board (ci)', key: 'ci:built-rails:Audit Ruby' } }, ctx);
+  assert.equal(needsPrApproval(w, { trusted: ['teamwork', 'agent:local-head'], repos: ['built-rails'] }), true);
+});
+
+test('the main read returns the green head and the names of the checks failing on main (W-459)', async () => {
+  const { readMain } = await import('../sources/github.mjs');
+  const reply = (state, nodes) => async () => ({ stdout: JSON.stringify({ data: { r0: { ref: { target: { oid: 'main0001', statusCheckRollup: { state, contexts: { nodes } } } } } } }) });
+  assert.deepEqual((await readMain(['built-rails'], 'o', reply('SUCCESS', [{ name: 'rspec', conclusion: 'SUCCESS' }]))).get('built-rails'), { green: 'main0001', failing: [] });
+  assert.deepEqual((await readMain(['built-rails'], 'o', reply('FAILURE', [{ name: 'Audit Ruby', conclusion: 'FAILURE' }, { name: 'rspec', conclusion: null, status: 'IN_PROGRESS' }]))).get('built-rails'), { green: null, failing: ['Audit Ruby'] });
 });
