@@ -259,3 +259,16 @@ test('the main read returns the green head and the names of the checks failing o
   assert.deepEqual((await readMain(['built-rails'], 'o', reply('SUCCESS', [{ name: 'rspec', conclusion: 'SUCCESS' }]))).get('built-rails'), { green: 'main0001', failing: [] });
   assert.deepEqual((await readMain(['built-rails'], 'o', reply('FAILURE', [{ name: 'Audit Ruby', conclusion: 'FAILURE' }, { name: 'rspec', conclusion: null, status: 'IN_PROGRESS' }]))).get('built-rails'), { green: null, failing: ['Audit Ruby'] });
 });
+
+test("a PR's note on a check red on main names the open record already tracking it, rather than promising a new proposal (W-470: W-221, W-463)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const { observeHealth } = await import('../core/work.mjs');
+  const pr = { ...createWork({ id: 'W-221', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const holder = { ...createWork({ id: 'W-463', title: 'Brakeman warning', kind: 'build', aliases: ['ci:built-rails:Audit Ruby'] }, ctx), phase: 'ready' };
+  const health = new Map([['built-rails:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['Audit Ruby'], changesRequested: [], threads: [], comments: [] }]]);
+  const cmds = healthCommands({ work: { 'W-221': pr, 'W-463': holder } }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['built-rails', ['Audit Ruby']]]) });
+  assert.equal(cmds.filter(c => c.kind === 'create').length, 0);
+  const note = observeHealth(pr, cmds[0].payload, ctx).updates.at(-1).text;
+  assert.match(note, /Tracked on W-463/);
+  assert.doesNotMatch(note, /proposes it/);
+});

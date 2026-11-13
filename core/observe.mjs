@@ -101,6 +101,8 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
   const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
   const byPr = new Map(), fromMain = new Map();
+  // The open record holding each main check's ci:<repo>:<check> key, as its source key or an alias (a duplicate's key moves there).
+  const held = new Map(Object.values(state.work).filter(w => !W.TERMINAL.includes(w.phase)).flatMap(w => [w.source?.key, ...(w.aliases || [])].filter(k => k?.startsWith('ci:')).map(k => [k, w.id])));
   for (const w of Object.values(state.work)) { const k = recordPrKey(w, owner); if (k && acting(w)) byPr.set(k, [...(byPr.get(k) || []), w]); }
   for (const [key, ws] of byPr) {
     // The record already fixing this PR takes its new findings (W-377), else the PR's own record, else the first in play.
@@ -116,11 +118,10 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
     const baseFailing = onMain ? mainFailing.get(repo) || [] : baseId ? health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing : [];
     const inherited = h.failing.filter(f => (baseFailing || []).includes(f)), failing = baseFailing ? h.failing.filter(f => !inherited.includes(f)) : [];
     if (onMain) for (const f of inherited) fromMain.set(`${repo}:${f}`, [...(fromMain.get(`${repo}:${f}`) || []), key]);
-    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, ...(inherited.length ? { inherited } : {}), changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(repo) || null };
+    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, ...(inherited.length ? { inherited } : {}), ...(onMain && inherited.some(f => held.has(`ci:${repo}:${f}`)) ? { trackedOn: Object.fromEntries(inherited.filter(f => held.has(`ci:${repo}:${f}`)).map(f => [f, held.get(`ci:${repo}:${f}`)])) } : {}), changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(repo) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   // One proposal per check red on main, while no open record holds it (Alex, 11-12: unrelated fixes are his to approve).
-  const held = new Set(Object.values(state.work).filter(w => !W.TERMINAL.includes(w.phase)).flatMap(w => [w.source?.key, ...(w.aliases || [])]).filter(k => k?.startsWith('ci:')));
   for (const [k, prs] of fromMain) {
     const [repo, check] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
     if (held.has(`ci:${k}`)) continue;
