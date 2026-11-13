@@ -88,6 +88,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); return; }
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); return; }
     if (needsPrApproval(w, cfg.prApproval)) { wait("needs Alex's go to open a new PR (dashboard: New PRs)"); return; }
+    if (w.proposal && !w.links?.pr && w.prApproval && !(w.duplicateCheckedAt >= w.prApproval.at)) { wait('re-checking open PRs for a duplicate since the approval (W-471)'); return; }
     const bound = boundStream(w, byId, labels);
     // A stream that declined this record isn't sent it again unless someone pins it there (W-217).
     const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));

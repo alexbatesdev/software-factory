@@ -22,7 +22,8 @@ import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
 import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue, contradictions } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
-import { readPrLines, readPrHealth, readPrs, readMain, readCompare } from '../sources/github.mjs';
+import { readPrLines, readPrHealth, readPrs, readMain, readCompare, readOpenPrFiles } from '../sources/github.mjs';
+import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.mjs';
 import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask } from '../sources/teamwork.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
@@ -397,6 +398,14 @@ http.createServer(async (req, res) => {
 }).listen(SANDBOX_PORT, '127.0.0.1', () => log(`sandbox MCP on http://127.0.0.1:${SANDBOX_PORT}/mcp`));
 
 // Read each worker's disk, drain full ones, and cycle a drained worker once it is between tasks.
+// W-471: New-PR records are re-checked for another author's PR on the same files until they are dispatched.
+async function duplicateTick() {
+  if (DRY) return;
+  const repos = [...new Set(unbuiltProposals(store.state).map(repoOf))];
+  if (!repos.length) return;
+  apply(duplicateCommands(store.state, await readOpenPrFiles(repos, config.githubOwner), { me: config.githubLogin }), 'board (duplicate check)');
+}
+
 // Evolution phase 1 step 2: each review's linked report is copied into data/artifacts by its hash.
 async function artifactTick(only) {
   if (DRY) return;
@@ -516,6 +525,7 @@ every(config.poll.githubMs, rerequestTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);
 every(60000, artifactTick);
+every(60000, duplicateTick);
 every(60000, manifestTick);
 if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config.backup.enabled is false)');
 every(60000, seatRestartTick);

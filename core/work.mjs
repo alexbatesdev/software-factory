@@ -719,6 +719,17 @@ export function applyEvent(work, e, ctx) {
       w.proposal = { prompted: e.prompted, addresses: e.addresses, whyThisFix: e.whyThisFix, since: e.since, customerImpact: e.customerImpact, ...(e.duplicateSearch && { duplicateSearch: e.duplicateSearch }), by: ctx.by, at: ctx.now };
       note(w, ctx, `New-PR breakdown recorded by ${ctx.by}.`);
       break;
+    case 'duplicate_check': {
+      // W-471: re-run until dispatch. A new match takes the approval back to Alex with the match on the card.
+      w.duplicateCheckedAt = ctx.now;
+      const m = e.matches || [];
+      if (!m.length) { if (w.prApproval) note(w, ctx, `Duplicate re-check before dispatch: no open PR by another author touches ${(e.paths || []).join(', ') || 'the files named'} since the search.`); break; }
+      w.duplicateHits = { at: ctx.now, matches: m, seen: [...new Set([...(w.duplicateHits?.seen || []), ...m.map(x => x.pr)])] };
+      const said = m.map(x => `#${x.pr.split('/').pop()} by ${x.author} (${x.files.join(', ')})`).join('; ');
+      note(w, ctx, `Possible duplicate, opened since the duplicate search: ${said}. ${w.prApproval ? `Approval by ${w.prApproval.by} withdrawn: ` : ''}not dispatched until Alex approves again (build anyway) or declines.`);
+      w.prApproval = null;
+      break;
+    }
     case 'pr_approved': {
       if (w.links?.pr) fail(`${w.id} already has its PR.`);
       if (w.prApproval) fail(`${w.id} is already approved by ${w.prApproval.by}.`);

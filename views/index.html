@@ -287,6 +287,7 @@ function newPrsPanel(list) {
     const BREAKDOWN = [['prompted', 'What prompted it'], ['addresses', 'What it addresses'], ['whyThisFix', 'Why this fix'], ['since', 'How long'], ['customerImpact', 'Change for customers'], ['duplicateSearch', 'Duplicate check']];
     if (p.proposal) { const dl = el('dl', 'bd'); for (const [k, label] of BREAKDOWN) if (p.proposal[k]) dl.append(el('dt', null, label), el('dd', null, p.proposal[k])); left.append(dl); }
     else { left.append(el('div', 'fail', 'No breakdown yet: the board lead adds it at triage.')); if (p.objective) left.append(el('div', 'res', p.objective.slice(0, 400))); }
+    if (p.duplicateHits) left.append(el('div', 'fail', `Possible duplicate, opened since the search: ${p.duplicateHits.matches.map(m => `#${m.pr.split('/').pop()} by ${m.author} (${m.files.join(', ')})`).join('; ')}. Approve builds it anyway.`));
     left.append(noteBox(p.id));
     const ok = el('button', null, 'Approve'), no = el('button', null, 'Decline');
     ok.onclick = () => decidePrs([p.id], 'approve', ok); no.onclick = () => decidePrs([p.id], 'decline', no);

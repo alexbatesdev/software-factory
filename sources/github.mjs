@@ -92,3 +92,13 @@ export async function readMain(repos, owner, run = exec) {
   const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000 })).stdout);
   return new Map(repos.map((r, i) => { const t = data?.[`r${i}`]?.ref?.target; return [r, { green: t?.statusCheckRollup?.state === 'SUCCESS' ? t.oid : null, failing: redChecks(t?.statusCheckRollup) }]; }));
 }
+
+/** Open PRs with their changed files, per repo (W-471's duplicate re-check). */
+export async function readOpenPrFiles(repos, owner, run = exec) {
+  const out = {};
+  for (const repo of repos) {
+    const { stdout } = await run('gh', ['pr', 'list', '-R', `${owner}/${repo}`, '--state', 'open', '--limit', '200', '--json', 'url,author,createdAt,files'], { timeout: 60000, maxBuffer: 1 << 24 });
+    out[repo] = JSON.parse(stdout).map(p => ({ url: p.url, author: p.author?.login, createdAt: p.createdAt, files: (p.files || []).map(f => f.path) }));
+  }
+  return out;
+}
