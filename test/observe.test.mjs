@@ -297,3 +297,12 @@ test('a watcher record declined without naming a covering record still holds its
   assert.equal(run('2026-11-14T17:00:00.000Z'), 0);
   assert.equal(run('2026-11-21T17:00:01.000Z'), 1, 'a week on, still red: proposed again');
 });
+
+test("an own PR whose record was withdrawn (Alex is closing it) is settled for a week, not missed (M-2866: W-97, #8403)", async () => {
+  const { auditMissed } = await import('../core/observe.mjs');
+  const at = '2026-11-13T21:27:00.000Z';
+  const w = { ...createWork({ id: 'W-97', title: 'Case uniqueness', kind: 'build', links: { pr: PR(8403) } }, ctx), phase: 'cancelled', completion: { withdrawn: true, at } };
+  const audit = now => auditMissed({ work: { 'W-97': w } }, new Set(['app:8403']), new Map(), { owner: OWNER, now }).map(m => m.id);
+  assert.deepEqual(audit('2026-11-13T21:31:00.000Z'), []);
+  assert.deepEqual(audit('2026-11-21T00:00:00.000Z'), ['pr'], 'still open a week on: missed again');
+});

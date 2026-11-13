@@ -206,7 +206,7 @@ async function githubTick() {
       contradictionsDue = true;
       const dev = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
       const told = new Set(Object.values(store.state.messages).map(m => m.about?.missed).filter(Boolean));
-      const missed = auditMissed(store.state, own, health, { owner, ...skipped(), prs }).filter(m => !told.has(`${m.key}/${m.id}`));
+      const missed = auditMissed(store.state, own, health, { owner, ...skipped(), prs, now: now() }).filter(m => !told.has(`${m.key}/${m.id}`));
       log(`audit: ${missed.length} missed`);
       for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
     }

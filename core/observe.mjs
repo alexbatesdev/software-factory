@@ -93,6 +93,9 @@ export function ancestryWanted(state, heads, owner) {
   });
 }
 
+// A record withdrawn without naming a covering record keeps its check (W-474) or its PR (M-2866) quiet for a week.
+const declined = (w, now) => w.phase === 'cancelled' && !!w.completion?.withdrawn && !w.completion.absorbedInto && Date.parse(now) - Date.parse(w.completion.at) < 7 * 864e5;
+
 /**
  * observe_health commands for Alex's PRs into main whose merge or CI state at the record's head needs work.
  * @param health Map(repo:num → {head, base, conflict, failing}); a PR GitHub hasn't finished computing says neither.
@@ -102,8 +105,7 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
   const byPr = new Map(), fromMain = new Map();
   // The open record holding each main check's ci:<repo>:<check> key, as its source key or an alias (a duplicate's key moves there).
-  // A watcher record withdrawn without naming a covering record keeps its check quiet for a week (W-474).
-  const declinedHolds = w => w.phase === 'cancelled' && w.completion?.withdrawn && !w.completion.absorbedInto && Date.parse(now) - Date.parse(w.completion.at) < 7 * 864e5;
+  const declinedHolds = w => declined(w, now);
   const ciKeys = ws => new Map(ws.flatMap(w => [w.source?.key, ...(w.aliases || [])].filter(k => k?.startsWith('ci:')).map(k => [k, w.id])));
   const tracked = ciKeys(Object.values(state.work).filter(w => !W.TERMINAL.includes(w.phase)));
   const held = new Map([...ciKeys(Object.values(state.work).filter(declinedHolds)), ...tracked]);
@@ -141,7 +143,7 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
  * @param prs projectPrs' map (id repo-n → {branch}), so a Mutation PR with no record is known by its branch
  * @returns [{key, id ('pr' for a missing record), by?, url?}]
  */
-export function auditMissed(state, own, health, { owner, exclude, prs = new Map() }) {
+export function auditMissed(state, own, health, { owner, exclude, prs = new Map(), now = new Date().toISOString() }) {
   const works = Object.values(state.work), told = new Set(works.flatMap(w => (w.findings || []).flatMap(f => f.source?.ids || [])));
   const out = [];
   for (const key of own) {
@@ -149,7 +151,7 @@ export function auditMissed(state, own, health, { owner, exclude, prs = new Map(
     const branch = prs.get(key.replace(':', '-'))?.branch;
     if ([...recs, ...(branch ? [{ links: { branch } }] : [])].some(w => W.trackOf(w, { exclude }) === 'excluded')) continue;
     // A PR a record replaced (an alias that isn't its own PR) was settled on that record, open or not.
-    if (!recs.some(w => !W.TERMINAL.includes(w.phase))) { if (!recs.some(w => recordPrKey(w, owner) !== key)) out.push({ key, id: 'pr' }); continue; }
+    if (!recs.some(w => !W.TERMINAL.includes(w.phase))) { if (!recs.some(w => recordPrKey(w, owner) !== key || declined(w, now))) out.push({ key, id: 'pr' }); continue; }
     const h = health.get(key);
     for (const x of [...(h?.changesRequested || []), ...(h?.threads || []), ...(h?.comments || [])]) if (!told.has(x.id)) out.push({ key, id: x.id, by: x.by, url: x.url });
   }
