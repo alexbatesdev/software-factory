@@ -257,3 +257,10 @@ test("a record pinned to a host stream on someone's word is sent there even outs
   assert.notEqual(run({}).to, H, 'owner alone does not bind: unpinned app work goes to a sandbox stream');
   assert.deepEqual([run({ streamPin: { by: "local-head, on Alex's word" } }).action, run({ streamPin: { by: 'x' } }).to], ['queue', H]);
 });
+
+test('an assignment recorded as queued, with no dispatch request, gets one when its stream is free (W-482: W-481 R1)', () => {
+  const queued = w('W-481', { phase: 'queued', owner: S2, assignments: [{ id: 'R1', kind: 'implementation', status: 'queued', owner: S2 }] });
+  assert.equal(plan([queued])['W-481']?.action, 'request', 'it does not wait on itself');
+  const behind = plan([queued, w('W-376', { phase: 'implementation', owner: S2, assignments: [{ id: 'R1', kind: 'implementation', status: 'started' }] })]);
+  assert.match(behind['W-481'].reason, /busy with W-376/, 'a busy stream still makes it wait its turn');
+});

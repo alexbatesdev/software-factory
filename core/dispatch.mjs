@@ -6,8 +6,11 @@ import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueO
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
 const pendingDispatch = w => (w.requests || []).some(r => r.type === 'dispatch' && !r.ack);
 const takenUp = w => (w.requests || []).some(r => r.type === 'dispatch' && ['received', 'done'].includes(r.ack?.outcome));
+const runs = w => (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked'].includes(a.status));
+// Queued by assign alone (local-head, the board lead): nobody has been told yet, so it still needs its dispatch request (W-482).
+const unrequested = w => w.phase === 'queued' && !pendingDispatch(w) && !takenUp(w) && !runs(w);
 // A stream is busy while its worker has a job: building or fixing, a live work assignment, or a dispatch not yet acked.
-const active = w => BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && pendingDispatch(w));
+const active = w => (BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && pendingDispatch(w))) && !unrequested(w);
 
 /** A stream with `repos` {name: checkout} (a host stream, TB-159) works only those repos; the sbx streams work everything else. */
 export function canTake(w, label, supervisors) {
@@ -71,7 +74,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && isRunning(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
   for (const [to, why] of cfg.drain || []) runningOn.set(to, why);
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
-  const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && (pendingDispatch(w) || takenUp(w) || live(w))))
+  const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && !unrequested(w)))
     .sort(queueOrder);
   const place = w => {
     const wait = reason => out.push({ id: w.id, action: null, reason });
