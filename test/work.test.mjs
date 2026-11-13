@@ -787,3 +787,12 @@ test("a head on a replacement PR is never assumed to descend from a review of th
   assert.notEqual(reported.lineage?.status, 'assumed');
   assert.equal(capRun(ready, { type: 'head', sha: 'ddd4444' }).phase, 'ready_for_human', 'same PR: still assumed until GitHub says otherwise');
 });
+
+test('a merge closes its record and the jobs still running on it, so no stale worker-stop notice follows (W-462: W-194 R10)', () => {
+  const at = { now: '2026-11-13T01:00:00.000Z' };
+  const w = { ...build(), phase: 'fixes', assignments: [{ id: 'R10', kind: 'fixes', status: 'started', version: 1, owner: 'sup: stream-1', history: [] }] };
+  const d = applyEvent(w, { type: 'merged', prs: [{ url: 'u', state: 'MERGED' }] }, ctx(at)).work;
+  assert.deepEqual([d.phase, d.assignments[0].status], ['done', 'cancelled']);
+  assert.match(d.updates.at(-1).text, /R10 cancelled: its PR merged while it ran/);
+  assert.equal(applyEvent(w, { type: 'merged', prs: [{ url: 'u', state: 'MERGED' }] }, ctx({ now: '2026-11-12T23:37:19.422Z' })).work.assignments[0].status, 'started', 'replay: earlier merges as they were');
+});

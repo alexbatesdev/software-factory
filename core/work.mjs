@@ -137,6 +137,7 @@ export function updateWork(work, fields, ctx) {
 // the PR evidence still supports. Gated for replay.
 const QUESTIONS_KEEP_READY_FROM = '2026-11-12T06:15:00.000Z';
 const PARKED_FIXES_HEAR_FROM = '2026-11-12T20:30:00.000Z';
+const MERGE_CANCELS_JOBS_FROM = '2026-11-13T00:45:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
@@ -399,6 +400,11 @@ export function applyEvent(work, e, ctx) {
       w.completion = { kind: 'merged', prs: e.prs.map(p => ({ url: p.url, mergedAt: p.mergedAt || null })), at: ctx.now, by: ctx.by };
       note(w, ctx, `Done: ${e.prs.map(p => `#${String(p.url).split('/pull/')[1]}`).join(', ')} merged. Not closed in Teamwork.${e.outstanding?.length ? ` Alex merged past: ${e.outstanding.join('; ')}.` : ''}`);
       if (e.outstanding?.length) w.waitingOn = null;
+      if (ctx.now >= MERGE_CANCELS_JOBS_FROM) {
+        const live = (w.assignments || []).filter(x => LIVE_ASSIGNMENT.includes(x.status));
+        for (const x of live) { x.history.push({ status: x.status, at: ctx.now, by: ctx.by }); x.status = 'cancelled'; x.version++; }
+        if (live.length) note(w, ctx, `${live.map(x => x.id).join(', ')} cancelled: its PR merged while it ran. Stop the worker; nothing left to report on this record.`);
+      }
       break;
     }
     case 'alex_review_seen': {
