@@ -110,3 +110,10 @@ test('a cold reader gets the retained report from the factory by its hash, and t
     assert.equal((await fetch(`${base}/api/artifacts/..%2Fetc`)).status, 404);
   } finally { server.close(); }
 });
+
+test('backups come from config: off when disabled, otherwise its folder, interval and days kept (Alex, 11-13)', async () => {
+  const { backupPlan } = await import('../bin/backup.mjs');
+  assert.equal(backupPlan({ backup: { enabled: false, root: '/x' } }, '/h'), null);
+  assert.deepEqual(backupPlan({}, '/h'), { root: '/h/Code/factory-backups', everyMs: 6 * 3600000, keep: 14 });
+  assert.deepEqual(backupPlan({ backup: { root: '~/b', everyHours: 24, keep: 3 } }, '/h'), { root: '/h/b', everyMs: 24 * 3600000, keep: 3 });
+});

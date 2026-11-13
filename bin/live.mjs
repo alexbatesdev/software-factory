@@ -37,7 +37,7 @@ import { planRecycles } from '../core/recycle.mjs';
 import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
 import { readReport } from '../hosts/sbx.mjs';
 import { readFile } from 'node:fs/promises';
-import { backup, verifyBackup } from './backup.mjs';
+import { backup, backupPlan, verifyBackup } from './backup.mjs';
 import { createRuntimeLog } from '../core/runtime-log.mjs';
 import { captureManifests } from '../core/manifest.mjs';
 import { checkConfig } from '../core/preflight.mjs';
@@ -416,13 +416,14 @@ async function manifestTick() {
     harness: stream => { const w = fleet?.units.find(u => u.supervisor?.label === stream)?.worker; return { agent: config.routing.supervisors[stream]?.agent || (w ? 'claude' : null), sandbox: w?.sandbox || null, model: tuned[stream]?.model ?? null, effort: tuned[stream]?.effort ?? null }; } });
 }
 
-// A verified backup of the log and artifacts, one folder per day, the last 14 kept.
+// A verified backup of the log and artifacts, one folder per day; config.backup sets folder, interval, days kept, or off.
+const BACKUP = backupPlan(config);
 async function backupTick() {
   if (DRY) return;
-  const root = (config.backup?.root || '~/Code/factory-backups').replace(/^~/, homedir()), day = now().slice(0, 10);
+  const { root, keep } = BACKUP, day = now().slice(0, 10);
   const r = verifyBackup(backup({ db: DB, root: ARTIFACTS, to: join(root, day) }));
   log(`backup ${day}: ${r.events} events, ${r.artifacts} artifacts${r.problems.length ? `, PROBLEMS: ${r.problems.join('; ')}` : ', verified'}`);
-  for (const d of readdirSync(root).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().slice(0, -14)) rmSync(join(root, d), { recursive: true, force: true });
+  for (const d of readdirSync(root).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().slice(0, -keep)) rmSync(join(root, d), { recursive: true, force: true });
 }
 
 async function recycleTick() {
@@ -516,5 +517,5 @@ every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);
 every(60000, artifactTick);
 every(60000, manifestTick);
-every(6 * 3600000, backupTick);
+if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config.backup.enabled is false)');
 every(60000, seatRestartTick);

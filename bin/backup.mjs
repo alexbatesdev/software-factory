@@ -9,6 +9,13 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openStore } from '../core/store.mjs';
 
+/** Where and how often the server backs up, or null when config turns backups off. */
+export function backupPlan(config, home = homedir()) {
+  const b = config.backup || {};
+  if (b.enabled === false) return null;
+  return { root: (b.root || '~/Code/factory-backups').replace(/^~/, home), everyMs: (b.everyHours || 6) * 3600000, keep: b.keep || 14 };
+}
+
 /** A consistent copy of the live db (VACUUM INTO is safe while the server writes) plus the artifact files. */
 export function backup({ db, root, to }) {
   mkdirSync(to, { recursive: true });
@@ -36,7 +43,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const config = JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8'));
   const v = process.argv.indexOf('--verify');
   const dir = v > 0 ? process.argv[v + 1] : backup({ db: join(ROOT, 'data/factory.db'), root: join(ROOT, 'data/artifacts'),
-    to: join((config.backup?.root || '~/Code/factory-backups').replace(/^~/, homedir()), new Date().toISOString().slice(0, 10)) });
+    to: join(backupPlan({ backup: { ...config.backup, enabled: true } }).root, new Date().toISOString().slice(0, 10)) });
   const r = verifyBackup(dir);
   console.log(JSON.stringify({ dir, ...r }));
   process.exit(r.problems.length ? 1 : 0);
