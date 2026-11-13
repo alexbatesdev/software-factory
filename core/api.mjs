@@ -34,6 +34,11 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
 
   async function act(seat, action, args) {
     const role = roleOf(config, seat);
+    // Briefs name the assignment, so workers pass it (W-477); its stage stays the supervisor's to record.
+    if (role === 'sbx-worker' && action === 'progress' && args.assignmentId) {
+      const { assignmentId, expectedVersion, stage, waitingOn, ...rest } = args;
+      args = { ...rest, text: `${[assignmentId, stage, waitingOn && `waiting on ${waitingOn}`].filter(Boolean).join(', ')}: ${args.text || ''}`.trim() };
+    }
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state, asking = action === 'ask' && !args.withdraw && !args.amend;

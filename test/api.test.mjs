@@ -395,3 +395,19 @@ test('an exit report is kept as a structured record of its run, and still reads 
     assert.deepEqual(f.store.replay().work['W-1'].reports, w.reports, 'replay rebuilds it');
   } finally { f.close(); }
 });
+
+test("a worker's note naming its assignment lands first time, as a note; the stage stays the supervisor's (W-477: W-86 R8)", async () => {
+  const store = openStore(':memory:', { supervisors: [S1] });
+  const server = http.createServer(createApi({ store, config: { ...config, routing: { supervisors: { [S1]: { worker: 'sbx: stream-1' } } } }, now: () => '2026-11-13T18:25:00.000Z' }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const act = async args => { const r = await fetch(`http://127.0.0.1:${server.address().port}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-seat': 'sbx: stream-1', 'x-factory': '1' }, body: JSON.stringify({ action: 'progress', args: { work: 'W-1', ...args } }) }); return [r.status, await r.json()]; };
+  try {
+    started({ store });
+    const [code, body] = await act({ assignmentId: 'R2', expectedVersion: 1, stage: 'blocked', waitingOn: 'TB-9', text: 'specs green, pushing' });
+    assert.equal(code, 200, JSON.stringify(body));
+    const w = store.state.work['W-1'];
+    assert.equal(w.assignments[0].status, 'started', 'only the supervisor records stages');
+    assert.ok(!w.waitingOn, 'a worker note never parks the record');
+    assert.match(w.updates.at(-1).text, /R2.*blocked.*TB-9.*specs green, pushing/);
+  } finally { server.close(); }
+});
