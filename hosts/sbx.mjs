@@ -37,7 +37,8 @@ export function parsePreflight(out) {
 // Workers push by HTTPS URL (SSH is blocked in the VM), which never updates origin/* refs, so "pushed" is asked of GitHub:
 // HEAD is a branch tip there, inside its branch, or inside main (merged, branch deleted). Build output and spamton-* don't count.
 // Prints `<path>\t<dirty>\t<ok|replaced|unpushed>\t<days since HEAD's commit>` per worktree.
-const PREFLIGHT = `cd "$WORKSPACE_DIR" 2>/dev/null || cd /Users/alex.bates/Code/repos/built-rails-a
+const BUILT_RAILS_SBX = '/Users/alex.bates/Code/repos/built-rails-a';
+const PREFLIGHT = `cd "$WORKSPACE_DIR" 2>/dev/null || cd ${BUILT_RAILS_SBX}
 url=$(git remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#')
 heads=$(git ls-remote --heads "$url" 2>/dev/null)
 git fetch -q "$url" main:refs/factory/main </dev/null 2>/dev/null
@@ -60,6 +61,17 @@ export function parseHealth(out, nowMs = Date.now()) {
 
 /** Disk use, then the elapsed seconds of the sandbox's oldest `agent` process (its interactive session). */
 export const healthCmd = (agent = 'claude') => `df -P /; echo --; p=$(pgrep -o -x ${agent}) && ps -o etimes= -p "$p"; true`;
+
+/** A report a review linked by a checkout-relative path: the first worktree in the sandbox that has it. */
+export const reportCmd = rel => `cd "$WORKSPACE_DIR" 2>/dev/null || cd ${BUILT_RAILS_SBX}
+for d in $(git worktree list --porcelain | sed -n 's/^worktree //p'); do [ -f "$d/${rel}" ] && { echo "$d/${rel}"; base64 < "$d/${rel}" | tr -d '\\n'; exit 0; }; done; exit 3`;
+export async function readReport(sandbox, rel) {
+  if (!/^[\w./-]+$/.test(rel) || rel.includes('..')) throw new Error(`${rel} is not a checkout path`);
+  const { stdout } = await run('sbx', ['exec', sandbox, 'bash', '-lc', reportCmd(rel)], { timeout: 60000, maxBuffer: 16 << 20 })
+    .catch(e => { throw new Error(e.code === 3 ? `${rel} is in no worktree of ${sandbox}` : e.message); });
+  const [found, b64 = ''] = stdout.split('\n');
+  return { found, bytes: Buffer.from(b64, 'base64') };
+}
 
 export async function health(worker) {
   // A pane back at its shell has no agent, whatever the sandbox says (a start that died, e.g. Codex at bootstrap).

@@ -3,7 +3,7 @@
 // Run: FACTORY_MODE=live node --env-file="$HOME/Code/repos/teamwork mini mcp/.env" bin/live.mjs
 if (process.env.FACTORY_MODE !== 'live') { console.error('Refusing to run: set FACTORY_MODE=live.'); process.exit(2); }
 import { homedir } from 'node:os';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import http from 'node:http';
 import { dirname, join } from 'node:path';
@@ -34,6 +34,10 @@ import { createLogWake } from '../wake/log.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles } from '../core/recycle.mjs';
+import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
+import { readReport } from '../hosts/sbx.mjs';
+import { readFile } from 'node:fs/promises';
+import { backup, verifyBackup } from './backup.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
 import { rerequestPlan } from '../core/rerequest.mjs';
 import { syncStandards } from '../hosts/standards.mjs';
@@ -46,6 +50,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const config = JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8'));
 const supervisors = Object.keys(config.routing.supervisors);
 const DB = process.env.FACTORY_DB || join(ROOT, 'data/factory.db');
+const ARTIFACTS = join(dirname(DB), 'artifacts'), CODE = join(homedir(), 'Code') + '/';
 const LOG = join(dirname(DB), 'live.log');
 const run = promisify(execFile);
 const gh = DRY ? { ...liveGh, ready: async url => { throw new Error(`dry run: would mark ${url} ready`); } } : liveGh;
@@ -348,7 +353,7 @@ async function fleetTick() {
   } catch (e) { log(`fleet: ${e.message}`); }
 }
 
-http.createServer(createApi({ store, config, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, onMain: async (repo, m) => {
+http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, onMain: async (repo, m) => {
   // W-435: is this line of code in this file at this commit, and is that commit on origin/main?
   const dir = repo === 'built-rails' ? join(homedir(), 'Code/repos/built-rails-a') : Object.values(config.routing.supervisors).map(s => s.repos?.[repo]).find(Boolean)?.replace(/^~/, homedir());
   if (!dir) return true; // ponytail: a repo with no checkout here can't be checked; the fields are still required
@@ -382,6 +387,23 @@ http.createServer(async (req, res) => {
 }).listen(SANDBOX_PORT, '127.0.0.1', () => log(`sandbox MCP on http://127.0.0.1:${SANDBOX_PORT}/mcp`));
 
 // Read each worker's disk, drain full ones, and cycle a drained worker once it is between tasks.
+// Evolution phase 1 step 2: each review's linked report is copied into data/artifacts by its hash.
+async function artifactTick(only) {
+  if (DRY) return;
+  await retainArtifacts(store, { root: ARTIFACTS, now, only,
+    readHost: p => { const abs = p.replace(/^~\//, `${homedir()}/`); if (!abs.startsWith(CODE) || abs.includes('/../')) throw new Error(`${p} is outside ~/Code`); return readFile(abs); },
+    readSandbox: (stream, rel) => { const sb = fleet?.units.find(u => u.supervisor?.label === stream)?.worker?.sandbox; if (!sb) throw new Error(`no sandbox found for ${stream}`); return readReport(sb, rel); } });
+}
+
+// A verified backup of the log and artifacts, one folder per day, the last 14 kept.
+async function backupTick() {
+  if (DRY) return;
+  const root = (config.backup?.root || '~/Code/factory-backups').replace(/^~/, homedir()), day = now().slice(0, 10);
+  const r = verifyBackup(backup({ db: DB, root: ARTIFACTS, to: join(root, day) }));
+  log(`backup ${day}: ${r.events} events, ${r.artifacts} artifacts${r.problems.length ? `, PROBLEMS: ${r.problems.join('; ')}` : ', verified'}`);
+  for (const d of readdirSync(root).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().slice(0, -14)) rmSync(join(root, d), { recursive: true, force: true });
+}
+
 async function recycleTick() {
   if (!host || !fleet) return;
   for (const u of fleet.units.filter(u => supervisors.includes(u.supervisor?.label) && (u.worker?.sandbox || RC.host !== 'sbx'))) {
@@ -414,6 +436,9 @@ async function recycleTick() {
       else restartFailedAt[d.unit] = Date.now(), tell(config.boardLead?.seat || 'board lead', { restartFailed: `${d.worker.label}/${now()}` }, `Restarting ${d.worker.label} between jobs failed: ${r.detail}. File it as a factory record if it repeats.`);
       continue;
     }
+    // Its reviews' reports are copied out first; a sandbox that still holds one isn't removed.
+    await artifactTick(w => w.stream === d.to);
+    if (unretainedStreams(store.state).has(d.to)) { once(`recycle ${d.worker.label}: waiting to copy its review reports`); continue; }
     const found = await host.preflight(d.worker).catch(e => [{ path: '(preflight)', problem: e.message, blocking: true }]);
     const problems = found.filter(p => p.blocking), dropped = found.filter(p => !p.blocking).map(p => `${p.path}: ${p.problem}`).join('; ');
     if (problems.length) {
@@ -467,4 +492,6 @@ every(config.poll.githubMs, githubTick);
 every(config.poll.githubMs, rerequestTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);
+every(60000, artifactTick);
+every(6 * 3600000, backupTick);
 every(60000, seatRestartTick);

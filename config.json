@@ -219,5 +219,9 @@
     "healthMs": 300000,
     "restartStale": true,
     "_restartStale": "Restart a worker fresh between jobs (same sandbox). W-198: the sandbox marks the auto-mode offer seen, and the unblocker declines it if it still shows (Alex, 11-06)."
+  },
+  "backup": {
+    "root": "~/Code/factory-backups",
+    "_root": "Evolution phase 1 step 2: verified copies of data/factory.db and data/artifacts, one folder per day, 14 kept. Same disk as the factory: point it off-machine for disaster recovery."
   }
 }

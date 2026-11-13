@@ -60,7 +60,7 @@ export function createMcp({ config, seatOf, api }) {
     if (name === 'read') {
       const s = await api.get('/api/state', seat), q = args.question || (/^TB-\d+$/.test(args.work || '') ? args.work : null);
       if (q) return text(s.questions[q] ? { id: q, ...s.questions[q] } : `There is no ${q}.`);
-      return text(args.work ? s.work[args.work] || `There is no ${args.work}.` : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) });
+      return text(args.work ? (s.work[args.work] ? { ...s.work[args.work], artifacts: Object.values(s.artifacts || {}).filter(a => a.work === args.work).map(a => ({ ...a, url: a.sha256 ? `/api/artifacts/${a.sha256}` : null })) } : `There is no ${args.work}.`) : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) });
     }
     if (name === 'questions') {
       const s = await api.get('/api/state', seat);

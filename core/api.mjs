@@ -3,7 +3,8 @@
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
 import { refusal, isTrustedReviewSeat, ROLES } from './capabilities.mjs';
 import { commandsFor } from './actions.mjs';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { boardView } from '../views/board.mjs';
 import { reachesAlex } from './derive.mjs';
 import { supportOf, prGateView } from './store.mjs';
@@ -24,7 +25,7 @@ export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config
  * @param readOnly the shadow runner serves the page and reads only; every write is refused
  * @param observed () => {units, prs} from the latest fleet and GitHub reads, for the views
  */
-export function createApi({ store, config, gh = null, tw = null, awsHost = null, onMain = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}) }) {
+export function createApi({ store, config, gh = null, tw = null, awsHost = null, onMain = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}), artifactRoot = null }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -115,7 +116,9 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       const url = new URL(req.url, 'http://127.0.0.1');
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'Local requests only.' });
       const seat = req.headers['x-seat'];
-      if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq } = store.state; return send(res, 200, { work, questions, messages, seq }); }
+      if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq, artifacts = {} } = store.state; return send(res, 200, { work, questions, messages, seq, artifacts }); }
+      const art = req.method === 'GET' && /^\/api\/artifacts\/([0-9a-f]{64})$/.exec(url.pathname)?.[1];
+      if (art && artifactRoot && existsSync(join(artifactRoot, art.slice(0, 2), art))) { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(readFileSync(join(artifactRoot, art.slice(0, 2), art))); }
       // Vendored page libraries (markdown for review-thread messages), by exact name only.
       const vendor = req.method === 'GET' && /^\/vendor\/([\w.-]+\.js)$/.exec(url.pathname)?.[1];
       if (vendor && VENDOR.includes(vendor)) { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'max-age=86400' }); return res.end(readFileSync(new URL(`../views/vendor/${vendor}`, import.meta.url))); }
