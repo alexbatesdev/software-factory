@@ -39,6 +39,9 @@ import { readReport } from '../hosts/sbx.mjs';
 import { readFile } from 'node:fs/promises';
 import { backup, verifyBackup } from './backup.mjs';
 import { createRuntimeLog } from '../core/runtime-log.mjs';
+import { captureManifests } from '../core/manifest.mjs';
+import { checkConfig } from '../core/preflight.mjs';
+import { ROLES } from '../core/capabilities.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
 import { rerequestPlan } from '../core/rerequest.mjs';
 import { syncStandards } from '../hosts/standards.mjs';
@@ -65,10 +68,15 @@ const by = name => ({ now: now(), by: name });
 const apply = (cmds, who) => { for (const c of cmds) try { store.append(c, by(who)); } catch (e) { log(`refused ${c.kind} ${c.target || ''}: ${e.message}`); } };
 
 mkdirSync(dirname(DB), { recursive: true });
+// Config preflight: problems are said at start, and to the board lead; the factory still starts.
+const CONFIG_PROBLEMS = checkConfig(config, { roles: ROLES, exists: existsSync, home: homedir() });
 const store = openStore(DB, { supervisors });
 // What the factory leaves alone this tick: the exclude list, plus support records while Alex has support paused.
 const skipped = () => ({ exclude: skippedIds(store.state, config) });
 log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
+for (const p of CONFIG_PROBLEMS) log(`config preflight: ${p}`);
+if (CONFIG_PROBLEMS.length && !DRY) { const key = createHash('sha256').update(CONFIG_PROBLEMS.join('\n')).digest('hex').slice(0, 12);
+  if (!Object.values(store.state.messages).some(m => m.about?.configPreflight === key)) store.append({ kind: 'message', payload: { to: config.boardLead?.seat || 'board lead', about: { configPreflight: key }, text: `[software factory] config.json preflight found ${CONFIG_PROBLEMS.length} problem(s): ${CONFIG_PROBLEMS.join('; ')}. File a factory record for the board developer.` } }, by('board')); }
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
@@ -397,6 +405,17 @@ async function artifactTick(only) {
     readSandbox: (stream, rel) => { const sb = fleet?.units.find(u => u.supervisor?.label === stream)?.worker?.sandbox; if (!sb) throw new Error(`no sandbox found for ${stream}`); return readReport(sb, rel); } });
 }
 
+// What each started run ran with: harness, config, factory version and the instruction files, kept by hash.
+const FACTORY_VERSION = await run('git', ['-C', ROOT, 'rev-parse', '--short', 'HEAD']).then(r => r.stdout.trim(), () => null);
+const INSTRUCTIONS = { 'stream-supervisor role': '~/Code/.claude/agents/stream-supervisor.md', 'definition of done': '~/Code/plans/standards/DEFINITION_OF_DONE.md',
+  'internal review (claude)': '~/.claude/skills/internal-review/SKILL.md', 'internal review (codex)': '~/Code/plans/standards/internal-review-codex.md' };
+async function manifestTick() {
+  if (DRY) return;
+  await captureManifests(store, { root: ARTIFACTS, now, home: homedir(), factoryVersion: FACTORY_VERSION, config: readFileSync(join(ROOT, 'config.json'), 'utf8'),
+    instructions: Object.fromEntries(Object.entries(INSTRUCTIONS).map(([k, p]) => [k, p.replace(/^~/, homedir())])), read: p => readFile(p),
+    harness: stream => { const w = fleet?.units.find(u => u.supervisor?.label === stream)?.worker; return { agent: config.routing.supervisors[stream]?.agent || (w ? 'claude' : null), sandbox: w?.sandbox || null, model: tuned[stream]?.model ?? null, effort: tuned[stream]?.effort ?? null }; } });
+}
+
 // A verified backup of the log and artifacts, one folder per day, the last 14 kept.
 async function backupTick() {
   if (DRY) return;
@@ -496,5 +515,6 @@ every(config.poll.githubMs, rerequestTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);
 every(60000, artifactTick);
+every(60000, manifestTick);
 every(6 * 3600000, backupTick);
 every(60000, seatRestartTick);

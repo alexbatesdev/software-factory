@@ -11,6 +11,7 @@ import { foldThread, THREAD_KINDS } from './threads.mjs';
 import { foldTaskRequest, TASK_KINDS } from './task-requests.mjs';
 import { foldAwsRequest, AWS_KINDS } from './aws-access.mjs';
 import { foldArtifact, ARTIFACT_KINDS } from './artifacts.mjs';
+import { foldManifest, MANIFEST_KINDS } from './manifest.mjs';
 
 // Reducer inputs that describe the outside world at decision time. Anything derivable from the log is not stored.
 const OBSERVED = ['now', 'by', 'prHead', 'prState', 'verifiedPrs', 'standingWaiver'];
@@ -103,6 +104,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   if (TASK_KINDS.includes(kind)) { const t = foldTaskRequest(state, row); state.seq = row.seq; return t; }
   if (AWS_KINDS.includes(kind)) { const t = foldAwsRequest(state, row); state.seq = row.seq; return t; }
   if (ARTIFACT_KINDS.includes(kind)) { const t = foldArtifact(state, row); state.seq = row.seq; return t; }
+  if (MANIFEST_KINDS.includes(kind)) { const t = foldManifest(state, row); state.seq = row.seq; return t; }
   if (kind === 'support_pause') { state.supportPause = payload.paused ? { at: observed.now, by: observed.by } : null; state.seq = row.seq; return null; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
   if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close', 'question_amend'].includes(kind)) {

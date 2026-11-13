@@ -30,6 +30,14 @@ export function foldArtifact(state, { payload: p, ctx }) {
   return p.key;
 }
 
+/** Writes bytes under root by their sha256 (once) and returns the hash. */
+export function storeBytes(root, bytes) {
+  const sha256 = createHash('sha256').update(bytes).digest('hex'), dir = join(root, sha256.slice(0, 2));
+  if (!existsSync(join(dir, sha256))) { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, sha256), bytes); }
+  return sha256;
+}
+export const looksSecret = bytes => SECRET.test(Buffer.from(bytes).toString('utf8'));
+
 const keyOf = (w, r) => `${w.id}@${r.head}:${r.link}`;
 
 /** Reviews since ARTIFACTS_FROM whose link has no settled artifact yet (failed ones until MAX_ATTEMPTS). */
@@ -58,9 +66,8 @@ export async function retainArtifacts(store, io) {
       const got = at.from === 'host' ? { bytes: await io.readHost(at.path), found: at.path } : await io.readSandbox(w.stream, at.path);
       const bytes = Buffer.from(got.bytes);
       if (bytes.length > MAX_BYTES) { record({ status: 'failed', detail: `${bytes.length} bytes is over the ${MAX_BYTES}-byte limit` }); continue; }
-      if (SECRET.test(bytes.toString('utf8'))) { record({ status: 'withheld', found: got.found, detail: 'looks like it holds a credential; not stored' }); continue; }
-      const sha256 = createHash('sha256').update(bytes).digest('hex'), dir = join(io.root, sha256.slice(0, 2));
-      if (!existsSync(join(dir, sha256))) { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, sha256), bytes); }
+      if (looksSecret(bytes)) { record({ status: 'withheld', found: got.found, detail: 'looks like it holds a credential; not stored' }); continue; }
+      const sha256 = storeBytes(io.root, bytes);
       record({ status: 'retained', sha256, bytes: bytes.length, found: got.found });
     } catch (e) { record({ status: 'failed', detail: String(e.message).slice(0, 300) }); }
   }
