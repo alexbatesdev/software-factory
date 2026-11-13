@@ -38,6 +38,7 @@ import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
 import { readReport } from '../hosts/sbx.mjs';
 import { readFile } from 'node:fs/promises';
 import { backup, verifyBackup } from './backup.mjs';
+import { createRuntimeLog } from '../core/runtime-log.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
 import { rerequestPlan } from '../core/rerequest.mjs';
 import { syncStandards } from '../hosts/standards.mjs';
@@ -57,7 +58,8 @@ const gh = DRY ? { ...liveGh, ready: async url => { throw new Error(`dry run: wo
 const wake = DRY ? createLogWake(join(dirname(DB), 'would-wake.jsonl')) : (await import('../wake/herdr.mjs')).wake;
 const PORT = Number(process.env.FACTORY_PORT || 4848);
 const now = () => new Date().toISOString();
-const log = (...a) => { console.log(now().slice(11, 19), ...a); appendFileSync(LOG, `${now()} ${a.join(' ')}\n`); };
+const runtime = createRuntimeLog(join(dirname(DB), 'runtime.jsonl'), { now, warn: m => log(m) });
+const log = (...a) => { console.log(now().slice(11, 19), ...a); appendFileSync(LOG, `${now()} ${a.join(' ')}\n`); runtime.line(a.join(' ')); };
 const by = name => ({ now: now(), by: name });
 // One command at a time: a refused observation is logged and the rest still land.
 const apply = (cmds, who) => { for (const c of cmds) try { store.append(c, by(who)); } catch (e) { log(`refused ${c.kind} ${c.target || ''}: ${e.message}`); } };
@@ -482,7 +484,8 @@ async function seatRestartTick() {
 }
 
 // A tick still running skips the next; one slower than a minute is logged so a stalled loop names itself.
-const every = (ms, fn) => { let running = false; const run = async () => { if (running) return; running = true; const t0 = Date.now(); try { await fn(); } catch (e) { log(e.message); } finally { running = false; if (Date.now() - t0 > 60000) log(`slow tick: ${fn.name || 'tick'} took ${Math.round((Date.now() - t0) / 1000)}s`); } }; run(); setInterval(run, ms); };
+const every = (ms, fn) => { let running = false; const run = async () => { if (running) return; running = true; const t0 = Date.now(); let err; try { await fn(); } catch (e) { err = e; log(e.message); } finally { running = false; runtime.tick(fn.name || 'tick', Date.now() - t0, err); if (Date.now() - t0 > 60000) log(`slow tick: ${fn.name || 'tick'} took ${Math.round((Date.now() - t0) / 1000)}s`); } }; run(); setInterval(run, ms); };
+setInterval(runtime.flush, 3600000);
 await fleetTick();
 every(config.poll.fleetMs, fleetTick);
 every(config.notify?.intervalMs ?? 15000, inboxTick);
