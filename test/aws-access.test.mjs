@@ -10,11 +10,11 @@ import { obsHosts } from '../core/aws-access.mjs';
 const SUP = 'sup: stream-1', T = '2026-11-11T22:00:00.000Z', SB = 'herdr-claude-code-ad7960e5d7f2';
 const config = { roles: { 'triage board worker': 'board-developer' }, routing: { supervisors: { [SUP]: {} } } };
 const SCRIPT = 'x\npermissions:\n  network:\n    allow:\n      - sts.us-east-1.amazonaws.com\n      - logs.us-east-1.amazonaws.com\n      - sentry.io\nYAML\n';
-const ask = { work: 'W-1', sandbox: SB, why: 'Kyverna: read the Lever refusal in production logs' };
+const ask = { work: 'W-1', sandbox: SB, why: 'Globex: read the Lever refusal in production logs' };
 
 async function serve(host, now = () => T) {
   const store = openStore(':memory:', { supervisors: [SUP] });
-  store.append({ kind: 'create', payload: { title: 'Kyverna', stream: SUP } }, { now: T, by: 'test' });
+  store.append({ kind: 'create', payload: { title: 'Globex', stream: SUP } }, { now: T, by: 'test' });
   const server = http.createServer(createApi({ store, config, awsHost: host, now }));
   await new Promise(ok => server.listen(0, '127.0.0.1', ok));
   const base = `http://127.0.0.1:${server.address().port}`;

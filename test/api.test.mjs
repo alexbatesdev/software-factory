@@ -76,7 +76,7 @@ const started = f => f.store.appendAll([
   ...['ready', 'queued'].map(to => ({ kind: 'event', target: 'W-1', payload: { type: 'transition', to } })),
   { kind: 'event', target: 'W-1', payload: { type: 'assign', assignmentId: 'R2', kind: 'implementation', status: 'started', owner: S1, evidence: 'brief' } },
 ], { now: 'n', by: 'test' });
-const PRURL = 'https://github.com/builtforteams/built-rails/pull/1';
+const PRURL = 'https://github.com/acme-org/app/pull/1';
 const REPORT = { changed: 'c', proven: 'p', unverified: 'nothing', risk: 'none' };
 
 test('done is checked against a fresh GitHub read of the PR head', async () => {
@@ -130,7 +130,7 @@ test('an approval wait is checked against a fresh GitHub read: draft or moved PR
 test('create cannot set correlation or ownership fields', async () => {
   const f = await serveWith({});
   try {
-    await f.act('board lead', 'create', { title: 'x', aliases: ['built-rails-9000'], owner: S1, parent: 'W-9', links: { pr: PRURL, source: 'https://x' } });
+    await f.act('board lead', 'create', { title: 'x', aliases: ['app-9000'], owner: S1, parent: 'W-9', links: { pr: PRURL, source: 'https://x' } });
     const w = f.store.state.work['W-1'];
     assert.deepEqual([w.aliases, w.owner, w.parent, w.links], [[], null, null, { source: 'https://x' }]);
   } finally { f.close(); }
@@ -296,15 +296,15 @@ test("a record-level wait on Alex is refused while the record has an open questi
 test('done replacesPr must name the PR the record carries (W-371)', async () => {
   const f = await serve();
   try {
-    await f.act('local-head', 'create', { title: 'OSUP' });
-    f.store.state.work['W-1'].links.pr = 'https://github.com/builtforteams/built-rails/pull/1';
-    const [code, body] = await f.act(S1, 'done', { work: 'W-1', pr: 'https://github.com/builtforteams/built-rails/pull/3', replacesPr: 'https://github.com/builtforteams/built-rails/pull/2', head: 'abc1234' });
+    await f.act('local-head', 'create', { title: 'ACME' });
+    f.store.state.work['W-1'].links.pr = 'https://github.com/acme-org/app/pull/1';
+    const [code, body] = await f.act(S1, 'done', { work: 'W-1', pr: 'https://github.com/acme-org/app/pull/3', replacesPr: 'https://github.com/acme-org/app/pull/2', head: 'abc1234' });
     assert.equal(code, 409); assert.match(body.error, /pull\/1/);
   } finally { f.close(); }
 });
 
 test("a finished record whose own PR GitHub shows closed unmerged can be closed by triage, freeing its stream (W-378: W-288, #8642 closed, work carried by W-271's #8635)", async () => {
-  const PR = 'https://github.com/builtforteams/built-rails/pull/8642';
+  const PR = 'https://github.com/acme-org/app/pull/8642';
   let state = 'OPEN';
   const f = await serveWith({ readPr: async url => ({ url, head: 'aaa1111', state, isDraft: false }) });
   try {
@@ -324,7 +324,7 @@ test("a finished record whose own PR GitHub shows closed unmerged can be closed 
 test("a second fixes assignment on a PR another record is already fixing is refused (W-377: #8363 queued on two streams)", async () => {
   const f = await serve();
   try {
-    const PR = 'https://github.com/builtforteams/built-rails/pull/8363';
+    const PR = 'https://github.com/acme-org/app/pull/8363';
     await f.act('local-head', 'create', { title: 'W-76 shape' }); await f.act('local-head', 'create', { title: 'W-152 shape' });
     for (const id of ['W-1', 'W-2']) f.store.state.work[id].links.pr = PR;
     f.store.state.work['W-1'].assignments = [{ id: 'R1', kind: 'fixes', status: 'started', owner: S1, version: 1 }];
@@ -375,7 +375,7 @@ test('a review discovery claimed as pre-existing on main must show the faulty co
     assert.equal(code, 409, 'the quoted code is not on main at that sha'); assert.match(body.error, /isn't on origin\/main/);
     assert.equal((await act({ ...d, onMain: { sha: 'a5b21fd', path: 'app/adp_workers_adapter.rb', code: 'reject_terminated(worker)' } }))[0], 200);
     assert.equal((await act({ discovery: 'A new edge case', text: 'Found while testing.' }))[0], 200, 'a discovery that claims nothing about main needs no proof');
-    assert.deepEqual(seen[0], ['built-rails', 'a5b21fd', 'app/adp_workers_adapter.rb']);
+    assert.deepEqual(seen[0], [(await import('../core/work.mjs')).DEFAULT_REPO, 'a5b21fd', 'app/adp_workers_adapter.rb']);
   } finally { server.close(); }
 });
 

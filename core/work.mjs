@@ -39,8 +39,10 @@ export const COVERAGE_BLOCKS_QUEUE = ['open-pr', 'unknown'];
 // A new PR nobody asked for waits for Alex's go (Alex, 11-09): work that will open one, from a source he hasn't trusted.
 // Only `repos` go through PRs (no repo is built-rails); Alex's own tooling commits to main.
 // Support work (W-329) and work carrying out Alex's own answer (W-333) were asked for: `support`/`asked` come from store.mjs prGateView.
+/** The repo a record with none set works in. */
+export const DEFAULT_REPO = 'built-rails';
 export const needsPrApproval = (w, { trusted = ['teamwork'], repos } = {}) => ['build', 'pr-feedback'].includes(w.kind) && !w.links?.pr && !w.prApproval && !w.support && !w.asked
-  && (!repos || repos.includes(w.repo || 'built-rails')) && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
+  && (!repos || repos.includes(w.repo || DEFAULT_REPO)) && !trusted.some(t => t === w.source?.type || t === `${w.source?.type}:${w.source?.by}`);
 
 /** An unstarted record a stream would take, held for Alex's new-PR go: the Approvals list and its card both read this. */
 export const wouldAwaitPrApproval = (w, cfg) => !(w.assignments || []).length && (!w.owner || /^sup: /.test(w.owner)) && needsPrApproval(w, cfg);

@@ -1,10 +1,11 @@
+import { DEFAULT_REPO } from '../core/work.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { prKey, isPrUnit, unitsOf, groupIndex } from '../core/units.mjs';
 
-const PR = n => `https://github.com/builtforteams/built-rails/pull/${n}`;
+const PR = n => `https://github.com/acme-org/app/pull/${n}`;
 const works = {
-  'W-86': { id: 'W-86', kind: 'pr-feedback', source: { type: 'pr', key: 'built-rails-8244' }, links: { pr: PR(8244) } },
+  'W-86': { id: 'W-86', kind: 'pr-feedback', source: { type: 'pr', key: 'app-8244' }, links: { pr: PR(8244) } },
   'W-75': { id: 'W-75', kind: 'build', source: { type: 'agent' }, links: { pr: PR(8355) } },
   'W-60': { id: 'W-60', kind: 'build', source: { type: 'teamwork', key: 'tw-1' }, links: { pr: PR(8244) } },
   'W-85': { id: 'W-85', kind: 'build', source: { type: 'teamwork', key: 'tw-2' }, links: {}, related: [{ to: 'W-86', kind: 'same-work' }] },
@@ -13,10 +14,10 @@ const works = {
   'W-9': { id: 'W-9', kind: 'build', source: { type: 'teamwork', key: 'tw-5' }, links: {} },
   'W-120': { id: 'W-120', kind: 'build', source: { type: 'agent' }, links: {}, parent: 'W-86' },
 };
-const bySource = { 'built-rails-8244': 'W-86', 'built-rails-8355': 'W-75', 'built-rails-8239': 'W-41' };
+const bySource = { 'app-8244': 'W-86', 'app-8355': 'W-75', 'app-8239': 'W-41' };
 
 test('a PR unit is the PR-shaped record holding the PR; a task holding a PR key is not one', () => {
-  assert.equal(prKey(PR(8244)), 'built-rails-8244');
+  assert.equal(prKey(PR(8244)), 'app-8244');
   assert.deepEqual(['W-86', 'W-75', 'W-60', 'W-41'].map(id => isPrUnit(works[id], bySource)), [true, true, false, false]);
 });
 
@@ -58,7 +59,7 @@ test("Alex merging past a wait or an open question closes the record and names w
 
 test('a task record that holds its own PR, with no PR record of its own, closes when that PR merges (W-149 #8487)', () => {
   const ws = { 'W-149': { id: 'W-149', phase: 'fixes', source: { type: 'teamwork', key: 'tw-1' }, links: { pr: PR(8487) } } };
-  const run = state => mergeCloses(ws, { 'tw-1': 'W-149', 'built-rails-8487': 'W-149' }, { prState: u => state, openQuestions: () => 0, track: () => 'stream' });
+  const run = state => mergeCloses(ws, { 'tw-1': 'W-149', 'app-8487': 'W-149' }, { prState: u => state, openQuestions: () => 0, track: () => 'stream' });
   assert.deepEqual(run('MERGED').map(c => [c.id, c.prs]), [['W-149', [PR(8487)]]]);
   assert.deepEqual(run('OPEN'), []);
 });
@@ -66,12 +67,12 @@ test('a task record that holds its own PR, with no PR record of its own, closes 
 import { holdReleases } from '../core/units.mjs';
 test('a merge hold is released when its PR merges, and only then', () => {
   const ws = { 'W-1': { id: 'W-1', phase: 'intake', repo: null, externalDeps: [{ pr: '#8606' }, { text: 'a person' }] }, 'W-2': { id: 'W-2', phase: 'done', externalDeps: [{ pr: '#8606' }] } };
-  const url = 'https://github.com/builtforteams/built-rails/pull/8606';
-  assert.deepEqual(holdReleases(ws, 'builtforteams').urls, [url]);
-  assert.deepEqual(holdReleases(ws, 'builtforteams', u => (u === url ? 'MERGED' : null)).released, [{ id: 'W-1', pr: '#8606' }]);
-  assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'OPEN').released, []);
-  assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'CLOSED').released, []);
-  assert.deepEqual(holdReleases(ws, 'builtforteams', () => 'CLOSED').closed, [{ id: 'W-1', pr: '#8606' }], 'a PR closed unmerged is reported, never released');
+  const url = `https://github.com/acme-org/${DEFAULT_REPO}/pull/8606`;
+  assert.deepEqual(holdReleases(ws, 'acme-org').urls, [url]);
+  assert.deepEqual(holdReleases(ws, 'acme-org', u => (u === url ? 'MERGED' : null)).released, [{ id: 'W-1', pr: '#8606' }]);
+  assert.deepEqual(holdReleases(ws, 'acme-org', () => 'OPEN').released, []);
+  assert.deepEqual(holdReleases(ws, 'acme-org', () => 'CLOSED').released, []);
+  assert.deepEqual(holdReleases(ws, 'acme-org', () => 'CLOSED').closed, [{ id: 'W-1', pr: '#8606' }], 'a PR closed unmerged is reported, never released');
 });
 
 import { questionHolds } from '../core/units.mjs';
@@ -86,26 +87,26 @@ test('a question hold is released when Alex answers, and reported (never release
 
 import { watchedPrs } from '../core/units.mjs';
 test("the poll reads every PR a live record's merge-close depends on, including a finished unit's (W-51: #8265's record was done, so the task never closed)", () => {
-  const PR = n => `https://github.com/builtforteams/built-rails/pull/${n}`;
-  const ws = { 'W-51': { id: 'W-51', phase: 'awaiting_human_approval', links: { pr: PR(8282) }, coverage: { state: 'open-pr', prs: [{ url: PR(8265) }, { url: PR(8282) }] } }, 'W-99': { id: 'W-99', phase: 'done', parent: 'W-51', links: { pr: PR(8282) }, source: { type: 'pr', key: 'built-rails-8282' } },
-    'W-101': { id: 'W-101', phase: 'done', parent: 'W-51', links: { pr: PR(8265) }, source: { type: 'pr', key: 'built-rails-8265' } }, 'W-7': { id: 'W-7', phase: 'done', links: { pr: PR(1) } } };
-  const bySource = { 'built-rails-8282': 'W-99', 'built-rails-8265': 'W-101' };
+  const PR = n => `https://github.com/acme-org/app/pull/${n}`;
+  const ws = { 'W-51': { id: 'W-51', phase: 'awaiting_human_approval', links: { pr: PR(8282) }, coverage: { state: 'open-pr', prs: [{ url: PR(8265) }, { url: PR(8282) }] } }, 'W-99': { id: 'W-99', phase: 'done', parent: 'W-51', links: { pr: PR(8282) }, source: { type: 'pr', key: 'app-8282' } },
+    'W-101': { id: 'W-101', phase: 'done', parent: 'W-51', links: { pr: PR(8265) }, source: { type: 'pr', key: 'app-8265' } }, 'W-7': { id: 'W-7', phase: 'done', links: { pr: PR(1) } } };
+  const bySource = { 'app-8282': 'W-99', 'app-8265': 'W-101' };
   assert.deepEqual(watchedPrs(ws, bySource).sort(), [PR(8265), PR(8282)]);
 });
 
 import { derivedCtx } from '../core/store.mjs';
 test('a job parked on a PR clears only once that PR merges, and the PR is polled (W-317 phase 2)', () => {
-  const url = 'https://github.com/builtforteams/built-rails/pull/8606';
+  const url = `https://github.com/acme-org/${DEFAULT_REPO}/pull/8606`;
   const job = waitingOn => ({ id: 'W-1', phase: 'implementation', assignments: [{ id: 'R1', kind: 'implementation', status: 'blocked', version: 2, waitingOn }] });
   const state = waitingOn => ({ work: { 'W-1': job(waitingOn) }, questions: {} });
-  const cleared = (waitingOn, prState) => derivedCtx(state(waitingOn), 'W-1', { owner: 'builtforteams', prState })?.parked[0];
+  const cleared = (waitingOn, prState) => derivedCtx(state(waitingOn), 'W-1', { owner: 'acme-org', prState })?.parked[0];
   assert.equal(cleared('#8606', u => (u === url ? 'MERGED' : null)).cleared, true);
   assert.match(cleared('#8606', u => (u === url ? 'MERGED' : null)).why, /#8606 merged/);
   assert.equal(cleared(url, u => (u === url ? 'MERGED' : null)).cleared, true, 'a full PR URL works too');
   assert.equal(cleared('#8606', () => 'OPEN').cleared, false, 'still open: stays parked');
   assert.equal(cleared('#8606', () => 'CLOSED').cleared, false, 'closed unmerged never releases');
   assert.equal(cleared('#8606').cleared, false, 'no fresh PR read: stays parked');
-  assert.deepEqual(holdReleases({ 'W-1': job('#8606') }, 'builtforteams').urls, [url], 'the poll reads the PR it waits on');
+  assert.deepEqual(holdReleases({ 'W-1': job('#8606') }, 'acme-org').urls, [url], 'the poll reads the PR it waits on');
 });
 
 import { reviewsDue } from '../core/units.mjs';
@@ -166,11 +167,11 @@ test("the board developer can mark two records as the same work, so a follow-up 
 });
 
 test('a record parked with waitingOn a PR is released when it merges and reported when it closes (W-436: W-422 sat on merged #8722)', () => {
-  const works = { 'W-422': { id: 'W-422', phase: 'ready', repo: 'built-rails', links: {}, externalDeps: [], assignments: [], waitingOn: { who: '#8722', what: 'close no-change once it merges', by: 'sup: stream-2' } },
+  const works = { 'W-422': { id: 'W-422', phase: 'ready', repo: 'app', links: {}, externalDeps: [], assignments: [], waitingOn: { who: '#8722', what: 'close no-change once it merges', by: 'sup: stream-2' } },
     'W-9': { id: 'W-9', phase: 'ready', links: {}, externalDeps: [], assignments: [], waitingOn: { who: 'QA owner', what: 'x', by: 'sup: s1' } } };
-  const url = 'https://github.com/builtforteams/built-rails/pull/8722';
-  const r = holdReleases(works, 'builtforteams', u => u === url ? 'MERGED' : null);
+  const url = 'https://github.com/acme-org/app/pull/8722';
+  const r = holdReleases(works, 'acme-org', u => u === url ? 'MERGED' : null);
   assert.ok(r.urls.includes(url), 'the PR is read');
   assert.deepEqual(r.waitsMerged, [{ id: 'W-422', pr: '#8722', to: 'sup: stream-2' }]);
-  assert.deepEqual(holdReleases(works, 'builtforteams', u => u === url ? 'CLOSED' : null).waitsClosed, [{ id: 'W-422', pr: '#8722', to: 'sup: stream-2' }]);
+  assert.deepEqual(holdReleases(works, 'acme-org', u => u === url ? 'CLOSED' : null).waitsClosed, [{ id: 'W-422', pr: '#8722', to: 'sup: stream-2' }]);
 });

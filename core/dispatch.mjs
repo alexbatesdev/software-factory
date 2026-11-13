@@ -1,7 +1,7 @@
 // Auto-dispatch (Alex, 2026-10-28): which ready or queued records start themselves this tick, and why the rest wait.
 // Pure: the server applies the plan through ordinary events and logs each one on its record.
 import { routeOf } from './notifier.mjs';
-import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder, needsPrApproval } from './work.mjs';
+import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder, needsPrApproval, DEFAULT_REPO } from './work.mjs';
 
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
 const pendingDispatch = w => (w.requests || []).some(r => r.type === 'dispatch' && !r.ack);
@@ -94,7 +94,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));
     // A pin to a host stream is a person's deliberate choice (W-356: Alex put OSUP on the host); the host reaches every repo, a sandbox doesn't.
     const hostPin = w.streamPin && (cfg.supervisors[bound?.to]?.repos || cfg.supervisors[bound?.to]?.branches);
-    if (bound && !hostPin && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || 'built-rails'}; re-route it`); return; }
+    if (bound && !hostPin && !canTake(w, bound.to, cfg.supervisors)) { wait(`${bound.to} can't work in ${w.repo || DEFAULT_REPO}; re-route it`); return; }
     // A model is a Claude alias, so a Codex stream can't run one (deep-model, Alex 11-11); effort suits both.
     const runsModel = l => !(w.model && cfg.supervisors[l]?.agent === 'codex');
     if (bound && !runsModel(bound.to)) { wait(`${bound.to} runs Codex and can't take model ${w.model}; clear the model or re-route it`); return; }

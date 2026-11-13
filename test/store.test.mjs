@@ -54,13 +54,13 @@ test('replay uses the observations stored on the row, not live data', () => {
 });
 
 test("a poll command's own observations reach the reducer: a new commit on a ready PR keeps the standing waiver", () => {
-  const s = openStore(), pr = 'https://github.com/builtapp/built-rails/pull/8236';
+  const s = openStore(), pr = 'https://github.com/acmeapp/app/pull/8236';
   const { id } = s.append({ kind: 'create', payload: { title: 'PED', kind: 'build', criteria: ['x'], links: { pr } } }, ctx());
   const w = { ...s.state.work[id], phase: 'awaiting_human_approval', head: 'aaa1111', headVerified: { via: 'github', sha: 'aaa1111' },
     approvalWait: { head: 'aaa1111', prUrl: pr }, internalReviewWaivers: [{ head: 'aaa1111', prUrl: pr }] };
   s.append({ kind: 'import', target: `work/${id}`, payload: w }, ctx());
-  const cmds = headCommands(s.state, new Map([['built-rails:8236', { sha: 'bbb2222', isDraft: false }]]),
-    { owner: 'builtapp', now: '2026-11-04T18:21:33.000Z', standingWaiver: { by: 'Alex', reason: 'ready', authorization: 'standing' } });
+  const cmds = headCommands(s.state, new Map([['app:8236', { sha: 'bbb2222', isDraft: false }]]),
+    { owner: 'acmeapp', now: '2026-11-04T18:21:33.000Z', standingWaiver: { by: 'Alex', reason: 'ready', authorization: 'standing' } });
   s.appendAll(cmds, ctx({ by: 'github' }));
   assert.deepEqual([s.state.work[id].phase, s.state.work[id].approvalWait?.head], ['awaiting_human_approval', 'bbb2222']);
   assert.deepEqual(s.replay().work[id].phase, 'awaiting_human_approval');
@@ -139,7 +139,7 @@ test('acking a request closes the message that told the seat about it, so no wak
 
 test('a new record cannot link a PR another record already carries', () => {
   const s = openStore();
-  const pr = 'https://github.com/builtforteams/built-rails/pull/8301';
+  const pr = 'https://github.com/acme-org/app/pull/8301';
   s.append({ kind: 'create', payload: { title: 'Poller record', links: { pr } } }, ctx());
   assert.throws(() => s.append({ kind: 'create', payload: { title: 'Manual record', links: { pr } } }, ctx()), /already belongs to W-1/);
   assert.deepEqual(Object.keys(s.state.work), ['W-1']);
@@ -173,12 +173,12 @@ test("absorb folds a poller's duplicate PR record into the record that built the
   const { commandsFor } = await import('../core/actions.mjs');
   const { sourceIndex } = await import('../core/correlate.mjs');
   const s = openStore();
-  const pr = 'https://github.com/builtforteams/built-rails/pull/8487';
+  const pr = 'https://github.com/acme-org/app/pull/8487';
   const builder = s.append({ kind: 'create', payload: { title: 'Upgrade rubyzip', links: { pr } } }, ctx()).id;
-  const dup = s.append({ kind: 'import', target: 'work/W-9', payload: { id: 'W-9', title: 'PR 8487', phase: 'intake', kind: 'pr-feedback', owner: 'sup: other', source: { type: 'pr', key: 'built-rails-8487' }, links: { pr }, assignments: [], requests: [], updates: [], aliases: [], reviews: [], findings: [], checks: [] } }, ctx()).id;
+  const dup = s.append({ kind: 'import', target: 'work/W-9', payload: { id: 'W-9', title: 'PR 8487', phase: 'intake', kind: 'pr-feedback', owner: 'sup: other', source: { type: 'pr', key: 'app-8487' }, links: { pr }, assignments: [], requests: [], updates: [], aliases: [], reviews: [], findings: [], checks: [] } }, ctx()).id;
   s.appendAll(commandsFor('absorb', { work: 'W-9', into: builder }), ctx({ by: 'triage board worker' }));
   assert.equal(s.state.work['W-9'].phase, 'cancelled');
-  assert.equal(sourceIndex(s.state).get('built-rails-8487'), builder);
+  assert.equal(sourceIndex(s.state).get('app-8487'), builder);
   assert.ok(dup);
 });
 
@@ -340,7 +340,7 @@ test("an answered question releases a record wait that names it (W-375: W-316 st
 test('a shared PR passing internal review on one record settles that review round on its same-work partner (W-438: W-44 stuck in fixes after W-74 passed on #8301)', async () => {
   const { commandsFor } = await import('../core/actions.mjs');
   const s = openStore();
-  const pr = 'https://github.com/builtforteams/built-rails/pull/8301';
+  const pr = 'https://github.com/acme-org/app/pull/8301';
   const at = now => ctx({ now, by: 'sup: stream-1' });
   const T = '2026-11-12T03:00:00.000Z';
   const a = s.append({ kind: 'create', payload: { title: 'Seat lock', kind: 'build', links: { pr } } }, at(T)).id;

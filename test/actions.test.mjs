@@ -125,9 +125,9 @@ test('a hold with no release condition carries a review date and who reviews it,
 
 test("done replacesPr moves a record from the PR Alex replaced to the new one; it must name the PR actually linked (W-371: W-354 #8694 -> hotfix #8707)", async () => {
   const { openStore } = await import('../core/store.mjs');
-  const OLD = 'https://github.com/builtforteams/built-rails/pull/8694', NEW = 'https://github.com/builtforteams/built-rails/pull/8707';
+  const OLD = 'https://github.com/acme-org/app/pull/8694', NEW = 'https://github.com/acme-org/app/pull/8707';
   const s = openStore(':memory:'), c = { now: '2026-11-10T22:00:00.000Z', by: 'test' };
-  const id = s.append({ kind: 'create', payload: { title: 'OSUP', links: { pr: OLD } } }, c).id;
+  const id = s.append({ kind: 'create', payload: { title: 'ACME', links: { pr: OLD } } }, c).id;
   const cmds = commandsFor('done', { work: id, pr: NEW, replacesPr: OLD, head: 'abc1234' });
   s.appendAll(cmds.filter(x => x.kind === 'update'), c);
   assert.equal(s.state.work[id].links.pr, NEW);
@@ -138,13 +138,13 @@ test("a New-PR breakdown carries the duplicate search it ran, and a proposal ano
   const { applyEvent, createWork } = await import('../core/work.mjs');
   const proposal = { prompted: 'p', addresses: 'a', whyThisFix: 'w', since: 's', customerImpact: 'none' };
   assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'ready', note: 'n', proposal }), /duplicateSearch/);
-  const duplicateSearch = 'Open built-rails PRs from every author, diffs checked for adp_workers_adapter.rb job_level: none carries it.';
+  const duplicateSearch = 'Open app PRs from every author, diffs checked for adp_workers_adapter.rb job_level: none carries it.';
   const cs = commandsFor('triage', { work: 'W-1', bucket: 'ready', note: 'n', proposal: { ...proposal, duplicateSearch } });
   const c = { now: '2026-11-12T23:40:00.000Z', by: 'board lead' };
   assert.equal(applyEvent(createWork({ id: 'W-1', title: 'x' }, c), cs.at(-1).payload, c).work.proposal.duplicateSearch, duplicateSearch);
-  const pr = 'https://github.com/builtforteams/built-rails/pull/8790';
-  const [close] = commandsFor('triage', { work: 'W-1', bucket: 'close', reason: 'duplicate', of: pr, note: "sam-built's diff adds the same guard at adp_workers_adapter.rb:212" });
+  const pr = 'https://github.com/acme-org/app/pull/8790';
+  const [close] = commandsFor('triage', { work: 'W-1', bucket: 'close', reason: 'duplicate', of: pr, note: "reviewer-sam's diff adds the same guard at adp_workers_adapter.rb:212" });
   assert.deepEqual([close.payload.type, close.payload.duplicateOf], ['withdraw', undefined]);
-  assert.match(close.payload.note, /Duplicate of https:\/\/github\.com\/builtforteams\/built-rails\/pull\/8790: sam-built's diff/);
+  assert.match(close.payload.note, /Duplicate of https:\/\/github\.com\/acme-org\/app\/pull\/8790: reviewer-sam's diff/);
   assert.throws(() => commandsFor('triage', { work: 'W-1', bucket: 'close', reason: 'duplicate', of: '#8790', note: 'x' }), /W-n or a PR URL/);
 });

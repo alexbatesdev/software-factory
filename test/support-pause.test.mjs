@@ -10,7 +10,7 @@ const T = '2026-11-12T21:00:00.000Z', config = { roles: {}, routing: { superviso
 
 async function serve() {
   const store = openStore(':memory:', { supervisors: [] });
-  store.append({ kind: 'create', payload: { title: 'Kyverna ADP' } }, { now: T, by: 'test' });
+  store.append({ kind: 'create', payload: { title: 'Globex ADP' } }, { now: T, by: 'test' });
   store.state.work['W-1'].support = true;
   store.append({ kind: 'create', payload: { title: 'Ordinary work' } }, { now: T, by: 'test' });
   store.append({ kind: 'create', payload: { title: 'Listed by hand' } }, { now: T, by: 'test' });

@@ -167,9 +167,9 @@ test("a host worker whose job still names the supervisor as owner is found in th
   const T = 1_000_000;
   const host = { id: 'host', supervisor: { label: 'sup: host', workspace: 'Host' }, worker: null };
   const works = { 'W-354': { id: 'W-354', stream: 'sup: host', assignments: [{ id: 'R1', kind: 'implementation', owner: 'sup: host', status: 'started' }] } };
-  const others = [{ label: 'tw-41503361-osup-req-submit', status: 'done', workspace: 'Host' }, { label: 'board lead', status: 'idle', workspace: 'Services' }];
+  const others = [{ label: 'tw-41503361-acme-req-submit', status: 'done', workspace: 'Host' }, { label: 'board lead', status: 'idle', workspace: 'Services' }];
   const r = planWorkerStops({ units: [host], others, works, watch: { host: { armed: true, stoppedAt: T } }, now: T + 70000, graceMs: 60000, supervisors: ['sup: host'] });
-  assert.deepEqual(r.due.map(d => [d.to, d.work, d.assignment, d.worker]), [['sup: host', 'W-354', 'R1', 'tw-41503361-osup-req-submit']]);
+  assert.deepEqual(r.due.map(d => [d.to, d.work, d.assignment, d.worker]), [['sup: host', 'W-354', 'R1', 'tw-41503361-acme-req-submit']]);
   const two = [...others, { label: 'tw-other', status: 'working', workspace: 'Host' }];
   assert.deepEqual(planWorkerStops({ units: [host], others: two, works, watch: { host: { armed: true, stoppedAt: T } }, now: T + 70000, graceMs: 60000, supervisors: ['sup: host'] }).due, [], 'two candidates: no guess');
 });

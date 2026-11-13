@@ -34,7 +34,7 @@ test('an answer that reached nobody asks Alex to pick a stream, unless the recor
 
 test('columns: In progress only while an agent works; open ready PRs wait on review; members live inside their PR unit', () => {
   const started = { id: 'R1', kind: 'fixes', status: 'started' };
-  const unit = (over = {}) => base({ id: 'W-86', kind: 'pr-feedback', source: { type: 'pr', key: 'built-rails-8244' }, links: { pr: 'u' }, ...over });
+  const unit = (over = {}) => base({ id: 'W-86', kind: 'pr-feedback', source: { type: 'pr', key: 'app-8244' }, links: { pr: 'u' }, ...over });
   const col = (w, group = {}) => statusOf(w, { group }).category;
   assert.equal(col(unit({ phase: 'awaiting_human_approval' }), { isUnit: true, pr: { state: 'OPEN', isDraft: false } }), 'prreview');
   assert.equal(col(unit({ phase: 'fixes', assignments: [started] }), { isUnit: true, pr: { state: 'OPEN', isDraft: false } }), 'progress');
@@ -49,13 +49,13 @@ test('columns: In progress only while an agent works; open ready PRs wait on rev
 });
 
 test('a record\'s list view never contradicts its column', () => {
-  const quietPr = base({ phase: 'intake', kind: 'pr-feedback', source: { type: 'pr', key: 'built-rails-1' }, upstream: 'gone' });
+  const quietPr = base({ phase: 'intake', kind: 'pr-feedback', source: { type: 'pr', key: 'app-1' }, upstream: 'gone' });
   const s = statusOf(quietPr, { group: { isUnit: true, pr: { state: 'OPEN', isDraft: false } } });
   assert.deepEqual([s.category, s.view], ['prreview', 'prreview']);
 });
 
 test('a PR unit with no lifecycle of its own shows where its lead task is, never "Intake" or "Waiting on triage"', () => {
-  const unit = base({ id: 'W-109', phase: 'intake', kind: 'pr-feedback', source: { type: 'pr', key: 'built-rails-8419' }, upstream: 'gone' });
+  const unit = base({ id: 'W-109', phase: 'intake', kind: 'pr-feedback', source: { type: 'pr', key: 'app-8419' }, upstream: 'gone' });
   const lead = { id: 'W-82', label: 'Fixing review findings', waiting: { who: 'sup: s1', text: 'Waiting on sup: s1: fix the review findings on #8419' } };
   const s = statusOf(unit, { group: { isUnit: true, pr: { state: 'OPEN', isDraft: true }, activeMember: 'W-82 R3', lead } });
   assert.deepEqual([s.category, s.label, s.waiting.text], ['progress', 'Fixing review findings · W-82', 'W-82: Waiting on sup: s1: fix the review findings on #8419']);

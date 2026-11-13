@@ -292,7 +292,7 @@ test("local-head's note on a record, open or done, reaches the record's owner on
 test("local-head's note on a record a worker owns reaches its stream's supervisor, not the worker (W-453)", async () => {
   const { inboxCommands } = await import('../core/inbox.mjs');
   const note = { at: '2026-11-12T18:23:04.000Z', by: 'local-head', text: 'sup: stream-2, post the probe on #8751.' };
-  const work = { id: 'W-440', title: 'Kyverna', phase: 'implementation', owner: 'sbx: stream-2', stream: 'sup: stream-2', requests: [], assignments: [], updates: [{ at: '2026-11-12T01:00:00.000Z', by: 'x', text: 'Created.' }, note] };
+  const work = { id: 'W-440', title: 'Globex', phase: 'implementation', owner: 'sbx: stream-2', stream: 'sup: stream-2', requests: [], assignments: [], updates: [{ at: '2026-11-12T01:00:00.000Z', by: 'x', text: 'Created.' }, note] };
   const state = { work: { 'W-440': work }, questions: {}, messages: {}, notifications: {} };
   const got = inboxCommands(state, { supervisors: ['sup: stream-2'], seats: [] }, null).cmds.filter(c => c.payload.about?.localHeadNote);
   assert.deepEqual(got.map(c => c.payload.to), ['sup: stream-2']);

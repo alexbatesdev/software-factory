@@ -23,14 +23,14 @@ function reviewed(link, at = T) {
 }
 
 test('a review link is a host path, a path in the worker sandbox, or prose with no file', () => {
-  assert.deepEqual(parseLink('/Users/alex.bates/Code/plans/w80-r9-report.md'), { from: 'host', path: '/Users/alex.bates/Code/plans/w80-r9-report.md' });
+  assert.deepEqual(parseLink('/Users/dev/Code/plans/w80-r9-report.md'), { from: 'host', path: '/Users/dev/Code/plans/w80-r9-report.md' });
   assert.deepEqual(parseLink('tmp/internal-review-8774-f85671ef61a6.md (in the sbx VM clone)'), { from: 'sandbox', path: 'tmp/internal-review-8774-f85671ef61a6.md' });
   assert.deepEqual(parseLink('W-367 worker note 02:39Z (two fresh rounds)'), { from: 'none' });
 });
 
 test('a host report is copied by its hash, once, and a second pass copies nothing', async () => {
   const root = mkdtempSync(join(tmpdir(), 'spamton-art-'));
-  const store = reviewed('/Users/alex.bates/Code/plans/w80-r9-report.md');
+  const store = reviewed('/Users/dev/Code/plans/w80-r9-report.md');
   const io = { readHost: async () => Buffer.from('# Review\nclean'), now: () => T, root };
   await retainArtifacts(store, io);
   const [a] = Object.values(store.state.artifacts);
@@ -55,13 +55,13 @@ test('prose records no file; a secret-looking report is withheld; a failed read 
   await retainArtifacts(prose, { now: () => T, root });
   assert.equal(Object.values(prose.state.artifacts)[0].status, 'no_file');
 
-  const secret = reviewed('/Users/alex.bates/Code/plans/leak.md');
+  const secret = reviewed('/Users/dev/Code/plans/leak.md');
   await retainArtifacts(secret, { readHost: async () => Buffer.from('token ghp_abcdefghijklmnopqrstuvwxyz0123456789'), now: () => T, root });
   const s = Object.values(secret.state.artifacts)[0];
   assert.equal(s.status, 'withheld');
   assert.equal(s.sha256, null, 'nothing secret is stored');
 
-  const gone = reviewed('/Users/alex.bates/Code/plans/missing.md');
+  const gone = reviewed('/Users/dev/Code/plans/missing.md');
   const io = { readHost: async () => { throw new Error('ENOENT'); }, now: () => T, root };
   for (let i = 0; i < 6; i++) await retainArtifacts(gone, io);
   const g = Object.values(gone.state.artifacts)[0];
@@ -70,7 +70,7 @@ test('prose records no file; a secret-looking report is withheld; a failed read 
 });
 
 test('reviews from before the store existed are left alone (no historical backfill)', async () => {
-  const store = reviewed('/Users/alex.bates/Code/plans/old.md', '2026-11-01T00:00:00.000Z');
+  const store = reviewed('/Users/dev/Code/plans/old.md', '2026-11-01T00:00:00.000Z');
   assert.ok('2026-11-01T00:00:00.000Z' < ARTIFACTS_FROM);
   await retainArtifacts(store, { readHost: async () => assert.fail('no backfill'), now: () => T, root: tmpdir() });
   assert.deepEqual(store.state.artifacts || {}, {});
@@ -96,7 +96,7 @@ test('a cold reader gets the retained report from the factory by its hash, and t
   const http = await import('node:http');
   const { createApi } = await import('../core/api.mjs');
   const root = mkdtempSync(join(tmpdir(), 'spamton-art-'));
-  const store = reviewed('/Users/alex.bates/Code/plans/w80-r9-report.md');
+  const store = reviewed('/Users/dev/Code/plans/w80-r9-report.md');
   await retainArtifacts(store, { readHost: async () => Buffer.from('# kept'), now: () => T, root });
   const server = http.createServer(createApi({ store, config: { routing: { supervisors: { [SUP]: {} } } }, artifactRoot: root }));
   await new Promise(ok => server.listen(0, '127.0.0.1', ok));

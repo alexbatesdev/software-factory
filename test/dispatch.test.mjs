@@ -1,3 +1,4 @@
+import { DEFAULT_REPO } from '../core/work.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
@@ -133,7 +134,7 @@ test('a host stream takes only records in its repos; the sbx streams take everyt
   const H = 'sup: host';
   const hcfg = { ...cfg, supervisors: { ...cfg.supervisors, [H]: { repos: { 'teamwork-mini-mcp': '~/Code/repos/teamwork mini mcp' } } } };
   const p = Object.fromEntries(autoDispatchPlan([
-    loose('W-1', { owner: null, repo: 'teamwork-mini-mcp' }), loose('W-2', { owner: null, repo: 'built-rails' }), loose('W-3', { owner: null }),
+    loose('W-1', { owner: null, repo: 'teamwork-mini-mcp' }), loose('W-2', { owner: null, repo: 'app' }), loose('W-3', { owner: null }),
   ], hcfg).map(x => [x.id, x]));
   assert.equal(p['W-1'].to, H);
   assert.notEqual(p['W-2'].to, H);
@@ -144,11 +145,11 @@ test('a host stream takes only records in its repos; the sbx streams take everyt
 
 test('a host stream also takes records on the branches it names, so Mutation work runs on the host', () => {
   const H = 'sup: host';
-  const hcfg = { ...cfg, mutationBranch: undefined, supervisors: { ...cfg.supervisors, [H]: { repos: { 'built-customer-implementations': '~/Code/repos/built-customer-implementations' }, branches: 'alex/(mutation-tester|test-quality/mutation-gaps)' } } };
+  const hcfg = { ...cfg, mutationBranch: undefined, supervisors: { ...cfg.supervisors, [H]: { repos: { 'customer-configs': '~/Code/repos/customer-configs' }, branches: 'alex/(mutation-tester|test-quality/mutation-gaps)' } } };
   const p = Object.fromEntries(autoDispatchPlan([
-    loose('W-1', { owner: null, repo: 'built-rails', links: { branch: 'alex/test-quality/mutation-gaps-3' } }),
-    loose('W-2', { owner: null, repo: 'built-customer-implementations' }),
-    loose('W-3', { owner: null, repo: 'built-rails', links: { branch: 'alex/security/graphql-mutation-id-loads' } }),
+    loose('W-1', { owner: null, repo: 'app', links: { branch: 'alex/test-quality/mutation-gaps-3' } }),
+    loose('W-2', { owner: null, repo: 'customer-configs' }),
+    loose('W-3', { owner: null, repo: 'app', links: { branch: 'alex/security/graphql-mutation-id-loads' } }),
   ], hcfg).map(x => [x.id, x]));
   assert.equal(p['W-1'].to, H);
   assert.match(p['W-2'].reason, /sup: host with W-1/, 'waits for the host, never an sbx stream');
@@ -156,18 +157,18 @@ test('a host stream also takes records on the branches it names, so Mutation wor
 });
 
 import { scoutPlan, sentryCited } from '../core/scout.mjs';
-const SC = { maxProposals: 3, gapHours: 6, maxUntriaged: 5, projects: ['built', 'built-rails-eu'] };
+const SC = { maxProposals: 3, gapHours: 6, maxUntriaged: 5, projects: ['web', 'app-eu'] };
 const scfg = { ...cfg, scout: SC };
 const NOW = '2026-11-09T12:00:00.000Z';
 const scout = (id, over = {}) => w(id, { kind: 'scout', phase: 'done', completion: { at: '2026-11-09T05:00:00.000Z' }, ...over });
 
 test('an idle stream with nothing to dispatch gets a Sentry scout that skips issues the board already cites', () => {
-  const works = [w('W-1', { phase: 'implementation' }), loose('W-2', { owner: null, phase: 'done', links: { sentry: 'https://builtapp.sentry.io/issues/6012345678/' }, updates: [{ text: 'Seen as BUILT-RAILS-EU-2K4 too' }] })];
+  const works = [w('W-1', { phase: 'implementation' }), loose('W-2', { owner: null, phase: 'done', links: { sentry: 'https://acmeapp.sentry.io/issues/6012345678/' }, updates: [{ text: 'Seen as APP-EU-2K4 too' }] })];
   const p = scoutPlan(works, autoDispatchPlan(works, scfg), scfg, NOW);
   assert.equal(p.to, S2, 'the free stream, not the one building W-1');
   assert.deepEqual([p.create.kind, p.create.owner, p.create.phase, p.create.title], ['scout', S2, 'ready', 'Sentry scout 2026-11-09 12:00Z']);
-  assert.match(p.create.objective, /6012345678, BUILT-RAILS-EU-2K4/);
-  assert.match(p.create.objective, /built, built-rails-eu/);
+  assert.match(p.create.objective, /6012345678, APP-EU-2K4/);
+  assert.match(p.create.objective, /web, app-eu/);
   assert.match(p.create.objective, /at most 3/);
   assert.match(p.create.objective, /actually broken and actually matters/);
 });
@@ -183,7 +184,7 @@ test('no scout while work dispatches, a scout is open, the last closed under 6 h
   assert.equal(none([scout('W-1'), ...proposals(4)]), S1);
 });
 
-test('a host stream never scouts: scout work is built-rails', () => {
+test('a host stream never scouts: scout work is app', () => {
   const H = 'sup: host';
   const hcfg = { ...scfg, supervisors: { [H]: { repos: { x: '~/x' } }, [S1]: {} } };
   const works = [w('W-1', { phase: 'implementation' })];
@@ -199,9 +200,9 @@ test('a running scout never holds its stream: real work dispatches to it', () =>
 });
 
 test('Sentry citations: issue URLs in either form and short ids for the scanned projects', () => {
-  assert.deepEqual(sentryCited([{ title: 'BUILT-1A2 crash', objective: 'https://sentry.io/organizations/builtapp/issues/42/ and BUILT-IN things', links: {}, updates: [] }], SC.projects), ['42', 'BUILT-1A2', 'BUILT-IN'],
-    'an all-letter word like BUILT-IN is skipped too: a needless skip costs nothing, a missed id re-files a tracked error (W-348)');
-  assert.deepEqual(sentryCited([{ title: 'x', objective: 'https://builtforteams.sentry.io/issues/BUILT-ETM and BUILT-GVZ', links: {}, updates: [] }], SC.projects), ['BUILT-ETM', 'BUILT-GVZ'], 'W-323 and W-343 cite all-letter short ids (W-348)');
+  assert.deepEqual(sentryCited([{ title: 'WEB-1A2 crash', objective: 'https://sentry.io/organizations/acmeapp/issues/42/ and WEB-IN things', links: {}, updates: [] }], SC.projects), ['42', 'WEB-1A2', 'WEB-IN'],
+    'an all-letter word like WEB-IN is skipped too: a needless skip costs nothing, a missed id re-files a tracked error (W-348)');
+  assert.deepEqual(sentryCited([{ title: 'x', objective: 'https://acme-org.sentry.io/issues/WEB-ETM and WEB-GVZ', links: {}, updates: [] }], SC.projects), ['WEB-ETM', 'WEB-GVZ'], 'W-323 and W-343 cite all-letter short ids (W-348)');
 });
 
 test('a new PR nobody asked for waits for Alex: agent-filed build work with no PR holds until approved; Teamwork tasks and existing PRs go (Alex, 11-09)', () => {
@@ -215,11 +216,11 @@ test('a new PR nobody asked for waits for Alex: agent-filed build work with no P
 });
 
 test("only a company repo's work needs Alex's go for a new PR; Alex's own tooling commits to main (Alex, 11-09, W-186)", () => {
-  const pc = { ...cfg, prApproval: { trusted: ['teamwork'], repos: ['built-rails', 'built-customer-implementations'] } };
+  const pc = { ...cfg, prApproval: { trusted: ['teamwork'], repos: [DEFAULT_REPO, 'customer-configs'] } };
   const at = (repo) => autoDispatchPlan([loose('W-1', { kind: 'build', source: { type: 'agent', by: 'local-head' }, repo })], pc)[0];
   assert.equal(at('teamwork-mini-mcp').action, 'queue');
-  assert.match(at('built-customer-implementations').reason, /Alex's go/);
-  assert.match(at(undefined).reason, /Alex's go/, 'no repo means built-rails');
+  assert.match(at('customer-configs').reason, /Alex's go/);
+  assert.match(at(undefined).reason, /Alex's go/, 'no repo means the default repo');
 });
 
 test('support work queues ahead of ordinary work; priority-1 work still cuts in first (Alex, 11-09)', () => {
@@ -249,10 +250,10 @@ test('support work skips the new-PR go when dispatching (W-329)', () => {
   assert.ok(run(true).action, 'support work dispatches');
 });
 
-test("a record pinned to a host stream on someone's word is sent there even outside the host's repos; unpinned, a sandbox stream takes it (W-356: W-354 OSUP)", () => {
+test("a record pinned to a host stream on someone's word is sent there even outside the host's repos; unpinned, a sandbox stream takes it (W-356: W-354 ACME)", () => {
   const H = 'sup: host', hcfg = { ...cfg, supervisors: { ...cfg.supervisors, [H]: { repos: { 'teamwork-mini-mcp': {} } } } };
   const rec = over => w('W-354', { owner: H, stream: H, support: true, kind: 'build', source: { type: 'teamwork' }, ...over });
   const run = over => autoDispatchPlan([rec(over)], hcfg, { terminals: [] })[0];
-  assert.notEqual(run({}).to, H, 'owner alone does not bind: unpinned built-rails work goes to a sandbox stream');
+  assert.notEqual(run({}).to, H, 'owner alone does not bind: unpinned app work goes to a sandbox stream');
   assert.deepEqual([run({ streamPin: { by: "local-head, on Alex's word" } }).action, run({ streamPin: { by: 'x' } }).to], ['queue', H]);
 });

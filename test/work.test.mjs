@@ -98,9 +98,9 @@ test('non-PR work completes with an accepted artifact, without a head', () => {
   w = run(w, { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' }, { type: 'transition', to: 'implementation', owner: 'sup: stream-2' });
   assert.throws(() => applyEvent(w, { type: 'complete', artifact: '/tmp/x.md' }, ctx()), /criteri/);
   w = run(w, { type: 'criterion', criterionId: w.criteria[0].id, accepted: true });
-  w = run(w, { type: 'complete', artifact: '/Users/alex.bates/Code/plans/ats.md' });
+  w = run(w, { type: 'complete', artifact: '/Users/dev/Code/plans/ats.md' });
   assert.equal(w.phase, 'done');
-  assert.equal(w.completion.artifact, '/Users/alex.bates/Code/plans/ats.md');
+  assert.equal(w.completion.artifact, '/Users/dev/Code/plans/ats.md');
 });
 
 test('out-of-scope discovery spawns a proposed item; in-scope stays on the item', () => {
@@ -138,7 +138,7 @@ test('intake phase follows triage until the item is queued', () => {
 
 test('migration is additive: keeps every question, links them, and is idempotent', () => {
   const old = {
-    items: { 'tw-1': { firstSeen: T, triage: { bucket: 'clarify' } }, 'built-rails-7': { firstSeen: T } },
+    items: { 'tw-1': { firstSeen: T, triage: { bucket: 'clarify' } }, 'app-7': { firstSeen: T } },
     questions: { 'TB-1': { item: 'tw-1', status: 'open', title: 'q' }, 'TB-2': { from: 'sup: x', status: 'answered', title: 'p' } },
     nextQuestion: 45, streams: {}, dispatches: [],
   };
@@ -204,7 +204,7 @@ test('unfinished dependencies block queueing and starting', () => {
 });
 
 test('a PR-linked item needs a verified current head before ready', () => {
-  let w = run(updateWork(build(), { links: { pr: 'https://github.com/builtforteams/built-rails/pull/1' } }, ctx()),
+  let w = run(updateWork(build(), { links: { pr: 'https://github.com/acme-org/app/pull/1' } }, ctx()),
     { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' }, { type: 'transition', to: 'implementation', owner: 'sbx: s' },
     { type: 'implementation_done', head: 'aaa' });
   w = evidenced(run(w, { type: 'review', head: 'aaa', by: 'reviewer', result: 'clean' }));
@@ -228,7 +228,7 @@ test('queueing creates the dispatch request; asking again is idempotent', () => 
   assert.equal(w.requests.filter(r => r.type === 'dispatch').length, 1);
 });
 
-const PR = 'https://github.com/builtforteams/built-rails/pull/77';
+const PR = 'https://github.com/acme-org/app/pull/77';
 const readyPr = () => {
   let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
     { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: 'aaa' });
@@ -237,7 +237,7 @@ const readyPr = () => {
 
 test('PR-ready authorization is pinned to the PR and the exact head, and a new head drops it', () => {
   assert.throws(() => applyEvent(readyPr(), { type: 'authorize_pr_ready', prUrl: PR, head: 'zzz' }, ctx()), /head/);
-  assert.throws(() => applyEvent(readyPr(), { type: 'authorize_pr_ready', prUrl: 'https://github.com/builtforteams/built-rails/pull/78', head: 'aaa' }, ctx()), /PR/);
+  assert.throws(() => applyEvent(readyPr(), { type: 'authorize_pr_ready', prUrl: 'https://github.com/acme-org/app/pull/78', head: 'aaa' }, ctx()), /PR/);
   let w = run(readyPr(), { type: 'authorize_pr_ready', prUrl: PR, head: 'aaa' });
   assert.equal(w.prReadyAuth.head, 'aaa');
   w = observeHead(w, { sha: 'bbb', via: 'github' }, ctx());
@@ -285,7 +285,7 @@ test('reconciling to review keeps the head but grants no review evidence', () =>
 });
 
 test('an external dependency is a wait, not a question, and blocks the start', () => {
-  let w = updateWork(build(), { externalDeps: [{ ref: 'built-rails#8050', text: '#8050 merges, then "go build" from the head' }] }, ctx());
+  let w = updateWork(build(), { externalDeps: [{ ref: 'app#8050', text: '#8050 merges, then "go build" from the head' }] }, ctx());
   w = run(w, { type: 'reconcile', phase: 'queued', evidence: 'head evidence D1' });
   assert.throws(() => applyEvent(w, { type: 'transition', to: 'implementation' }, ctx()), /#8050/);
   assert.equal(syncIntake(run(build(), { type: 'reconcile', phase: 'ready', evidence: 'x' }), { bucket: 'clarify', openQuestions: 3 }).phase, 'ready', 'triage does not override a reconciled phase');
@@ -306,7 +306,7 @@ test('a reconcile report cannot overwrite a head GitHub verified', () => {
 
 test('a links update merges; null removes one link; nothing else is lost', () => {
   let w = updateWork(build(), { links: { source: 'https://tw/1', artifact: '/tmp/a.md' } }, ctx());
-  w = updateWork(w, { links: { pr: 'https://github.com/builtforteams/built-rails/pull/1' } }, ctx());
+  w = updateWork(w, { links: { pr: 'https://github.com/acme-org/app/pull/1' } }, ctx());
   assert.deepEqual(Object.keys(w.links).sort(), ['artifact', 'pr', 'source']);
   w = updateWork(w, { links: { artifact: null } }, ctx());
   assert.deepEqual(Object.keys(w.links).sort(), ['pr', 'source']);
@@ -332,8 +332,8 @@ test('a short SHA matches the full head it abbreviates', () => {
 });
 
 // ---------- historical (retrospective) reconciliation ----------
-const merged = n => ({ url: `https://github.com/builtforteams/built-rails/pull/${n}`, state: 'MERGED', head: `h${n}`, mergedAt: '2026-10-20T00:00:00Z' });
-const opened = n => ({ url: `https://github.com/builtforteams/built-rails/pull/${n}`, state: 'OPEN', head: `h${n}`, isDraft: false });
+const merged = n => ({ url: `https://github.com/acme-org/app/pull/${n}`, state: 'MERGED', head: `h${n}`, mergedAt: '2026-10-20T00:00:00Z' });
+const opened = n => ({ url: `https://github.com/acme-org/app/pull/${n}`, state: 'OPEN', head: `h${n}`, isDraft: false });
 
 test('retro completed needs full coverage and every cited PR merged, and fakes no evidence', () => {
   const w = run(build(), { type: 'retro_close', outcome: 'completed', coverage: 'full', prs: [merged(1), merged(2)], evidence: 'Sync comment 123: PR #1 merged', ctx: { verifiedPrs: [merged(1), merged(2)] } });
@@ -383,7 +383,7 @@ test('work an open PR carries, or whose coverage is unknown, cannot be marked re
 });
 
 test('open-pr coverage needs a PR that is open now; mixed states are fine if one is', () => {
-  const pr = (n, state) => ({ url: `https://github.com/builtforteams/built-rails/pull/${n}`, state });
+  const pr = (n, state) => ({ url: `https://github.com/acme-org/app/pull/${n}`, state });
   assert.throws(() => applyEvent(build(), { type: 'coverage', state: 'open-pr', prs: [pr(1, 'MERGED'), pr(2, 'CLOSED')], evidence: 'x' }, ctx({ verifiedPrs: [pr(1, 'MERGED'), pr(2, 'CLOSED')] })), /open now/);
   assert.throws(() => applyEvent(build(), { type: 'coverage', state: 'open-pr', prs: [pr(3, 'UNREADABLE')], evidence: 'x' }, ctx({ verifiedPrs: [] })), /open now/);
   const w = run(build(), { type: 'coverage', state: 'open-pr', prs: [pr(4, 'MERGED'), pr(5, 'OPEN')], evidence: 'x', ctx: { verifiedPrs: [pr(4, 'MERGED'), pr(5, 'OPEN')] } });
@@ -622,8 +622,8 @@ test('a reviewer asking for changes or opening threads on a tracked PR reopens i
   let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
     { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
   w = run(evidenced(run(w, { type: 'review', head: H, by: 'reviewer', result: 'clean' })), { type: 'mark_ready' });
-  const read = threads => ({ head: H, conflict: false, failing: [], changesRequested: [{ id: 'PRR_1', by: 'sam-built', url: 'u1' }], threads });
-  const t = id => ({ id, by: 'sam-built', url: `https://x/${id}` });
+  const read = threads => ({ head: H, conflict: false, failing: [], changesRequested: [{ id: 'PRR_1', by: 'reviewer-sam', url: 'u1' }], threads });
+  const t = id => ({ id, by: 'reviewer-sam', url: `https://x/${id}` });
   const fb = observeHealth(w, read([t('T1'), t('T2'), t('T3')]), ctx());
   assert.equal(fb.phase, 'fixes');
   assert.deepEqual(fb.findings.map(f => f.source.type), ['changes_requested', 'threads']);
@@ -638,7 +638,7 @@ test("reviewer feedback is news even while GitHub's head is ahead of the record'
   const H = 'aaaaaaa1', NEW = 'bbbbbbb2', after = ctx({ now: '2026-11-10T00:00:00.000Z' });
   let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
     { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
-  const read = { head: NEW, conflict: true, failing: ['ci/circleci: test'], changesRequested: [], threads: [{ id: 'T9', by: 'jmcdonald-ut', url: 'u' }], comments: [{ id: 'PRR_9', by: 'jmcdonald-ut', url: 'u2' }] };
+  const read = { head: NEW, conflict: true, failing: ['ci/circleci: test'], changesRequested: [], threads: [{ id: 'T9', by: 'reviewer-jm', url: 'u' }], comments: [{ id: 'PRR_9', by: 'reviewer-jm', url: 'u2' }] };
   const fb = observeHealth(w, read, after);
   assert.deepEqual(fb.findings.map(f => f.source.type).sort(), ['comments', 'threads']);
   assert.equal(observeHealth(w, read, ctx({ now: '2026-11-09T00:00:00.000Z' })), w, 'rows logged before the change replay as before');
@@ -781,7 +781,7 @@ test("a record whose only work was cancelled, with no PR, can still be withdrawn
 test("a head on a replacement PR is never assumed to descend from a review of the old PR: it gets its own internal review (W-374: #8694 -> hotfix #8707)", () => {
   const ready = reviewedAt('clean');
   const late = { now: '2026-11-11T09:00:00.000Z' };
-  const swapped = updateWork(updateWork(ready, { links: { pr: null } }, capCtx(late)), { links: { pr: 'https://github.com/builtforteams/built-rails/pull/8707' } }, capCtx(late));
+  const swapped = updateWork(updateWork(ready, { links: { pr: null } }, capCtx(late)), { links: { pr: 'https://github.com/acme-org/app/pull/8707' } }, capCtx(late));
   const reported = capRun(swapped, { type: 'head', sha: 'ddd4444', ctx: late });
   assert.equal(reported.phase, 'rereview');
   assert.notEqual(reported.lineage?.status, 'assumed');

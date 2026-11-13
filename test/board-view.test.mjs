@@ -131,7 +131,7 @@ test("a card shows the record's real wait: Alex's actions are his, never masked 
   assert.notEqual(v[mine].waiting?.who, 'you', 'work a non-stream seat owns never dispatches, so it needs no new-PR click');
 });
 
-test("a ready PR's card says what it really waits on: Alex's thread clicks, missing GitHub approvals, or his final checks (APPROVED is not Built's QA gate)", async () => {
+test("a ready PR's card says what it really waits on: Alex's thread clicks, missing GitHub approvals, or his final checks (APPROVED is not the team's QA gate)", async () => {
   const { openStore } = await import('../core/store.mjs');
   const s = openStore(':memory:'), c = { now: '2026-11-09T22:00:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/7';
   const id = s.append({ kind: 'create', payload: { title: 'Ready PR', links: { pr: PR } } }, c).id;
@@ -145,7 +145,7 @@ test("a ready PR's card says what it really waits on: Alex's thread clicks, miss
   assert.deepEqual(withRt.waiting, { who: 'reviewers', text: 'Waiting for approvals on #7' }, 'the card keeps its own wait');
 });
 
-test('a parked record whose PR is open and ready waits on its reviewers, not in Parked (W-106: built-architecture #72)', async () => {
+test('a parked record whose PR is open and ready waits on its reviewers, not in Parked (W-106: app-architecture #72)', async () => {
   const { openStore } = await import('../core/store.mjs');
   const s = openStore(':memory:'), c = { now: '2026-11-09T22:00:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/72';
   const id = s.append({ kind: 'create', payload: { title: 'Dev DB S3', links: { pr: PR } } }, c).id;
@@ -230,8 +230,8 @@ test('a stale GitHub read never shows a PR as ready to merge (W-317 phase 4)', a
 });
 
 test('a task folded into a ready PR unit is not a second Ready to merge card (review of b7b5392)', async () => {
-  const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/builtforteams/built-rails/pull/8641';
-  const unit = s.append({ kind: 'create', payload: { title: 'Unit', source: { type: 'pr', key: 'built-rails-8641' }, links: { pr: PR } } }, c).id;
+  const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/acme-org/app/pull/8641';
+  const unit = s.append({ kind: 'create', payload: { title: 'Unit', source: { type: 'pr', key: 'app-8641' }, links: { pr: PR } } }, c).id;
   const task = s.append({ kind: 'create', payload: { title: 'Task', links: { pr: PR } } }, c).id;
   for (const id of [unit, task]) s.state.work[id].phase = 'awaiting_human_approval';
   const prs = new Map([[PR, { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['qa'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0, head: 'h1', approvals: [{ by: 'qa', commit: 'h1' }], recentCommits: ['h1'] }]]);
@@ -259,11 +259,11 @@ test("approvals given before the PR's latest commits don't make it ready; the ca
   const s = openStore(':memory:'), c = { now: '2026-11-09T23:40:00.000Z', by: 'test' }, PR = 'https://github.com/o/r/pull/8563';
   const id = s.append({ kind: 'create', payload: { title: 'Moved on', links: { pr: PR } } }, c).id;
   s.state.work[id].phase = 'awaiting_human_approval';
-  const pr = { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['jmcdonald-ut', 'cbprice'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0,
-    head: '0980807aa', approvals: [{ by: 'cbprice', commit: '4b89514ad6' }, { by: 'jmcdonald-ut', commit: '4b89514ad6' }], recentCommits: ['4b89514ad6', 'f6a881a00', '0980807aa'] };
+  const pr = { state: 'OPEN', isDraft: false, reviewDecision: 'APPROVED', approvedBy: ['reviewer-jm', 'reviewer-cb'], mergeState: 'CLEAN', base: 'main', unresolvedThreads: 0,
+    head: '0980807aa', approvals: [{ by: 'reviewer-cb', commit: '4b89514ad6' }, { by: 'reviewer-jm', commit: '4b89514ad6' }], recentCommits: ['4b89514ad6', 'f6a881a00', '0980807aa'] };
   const v = boardView(s.state, { prs: new Map([[PR, pr]]) }).find(x => x.id === id);
   assert.equal(v.section, 'others');
-  assert.deepEqual(v.waiting, { who: 'reviewers', text: 'Waiting for re-approval on #8563: approved at 4b89514 (cbprice, jmcdonald-ut), 2 commits since' });
+  assert.deepEqual(v.waiting, { who: 'reviewers', text: 'Waiting for re-approval on #8563: approved at 4b89514 (reviewer-cb, reviewer-jm), 2 commits since' });
   const unread = boardView(s.state, { prs: new Map([[PR, { ...pr, approvals: undefined }]]) }).find(x => x.id === id);
   assert.notEqual(unread.section, 'merge', 'approval commits not read: never ready');
 });
@@ -274,14 +274,14 @@ test("W-375: each card names who really acts: an agent seat is the factory, Alex
   const bug = mk('board bug');
   s.append({ kind: 'event', target: bug, payload: { type: 'wait', who: 'triage board worker', what: 'fix it', evidence: 'x', actor: 'other' } }, c);
   const own = mk('mini mcp', { links: { pr: 'https://github.com/alexbatesdev/teamwork-mini-mcp/pull/1' } });
-  const held = mk('W-1 shape', { links: { pr: 'https://github.com/builtforteams/built-rails/pull/6233' } });
+  const held = mk('W-1 shape', { links: { pr: 'https://github.com/acme-org/app/pull/6233' } });
   s.append({ kind: 'event', target: held, payload: { type: 'wait', who: 'product and design', what: 'on hold', evidence: 'x', actor: 'other' } }, c);
-  const PR = 'https://github.com/builtforteams/built-rails/pull/8236';
+  const PR = 'https://github.com/acme-org/app/pull/8236';
   const fixer = mk('W-71 shape', { links: { pr: PR } }), member = mk('W-40 shape');
   s.state.work[member].links.pr = PR;
   s.state.work[fixer].phase = 'fixes'; s.state.work[member].phase = 'awaiting_human_approval'; s.state.work[own].phase = 'awaiting_human_approval';
-  const prs = new Map([['https://github.com/builtforteams/built-rails/pull/6233', { state: 'CLOSED' }], [PR, { state: 'OPEN', isDraft: false }]]);
-  const v = Object.fromEntries(boardView(s.state, { prs, githubOwner: 'builtforteams' }).map(x => [x.id, x]));
+  const prs = new Map([['https://github.com/acme-org/app/pull/6233', { state: 'CLOSED' }], [PR, { state: 'OPEN', isDraft: false }]]);
+  const v = Object.fromEntries(boardView(s.state, { prs, githubOwner: 'acme-org' }).map(x => [x.id, x]));
   assert.equal(v[bug].section, 'factory', 'the board developer is an agent seat');
   assert.deepEqual([v[own].section, /your own repo/.test(v[own].waiting.text)], ['you', true]);
   assert.match(v[held].waiting.text, /#6233 is closed/);

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openStore } from '../core/store.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 
-const PR = 'https://github.com/builtforteams/built-rails/pull/9001';
+const PR = 'https://github.com/acme-org/app/pull/9001';
 const ctx = { now: '2026-11-04T12:00:00.000Z', by: 'test' };
 const standing = { by: 'Alex', at: '2026-10-28' };
 

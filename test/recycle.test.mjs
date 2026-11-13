@@ -180,5 +180,5 @@ test("a recreated sandbox gets the checkout's pinned Ruby as a prebuilt download
   await restoreBaseline('box', 'codex', { put: async () => {}, read: async () => '', secret: 's', secrets: async () => {}, mcpLoad: async () => {}, tools: async sb => ran.push(sb) });
   assert.deepEqual(ran, ['box']);
   assert.match(pinnedToolsCommand, /MISE_RUBY_COMPILE=false mise install/);
-  assert.match(pinnedToolsCommand, /^cd '?\/Users\/[^ ]+\/built-rails-a'? && /);
+  assert.match(pinnedToolsCommand, /^cd '?\/Users\/[^ ]+\/[\w-]+'? && /);
 });

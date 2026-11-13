@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import * as W from '../core/work.mjs';
-const head='572fa725876a738f6bd76637151b51f5ee3fa246', url='https://github.com/builtforteams/built-rails/pull/8363';
+const head='572fa725876a738f6bd76637151b51f5ee3fa246', url='https://github.com/acme-org/app/pull/8363';
 const ctx={now:'2026-10-27T23:40:00Z',by:'fixture',openQuestions:0,verifiedPrs:[{url,head,state:'OPEN',isDraft:false}],prHead:head,prState:{url,head,state:'OPEN',isDraft:false}};
 const ev=(w,e,c=ctx)=>W.applyEvent(w,e,c).work;
 function ready(){let w=W.createWork({id:'W-1',title:'PR fixture',links:{pr:url}},ctx);w=ev(w,{type:'head',sha:head});return ev(w,{type:'await_approval',head,prs:[{url}],evidence:'fixture',waiver:{by:'Alex',reason:'Explicit fixture waiver',authorization:'fixture only'}});}

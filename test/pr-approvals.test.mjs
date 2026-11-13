@@ -106,10 +106,10 @@ test("work that carries out Alex's own answer was asked for: no New-PR approval;
   } finally { f.close(); }
 });
 
-test("triage support: true marks a support record that didn't come through the Teamwork poller, so it skips New PRs and dispatches (W-353: W-352 OSUP)", async () => {
+test("triage support: true marks a support record that didn't come through the Teamwork poller, so it skips New PRs and dispatches (W-353: W-352 ACME)", async () => {
   const f = await serve();
   try {
-    const triage = args => f.post('/api/actions', { action: 'triage', args: { work: 'W-1', bucket: 'ready', note: 'OSUP support INVESTIGATE', ...args } }, 'board lead');
+    const triage = args => f.post('/api/actions', { action: 'triage', args: { work: 'W-1', bucket: 'ready', note: 'ACME support INVESTIGATE', ...args } }, 'board lead');
     assert.equal((await triage({ support: true }))[0], 200);
     assert.equal(f.store.state.work['W-1'].support, true);
     const b = await f.board();
@@ -121,12 +121,12 @@ test("triage support: true marks a support record that didn't come through the T
 test('a record created for a Teamwork task a closed support record carried is support work too (W-405: W-404 reopened W-304)', () => {
   const store = openStore(':memory:', { supervisors: [S1] }), ctx = { now: '2026-11-11T17:00:00.000Z', by: 'test' };
   const url = 'https://acme.teamwork.com/app/tasks/41517610';
-  store.append({ kind: 'observe_source', payload: { kind: 'task', id: 'tw-41517610', title: 'Kyverna | INVESTIGATE', url, support: true } }, ctx);
+  store.append({ kind: 'observe_source', payload: { kind: 'task', id: 'tw-41517610', title: 'Globex | INVESTIGATE', url, support: true } }, ctx);
   const old = Object.values(store.state.work)[0];
   assert.equal(old.support, true);
   store.append({ kind: 'event', target: old.id, payload: { type: 'resolve', note: 'closed no change on a wrong verdict' } }, ctx);
   assert.ok(['done', 'cancelled'].includes(store.state.work[old.id].phase));
-  const { id } = store.append({ kind: 'create', payload: { title: 'Kyverna (reopened)', kind: 'build', links: { source: url } } }, ctx);
+  const { id } = store.append({ kind: 'create', payload: { title: 'Globex (reopened)', kind: 'build', links: { source: url } } }, ctx);
   assert.equal(store.state.work[id].support, true);
   const { id: other } = store.append({ kind: 'create', payload: { title: 'Unrelated', kind: 'build', links: { source: 'https://acme.teamwork.com/app/tasks/5' } } }, ctx);
   assert.ok(!store.state.work[other].support);

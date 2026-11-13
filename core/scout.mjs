@@ -1,7 +1,7 @@
 // The Sentry scout (Alex, 11-09): a free stream with nothing to dispatch looks in Sentry for errors worth a small fix.
 // Pure: the server creates the record the plan names, and auto-dispatch sends it like any job.
 import { busyStreams, canTake } from './dispatch.mjs';
-import { TERMINAL } from './work.mjs';
+import { TERMINAL, DEFAULT_REPO } from './work.mjs';
 
 /** Sentry issue ids (from issue URLs) and short ids of the scanned projects cited anywhere on the board. */
 export function sentryCited(works, projects) {
@@ -50,5 +50,5 @@ export function scoutPlan(works, plan, cfg, now) {
   const busy = busyStreams(works, cfg), to = Object.keys(cfg.supervisors).find(l => !busy.has(l) && canTake({}, l, cfg.supervisors));
   if (!to) return { reason: 'no free sbx stream' };
   return { to, create: { title: `Sentry scout ${now.slice(0, 10)} ${now.slice(11, 16)}Z`, objective: scoutBrief(sc, sentryCited(works, sc.projects)),
-    kind: 'scout', repo: 'built-rails', owner: to, phase: 'ready', priority: 4, source: { type: 'agent', by: 'board (scout)' } } };
+    kind: 'scout', repo: DEFAULT_REPO, owner: to, phase: 'ready', priority: 4, source: { type: 'agent', by: 'board (scout)' } } };
 }

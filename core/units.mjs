@@ -1,6 +1,6 @@
 // PR work units: once tasks are implemented in a PR, the PR's record is the unit that groups them, and follow-up
 // work hangs off it as children. Membership is derived from links, coverage and relations; nothing else stores it. Pure.
-import { TERMINAL } from './work.mjs';
+import { TERMINAL, DEFAULT_REPO } from './work.mjs';
 
 /** `repo-n` for a GitHub PR URL, the key the board files PRs under. */
 export const prKey = url => { const m = String(url || '').match(/github\.com\/[\w.-]+\/([\w.-]+)\/pull\/(\d+)/); return m ? `${m[1]}-${m[2]}` : null; };
@@ -59,7 +59,7 @@ export function mergeCloses(works, bySource, { prState, openQuestions, track }) 
 }
 
 /** Merge holds (W-292): `urls` to read, and with prState the {id, pr} holds whose PR merged (`released`) or closed unmerged (`closed`). A bare #N is in the record's repo. */
-export const prRefUrl = (w, pr, owner) => (pr.startsWith('#') ? `https://github.com/${owner}/${w.repo || 'built-rails'}/pull/${pr.slice(1)}` : pr);
+export const prRefUrl = (w, pr, owner) => (pr.startsWith('#') ? `https://github.com/${owner}/${w.repo || DEFAULT_REPO}/pull/${pr.slice(1)}` : pr);
 export const PR_REF = /^(#\d+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+)$/;
 
 export function holdReleases(works, owner, prState = () => null) {

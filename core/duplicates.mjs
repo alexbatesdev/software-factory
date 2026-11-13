@@ -1,8 +1,8 @@
 // W-471: a New-PR record's duplicate search is re-run against open PRs until it is dispatched, not only at triage.
 // Another author's PR opened since the search on a file the record names takes the approval back to Alex.
-import { LIVE_ASSIGNMENT } from './work.mjs';
+import { LIVE_ASSIGNMENT, DEFAULT_REPO } from './work.mjs';
 
-export const repoOf = w => w.repo || 'built-rails';
+export const repoOf = w => w.repo || DEFAULT_REPO;
 const PATH = /(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z]\w*/g;
 
 /** The repo files a record names in its objective and New-PR breakdown. */

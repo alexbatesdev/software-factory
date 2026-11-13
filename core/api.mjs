@@ -10,7 +10,7 @@ import { reachesAlex } from './derive.mjs';
 import { supportOf, prGateView } from './store.mjs';
 import { decideTaskRequests, STUCK_MS } from './task-requests.mjs';
 import { decideAwsRequests } from './aws-access.mjs';
-import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval } from './work.mjs';
+import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval, DEFAULT_REPO } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
 
@@ -42,7 +42,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     if (action === 'progress' && args.discovery && /pre-?existing|\bon (origin\/)?main\b|already (on|in) main/i.test(`${args.discovery} ${args.text || ''}`)) {
       const m = args.onMain;
       if (!m?.sha || !m?.path || !String(m?.code || '').trim()) return [409, { error: 'A discovery called pre-existing needs onMain: {sha (on origin/main), path, code (a line of the faulty code, verbatim)}. Check origin/main first; if the code only exists on the PR under review, fix it in that PR instead of splitting it out.' }];
-      const repo = s.work[args.work]?.repo || 'built-rails';
+      const repo = s.work[args.work]?.repo || DEFAULT_REPO;
       if (onMain && !(await onMain(repo, m).catch(() => false))) return [409, { error: `That code isn't on origin/main: "${m.code}" isn't in ${m.path} at ${m.sha}, or ${m.sha} isn't on origin/main. If the PR under review introduced it, fix it there.` }];
     }
     // A message waits in an inbox until acked, so it goes only to a seat that can read and ack one (W-414).

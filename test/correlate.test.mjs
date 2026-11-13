@@ -5,23 +5,23 @@ import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
 
 const ctx = (by = 'test') => ({ now: '2026-10-30T18:00:00.000Z', by });
-const PR = n => `https://github.com/builtforteams/built-rails/pull/${n}`;
+const PR = n => `https://github.com/acme-org/app/pull/${n}`;
 const task = (tw, title) => ({ id: `tw-${tw}`, kind: 'task', ref: String(tw), title, url: `https://x.teamwork.com/app/tasks/${tw}`, description: '' });
-const pr = (n, branch) => ({ id: `built-rails-${n}`, kind: 'pr', repo: 'built-rails', ref: `built-rails#${n}`, title: `PR ${n}`, url: PR(n), branch, noFeedback: true });
+const pr = (n, branch) => ({ id: `app-${n}`, kind: 'pr', repo: 'app', ref: `app#${n}`, title: `PR ${n}`, url: PR(n), branch, noFeedback: true });
 const poll = (s, items, type) => sourceCommands(s.state, new Map(items.map(i => [i.id, i])), type, parseAcs).map(c => s.append(c, ctx('poller')));
 const open = () => openStore(':memory:', { supervisors: ['sup: stream-2'] });
 
 test("a task's own PR joins its record by branch instead of becoming a record (W-115/#8462, W-32/#8421)", () => {
   const s = open();
-  poll(s, [task(41454539, 'Ask Built asset'), task(41073672, 'Ashby req details')], 'teamwork');
+  poll(s, [task(41454539, 'Ask App asset'), task(41073672, 'Ashby req details')], 'teamwork');
   const [w115, w32] = Object.keys(s.state.work);
   s.append({ kind: 'update', target: w32, payload: { links: { pr: PR(8421) } } }, ctx());
-  poll(s, [pr(8462, 'alex/confidential/ask-built-asset-confidential/41454539'), pr(8421, 'alex/ashby-req-details-sent-data/41073672')], 'pr');
+  poll(s, [pr(8462, 'alex/confidential/ask-app-asset-confidential/41454539'), pr(8421, 'alex/ashby-req-details-sent-data/41073672')], 'pr');
   assert.equal(Object.keys(s.state.work).length, 2, 'no PR records');
   assert.equal(s.state.work[w115].links.pr, PR(8462));
-  assert.ok(s.state.work[w115].aliases.includes('built-rails-8462'));
-  assert.ok(s.state.work[w32].aliases.includes('built-rails-8421'));
-  assert.deepEqual(poll(s, [pr(8462, 'alex/confidential/ask-built-asset-confidential/41454539')], 'pr'), [], 'a repeat poll is not news');
+  assert.ok(s.state.work[w115].aliases.includes('app-8462'));
+  assert.ok(s.state.work[w32].aliases.includes('app-8421'));
+  assert.deepEqual(poll(s, [pr(8462, 'alex/confidential/ask-app-asset-confidential/41454539')], 'pr'), [], 'a repeat poll is not news');
 });
 
 test("a worker's PR the poller filed first is absorbed when the record that produced it claims it (W-60/#8456)", () => {
@@ -69,7 +69,7 @@ test("a PR's own record wins over an older task record that links it (W-60 and W
 
 test('a mutation-tester PR becomes a record like any other (Alex, 11-09)', () => {
   const s = open();
-  const cmds = sourceCommands(s.state, new Map([['built-rails-8283', pr(8283, 'alex/mutation-tester')]]), 'pr', parseAcs, {});
+  const cmds = sourceCommands(s.state, new Map([['app-8283', pr(8283, 'alex/mutation-tester')]]), 'pr', parseAcs, {});
   assert.equal(cmds.length, 1);
 });
 
@@ -80,7 +80,7 @@ test("after an absorb, the PR belongs to the record that claimed it, not the pla
   poll(s, [pr(8456, 'alex/position-end-date/5a-apply-engine')], 'pr');
   s.append({ kind: 'update', target: w60, payload: { links: { pr: PR(8456) } } }, ctx('sup: stream-2'));
   const placeholder = Object.keys(s.state.work).find(id => id !== w60), before = structuredClone(s.state.work[placeholder]);
-  assert.equal(sourceIndex(s.state).get('built-rails-8456'), w60);
+  assert.equal(sourceIndex(s.state).get('app-8456'), w60);
   poll(s, [{ ...pr(8456, 'alex/position-end-date/5a-apply-engine'), title: 'Renamed PR' }], 'pr');
   assert.deepEqual(s.state.work[placeholder], before, 'the cancelled placeholder is never refreshed again');
 });
@@ -99,10 +99,10 @@ test('a worker PR joins the one live record whose notes name its branch, even be
   const at = now => ({ now, by: 'poller' });
   const run = now => {
     const s = open();
-    const id = s.append({ kind: 'create', payload: { title: 'Ask Built assign_assets', kind: 'build', criteria: ['checked'] } }, at(now)).id;
+    const id = s.append({ kind: 'create', payload: { title: 'Ask App assign_assets', kind: 'build', criteria: ['checked'] } }, at(now)).id;
     s.append({ kind: 'event', target: id, payload: { type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'started', owner: 'sup: stream-2', evidence: 'brief' } }, at(now));
-    s.append({ kind: 'event', target: id, payload: { type: 'note', text: 'Worker on branch alex/ask-built/assign-assets-check, PR to follow.' } }, at(now));
-    for (const c of sourceCommands(s.state, new Map([[`built-rails-8535`, pr(8535, 'alex/ask-built/assign-assets-check')]]), 'pr', parseAcs)) s.append(c, at(now));
+    s.append({ kind: 'event', target: id, payload: { type: 'note', text: 'Worker on branch alex/ask-app/assign-assets-check, PR to follow.' } }, at(now));
+    for (const c of sourceCommands(s.state, new Map([[`app-8535`, pr(8535, 'alex/ask-app/assign-assets-check')]]), 'pr', parseAcs)) s.append(c, at(now));
     return { s, id };
   };
   const { s, id } = run('2026-11-06T00:00:00.000Z');
@@ -117,7 +117,7 @@ test('a worker PR joins the live record its supervisor named the branch on (W-18
   const s = open();
   const id = s.append({ kind: 'create', payload: { title: 'Granted employees read custom fields', kind: 'build', criteria: ['readable'] } }, at).id;
   s.appendAll(commandsFor('assign', { work: id, assignmentId: 'R1', kind: 'implementation', status: 'started', owner: 'sbx: stream-1', evidence: 'brief file', branch: 'alex/confidential/granted-employee-custom-fields' }), at);
-  for (const c of sourceCommands(s.state, new Map([['built-rails-8570', pr(8570, 'alex/confidential/granted-employee-custom-fields')]]), 'pr', parseAcs)) s.append(c, { ...at, by: 'poller' });
+  for (const c of sourceCommands(s.state, new Map([['app-8570', pr(8570, 'alex/confidential/granted-employee-custom-fields')]]), 'pr', parseAcs)) s.append(c, { ...at, by: 'poller' });
   assert.deepEqual(Object.keys(s.state.work), [id], 'no duplicate record');
   assert.equal(s.state.work[id].links.pr, PR(8570));
 });
@@ -140,14 +140,14 @@ test("a Teamwork record's objective is the task's description, so triage can rea
 
 test("a hand-made record that links a Teamwork task is that task's record: the poller joins it instead of filing a duplicate (W-352/W-354)", () => {
   const s = open(), at = now => ({ now, by: 'test' });
-  const id = s.append({ kind: 'create', payload: { title: 'OSUP | INVESTIGATE', links: { source: 'https://builtforteams.teamwork.com/app/tasks/41503361' } } }, at('2026-11-10T20:00:00.000Z')).id;
-  const seen = s.append({ kind: 'observe_source', payload: { ...task(41503361, 'OSUP | INVESTIGATE | User Unable To Submit Req'), support: true } }, at('2026-11-10T20:01:00.000Z')).id;
+  const id = s.append({ kind: 'create', payload: { title: 'ACME | INVESTIGATE', links: { source: 'https://acme.teamwork.com/app/tasks/41503361' } } }, at('2026-11-10T20:00:00.000Z')).id;
+  const seen = s.append({ kind: 'observe_source', payload: { ...task(41503361, 'ACME | INVESTIGATE | User Unable To Submit Req'), support: true } }, at('2026-11-10T20:01:00.000Z')).id;
   assert.equal(seen, id, 'joined, not a second record');
   assert.ok(s.state.work[id].aliases.includes('tw-41503361'));
   assert.equal(s.state.work[id].support, true, 'a support task makes its joined record support work');
   assert.equal(Object.keys(s.state.work).length, 1);
   const old = open();
-  old.append({ kind: 'create', payload: { title: 'x', links: { source: 'https://builtforteams.teamwork.com/app/tasks/7' } } }, at('2026-11-10T18:00:00.000Z'));
+  old.append({ kind: 'create', payload: { title: 'x', links: { source: 'https://acme.teamwork.com/app/tasks/7' } } }, at('2026-11-10T18:00:00.000Z'));
   old.append({ kind: 'observe_source', payload: task(7, 'x') }, at('2026-11-10T18:01:00.000Z'));
   assert.equal(Object.keys(old.state.work).length, 2, 'replay before the change keeps its two records');
 });
@@ -156,36 +156,36 @@ test("a record closed as a duplicate hands its PR key to the record it duplicate
   const { commandsFor } = await import('../core/actions.mjs');
   const s = open(), c = { now: '2026-11-10T21:30:00.000Z', by: 'test' };
   const keep = s.append({ kind: 'create', payload: { title: 'PortNOLA support', source: { type: 'teamwork', key: 'tw-41525276' } } }, c).id;
-  const dup = s.append({ kind: 'create', payload: { title: 'PR 8699', source: { type: 'pr', key: 'built-rails-8699' } } }, c).id;
+  const dup = s.append({ kind: 'create', payload: { title: 'PR 8699', source: { type: 'pr', key: 'app-8699' } } }, c).id;
   s.appendAll(commandsFor('triage', { work: dup, bucket: 'close', reason: 'duplicate', of: keep, note: 'same PR' }), c);
-  assert.equal(sourceIndex(s.state).get('built-rails-8699'), keep);
-  const old = s.append({ kind: 'create', payload: { title: 'PR 9', source: { type: 'pr', key: 'built-rails-9' } } }, c).id;
+  assert.equal(sourceIndex(s.state).get('app-8699'), keep);
+  const old = s.append({ kind: 'create', payload: { title: 'PR 9', source: { type: 'pr', key: 'app-9' } } }, c).id;
   s.append({ kind: 'event', target: old, payload: { type: 'withdraw', note: 'Duplicate of it, closed before W-365' } }, c);
-  assert.equal(sourceIndex(s.state).get('built-rails-9'), old, 'an old close still holds its key');
+  assert.equal(sourceIndex(s.state).get('app-9'), old, 'an old close still holds its key');
   s.append({ kind: 'event', target: old, payload: { type: 'absorb', into: keep } }, c);
-  assert.equal(sourceIndex(s.state).get('built-rails-9'), keep, 'repair: absorbing the closed record moves the key');
+  assert.equal(sourceIndex(s.state).get('app-9'), keep, 'repair: absorbing the closed record moves the key');
   assert.match(s.state.work[old].completion.withdrawn, /Duplicate/, 'the close reason stays');
 });
 
 test("the record a duplicate is folded into takes its PR link too, when it has none, so the ready gate can mark that PR (W-418: W-359 sat 24h with no PR)", async () => {
   const { commandsFor } = await import('../core/actions.mjs');
   const s = open(), c = { now: '2026-11-11T22:00:00.000Z', by: 'test' };
-  const pr = 'https://github.com/builtforteams/built-rails/pull/8699';
+  const pr = 'https://github.com/acme-org/app/pull/8699';
   const keep = s.append({ kind: 'create', payload: { title: 'PortNOLA support', source: { type: 'teamwork', key: 'tw-41525276' }, links: { branch: 'hotfix/x' } } }, c).id;
-  const dup = s.append({ kind: 'create', payload: { title: 'PR 8699', source: { type: 'pr', key: 'built-rails-8699' }, links: { pr } } }, c).id;
+  const dup = s.append({ kind: 'create', payload: { title: 'PR 8699', source: { type: 'pr', key: 'app-8699' }, links: { pr } } }, c).id;
   s.appendAll(commandsFor('triage', { work: dup, bucket: 'close', reason: 'duplicate', of: keep, note: 'same PR' }), c);
   assert.deepEqual([s.state.work[keep].links.pr, s.state.work[keep].links.branch], [pr, 'hotfix/x'], 'the PR moves; the branch the record has stays');
-  const other = 'https://github.com/builtforteams/built-rails/pull/9';
+  const other = 'https://github.com/acme-org/app/pull/9';
   const keep2 = s.append({ kind: 'create', payload: { title: 'Has a PR', links: { pr: other } } }, c).id;
-  const dup2 = s.append({ kind: 'create', payload: { title: 'PR 10', source: { type: 'pr', key: 'built-rails-10' }, links: { pr: 'https://github.com/builtforteams/built-rails/pull/10' } } }, c).id;
+  const dup2 = s.append({ kind: 'create', payload: { title: 'PR 10', source: { type: 'pr', key: 'app-10' }, links: { pr: 'https://github.com/acme-org/app/pull/10' } } }, c).id;
   s.append({ kind: 'event', target: dup2, payload: { type: 'absorb', into: keep2 } }, c);
   assert.equal(s.state.work[keep2].links.pr, other, 'a record that has its own PR keeps it');
 });
 
 test("a PR whose key a record already holds, on a record with no PR link, is linked on the next poll (W-418 repair: W-359 holds #8699's key since 11-10)", async () => {
   const s = open(), c = { now: '2026-11-11T22:00:00.000Z', by: 'test' };
-  const keep = s.append({ kind: 'create', payload: { title: 'PortNOLA', source: { type: 'teamwork', key: 'tw-41525276' }, aliases: ['built-rails-8699'] } }, c).id;
-  const items = new Map([['built-rails-8699', pr(8699, 'alex/support/41525276-portnola-variable-pay')]]);
+  const keep = s.append({ kind: 'create', payload: { title: 'PortNOLA', source: { type: 'teamwork', key: 'tw-41525276' }, aliases: ['app-8699'] } }, c).id;
+  const items = new Map([['app-8699', pr(8699, 'alex/support/41525276-portnola-variable-pay')]]);
   const cmds = sourceCommands(s.state, items, 'pr', () => [], { now: c.now });
   assert.equal(cmds.length, 1, 'the poll asks to link it');
   s.appendAll(cmds, c);

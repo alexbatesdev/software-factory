@@ -6,16 +6,16 @@ import { createApi } from '../core/api.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
 import { readFileSync } from 'node:fs';
 
-const S1 = 'triage board worker', PR = 'https://github.com/builtforteams/built-rails/pull/8635', T = '2026-11-09T18:00:00.000Z';
+const S1 = 'triage board worker', PR = 'https://github.com/acme-org/app/pull/8635', T = '2026-11-09T18:00:00.000Z';
 const config = { roles: { 'triage board worker': 'board-developer' }, routing: { supervisors: {} } };
-const request = { work: 'W-1', threadId: 'PRRT_abc', url: `${PR}#discussion_r1`, reviewer: 'jmcdonald-ut', ask: 'Guard the deleted pay type', resolution: 'Fixed at 6377559 with a spec pinning the deleted pay type' };
+const request = { work: 'W-1', threadId: 'PRRT_abc', url: `${PR}#discussion_r1`, reviewer: 'reviewer-jm', ask: 'Guard the deleted pay type', resolution: 'Fixed at 6377559 with a spec pinning the deleted pay type' };
 
 async function serve(gh) {
   const store = openStore(':memory:', { supervisors: [S1] });
   const ctx = { now: T, by: 'test' };
   store.append({ kind: 'create', payload: { title: 'PR feedback', links: { pr: PR }, stream: S1 } }, ctx);
   store.append({ kind: 'observe_head', target: 'W-1', payload: { sha: 'aaaaaaa1', via: 'github', isDraft: false } }, ctx);
-  store.append({ kind: 'observe_health', target: 'W-1', payload: { head: 'aaaaaaa1', threads: [{ id: 'PRRT_abc', by: 'jmcdonald-ut', url: request.url }] } }, ctx);
+  store.append({ kind: 'observe_health', target: 'W-1', payload: { head: 'aaaaaaa1', threads: [{ id: 'PRRT_abc', by: 'reviewer-jm', url: request.url }] } }, ctx);
   const server = http.createServer(createApi({ store, config, gh, now: () => T }));
   await new Promise(ok => server.listen(0, '127.0.0.1', ok));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -62,7 +62,7 @@ test('Resolve on the dashboard resolves the thread on GitHub and records the rea
 
 test('a thread on another PR fails without a write', async () => {
   let wrote = false;
-  const gh = { thread: async () => ({ pr: 'https://github.com/builtforteams/built-rails/pull/1', isResolved: false }), resolveThread: async () => { wrote = true; } };
+  const gh = { thread: async () => ({ pr: 'https://github.com/acme-org/app/pull/1', isResolved: false }), resolveThread: async () => { wrote = true; } };
   const f = await serve(gh);
   try {
     await f.act('resolve_thread', request);
@@ -99,7 +99,7 @@ test('a request whose thread Alex resolved on GitHub himself closes as resolved 
 
 test("a thread request's last five messages are read from GitHub on demand, only for a thread the board holds", async () => {
   const asked = [];
-  const msgs = [{ by: 'jmcdonald-ut', at: T, body: 'What if the pay type is deleted?', url: `${PR}#discussion_r1` }];
+  const msgs = [{ by: 'reviewer-jm', at: T, body: 'What if the pay type is deleted?', url: `${PR}#discussion_r1` }];
   const f = await serve({ threadComments: async id => { asked.push(id); return msgs; } });
   try {
     await f.act('resolve_thread', request);
@@ -119,7 +119,7 @@ test("a codex review thread we replied to resolves itself; a person's thread, or
     last = 'chatgpt-codex-connector';
     await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev' });
     assert.equal(f.store.state.threads['RT-1'].status, 'requested', 'no reply from us yet');
-    first = 'jmcdonald-ut'; last = 'alexbatesdev';
+    first = 'reviewer-jm'; last = 'alexbatesdev';
     await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev' });
     assert.equal(f.store.state.threads['RT-1'].status, 'requested', "a person's thread is Alex's click");
     first = 'chatgpt-codex-connector';
@@ -148,7 +148,7 @@ test("a thread's messages say which are ours, so the page can tell them apart", 
 
 test('a resolve request on a PR that has merged or closed is dismissed: nothing is written to GitHub and it leaves the panel (Alex, 11-11)', async () => {
   let wrote = false;
-  const gh = { thread: async () => ({ pr: PR, isResolved: false, first: 'sam-built', last: 'alexbatesdev' }), resolveThread: async () => { wrote = true; } };
+  const gh = { thread: async () => ({ pr: PR, isResolved: false, first: 'reviewer-sam', last: 'alexbatesdev' }), resolveThread: async () => { wrote = true; } };
   const f = await serve(gh);
   try {
     await f.act('resolve_thread', request);

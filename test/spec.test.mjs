@@ -4,7 +4,7 @@ import { parseSpec, parseDecisions } from '../core/spec.mjs';
 
 const SPEC = `---
 type: spec
-teamwork_task: https://builtforteams.teamwork.com/app/tasks/41384290
+teamwork_task: https://acme.teamwork.com/app/tasks/41384290
 ---
 # Spec
 ## Requirements

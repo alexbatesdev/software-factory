@@ -4,28 +4,29 @@ import { openStore } from '../core/store.mjs';
 import { pathsOf, duplicateCommands } from '../core/duplicates.mjs';
 import { autoDispatchPlan } from '../core/dispatch.mjs';
 import { prGateView } from '../core/store.mjs';
+import { DEFAULT_REPO } from '../core/work.mjs';
 
-// W-471: the duplicate search ran once at triage (00:41Z); sam-built's #8814 opened at 16:06Z on the same file and
+// W-471: the duplicate search ran once at triage (00:41Z); reviewer-sam's #8814 opened at 16:06Z on the same file and
 // W-463 was approved and dispatched at 16:19Z with no re-check.
 const S1 = 'sup: stream-1', T0 = '2026-11-13T00:41:00.000Z', T1 = '2026-11-13T16:10:00.000Z';
-const OBJ = 'brakeman warning at app/queries/headcount_planning/expanded_datasheet_sources.rb:87; fix with an entry in config/brakeman.ignore.';
-const SAM = { url: 'https://github.com/builtforteams/built-rails/pull/8814', author: 'sam-built', createdAt: '2026-11-13T16:06:48Z', files: ['config/brakeman.ignore', 'spec/support/example_watchdog.rb'] };
-const OLD = { url: 'https://github.com/builtforteams/built-rails/pull/8700', author: 'dependabot', createdAt: '2026-11-10T00:00:00Z', files: ['Gemfile.lock'] };
-const MINE = { url: 'https://github.com/builtforteams/built-rails/pull/8815', author: 'alexbatesdev', createdAt: '2026-11-13T16:27:50Z', files: ['config/brakeman.ignore'] };
+const OBJ = 'brakeman warning at app/queries/reports/expanded_datasheet_sources.rb:87; fix with an entry in config/brakeman.ignore.';
+const SAM = { url: 'https://github.com/acme-org/app/pull/8814', author: 'reviewer-sam', createdAt: '2026-11-13T16:06:48Z', files: ['config/brakeman.ignore', 'spec/support/example_watchdog.rb'] };
+const OLD = { url: 'https://github.com/acme-org/app/pull/8700', author: 'dependabot', createdAt: '2026-11-10T00:00:00Z', files: ['Gemfile.lock'] };
+const MINE = { url: 'https://github.com/acme-org/app/pull/8815', author: 'alexbatesdev', createdAt: '2026-11-13T16:27:50Z', files: ['config/brakeman.ignore'] };
 
 function proposed({ approved = false } = {}) {
   const store = openStore(':memory:', { supervisors: [S1] });
   const ctx = { now: T0, by: 'board lead' };
-  store.append({ kind: 'create', payload: { title: 'Brakeman on main', kind: 'pr-feedback', repo: 'built-rails', objective: OBJ, source: { type: 'agent', by: 'local-head' }, stream: S1 } }, ctx);
+  store.append({ kind: 'create', payload: { title: 'Brakeman on main', kind: 'pr-feedback', repo: 'app', objective: OBJ, source: { type: 'agent', by: 'local-head' }, stream: S1 } }, ctx);
   store.append({ kind: 'event', target: 'W-1', payload: { type: 'transition', to: 'ready' } }, ctx);
   store.append({ kind: 'event', target: 'W-1', payload: { type: 'proposal', prompted: 'p', addresses: 'a', whyThisFix: 'w', since: 's', customerImpact: 'none', duplicateSearch: 'none touching config/brakeman.ignore' } }, ctx);
   if (approved) store.append({ kind: 'event', target: 'W-1', payload: { type: 'pr_approved' } }, { now: T1, by: 'local-head' });
   return store;
 }
-const check = (store, prs, now = '2026-11-13T16:19:00.000Z') => { for (const c of duplicateCommands(store.state, { 'built-rails': prs }, { me: 'alexbatesdev' })) store.append(c, { now, by: 'board (duplicate check)' }); };
+const check = (store, prs, now = '2026-11-13T16:19:00.000Z') => { for (const c of duplicateCommands(store.state, { 'app': prs }, { me: 'alexbatesdev' })) store.append(c, { now, by: 'board (duplicate check)' }); };
 
 test("a New-PR record's files come from its objective and breakdown", () => {
-  assert.deepEqual(pathsOf(proposed().state.work['W-1']).sort(), ['app/queries/headcount_planning/expanded_datasheet_sources.rb', 'config/brakeman.ignore']);
+  assert.deepEqual(pathsOf(proposed().state.work['W-1']).sort(), ['app/queries/reports/expanded_datasheet_sources.rb', 'config/brakeman.ignore']);
 });
 
 test('another author opening a PR on the same file after the search takes back the approval: no dispatch, and the match is on the card', () => {
@@ -33,8 +34,8 @@ test('another author opening a PR on the same file after the search takes back t
   check(store, [SAM, OLD, MINE]);
   const w = store.state.work['W-1'];
   assert.equal(w.prApproval, null, 'back to Alex');
-  assert.deepEqual(w.duplicateHits.matches.map(m => [m.pr, m.author, m.files]), [[SAM.url, 'sam-built', ['config/brakeman.ignore']]]);
-  assert.match(w.updates.at(-1).text, /#8814 by sam-built.*config\/brakeman\.ignore/);
+  assert.deepEqual(w.duplicateHits.matches.map(m => [m.pr, m.author, m.files]), [[SAM.url, 'reviewer-sam', ['config/brakeman.ignore']]]);
+  assert.match(w.updates.at(-1).text, /#8814 by reviewer-sam.*config\/brakeman\.ignore/);
   const view = prGateView(store.state, w);
   const plan = autoDispatchPlan([view], { supervisors: { [S1]: {} } }, {});
   assert.ok(!plan.some(p => p.id === 'W-1' && p.action === 'dispatch'), JSON.stringify(plan));
@@ -56,7 +57,7 @@ test('the same match is said once; Alex approving again builds it anyway; a newe
 test('a record that already has its PR, or no proposal, is not checked', () => {
   const store = proposed();
   store.state.work['W-1'].links = { pr: MINE.url };
-  assert.deepEqual(duplicateCommands(store.state, { 'built-rails': [SAM] }, { me: 'alexbatesdev' }), []);
+  assert.deepEqual(duplicateCommands(store.state, { 'app': [SAM] }, { me: 'alexbatesdev' }), []);
 });
 
 test('an approved New-PR record waits for a re-check newer than the approval, and a clean one lets it dispatch', () => {
@@ -73,8 +74,8 @@ test('the New PRs card shows the match next to Approve', async () => {
   assert.match(readFileSync(new URL('../views/index.html', import.meta.url), 'utf8'), /p\.duplicateHits/);
 });
 
-test('a record with no repo is checked against built-rails, where New-PR records land', () => {
+test('a record with no repo is checked against the default repo, where New-PR records land', () => {
   const store = proposed();
   store.state.work['W-1'].repo = null;
-  assert.equal(duplicateCommands(store.state, { 'built-rails': [SAM] }, { me: 'alexbatesdev' }).length, 1);
+  assert.equal(duplicateCommands(store.state, { [DEFAULT_REPO]: [SAM] }, { me: 'alexbatesdev' }).length, 1);
 });

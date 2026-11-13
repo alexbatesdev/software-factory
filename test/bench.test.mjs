@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { corpusCandidates, selectCorpus } from '../core/bench.mjs';
 
 // Evolution phase 1 step 5: fixed review inputs from the board's own history, split so tuning never sees eval cases.
-const PR = 'https://github.com/builtforteams/built-rails/pull/', H = c => c.repeat(40);
+const PR = 'https://github.com/acme-org/app/pull/', H = c => c.repeat(40);
 const rec = (id, o) => ({ id, title: `t ${id}`, criteria: [{ id: 'AC1', text: 'does x' }], phase: 'done', links: { pr: `${PR}${id.slice(2)}` }, findings: [], reviews: [], ...o });
 const state = { work: {
   // A human found a defect after our clean review, and it was fixed red-first: a confirmed miss.
@@ -27,7 +27,7 @@ test('candidates are confirmed misses, fixed findings and clean merged reviews, 
   assert.deepEqual(c.defect.map(x => [x.work, x.head, x.expected[0].text]), [['W-3', H('c'), 'nil crash in X']]);
   assert.deepEqual(c.clean.map(x => [x.work, x.head]), [['W-4', H('e')]]);
   assert.deepEqual(c.miss[0].criteria, ['AC1: does x']);
-  assert.equal(c.miss[0].repo, 'builtforteams/built-rails');
+  assert.equal(c.miss[0].repo, 'acme-org/app');
 });
 
 test('selection is stable, and every case is either eval or tune by its id alone', () => {
