@@ -726,7 +726,7 @@ export function applyEvent(work, e, ctx) {
       if (!m.length) { if (w.prApproval) note(w, ctx, `Duplicate re-check before dispatch: no open PR by another author touches ${(e.paths || []).join(', ') || 'the files named'} since the search.`); break; }
       w.duplicateHits = { at: ctx.now, matches: m, seen: [...new Set([...(w.duplicateHits?.seen || []), ...m.map(x => x.pr)])] };
       const said = m.map(x => `#${x.pr.split('/').pop()} by ${x.author} (${x.files.join(', ')})`).join('; ');
-      note(w, ctx, `Possible duplicate, opened since the duplicate search: ${said}. ${w.prApproval ? `Approval by ${w.prApproval.by} withdrawn: ` : ''}not dispatched until Alex approves again (build anyway) or declines.`);
+      note(w, ctx, `Possible duplicate, opened since the duplicate search: ${said}. ${w.prApproval ? `Approval by ${w.prApproval.by} withdrawn: not` : 'Not'} dispatched until Alex approves (build anyway) or declines.`);
       w.prApproval = null;
       break;
     }
