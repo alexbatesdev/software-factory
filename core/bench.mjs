@@ -51,3 +51,17 @@ export function selectCorpus(cands, n = { miss: 4, defect: 3, clean: 3 }) {
     return { id, kind, split: splitOf(id), ...c };
   }));
 }
+
+/** Observational quality since `since`, from the same run records: advisory, never a model score. */
+export function qualityReport(state, since) {
+  const ws = Object.values(state.work), arts = Object.values(state.artifacts || {});
+  const reviews = ws.flatMap(w => (w.reviews || []).filter(r => !r.forAlex && r.at >= since).map(r => ({ w, r })));
+  const started = ws.flatMap(w => (w.assignments || []).flatMap(a => (a.history || []).filter(h => h.status === 'started' && h.at >= since).map(() => `${w.id}/${a.id}`)));
+  return {
+    since,
+    reviews: { total: reviews.length, clean: reviews.filter(x => x.r.result === 'clean').length, findings: reviews.filter(x => x.r.result === 'findings').length,
+      evidenceRetained: reviews.filter(x => arts.some(a => a.work === x.w.id && a.head === x.r.head && a.status === 'retained')).length },
+    runs: { started: started.length, withManifest: started.filter(k => Object.keys(state.manifests || {}).some(m => m.startsWith(`${k}/`))).length },
+    escapesUnadjudicated: ws.flatMap(w => escapes(w).filter(e => e.at >= since)).length,
+  };
+}

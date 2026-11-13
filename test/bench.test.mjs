@@ -46,3 +46,15 @@ test('two findings on one reviewed head, or two records on one PR head, make one
   assert.equal(c.miss.length, 1);
   assert.equal(c.miss[0].expected.length, 2);
 });
+
+test('the quality report counts reviews, retained evidence, manifests and unadjudicated escapes since a time', async () => {
+  const { qualityReport } = await import('../core/bench.mjs');
+  const s = { work: { 'W-1': state.work['W-1'], 'W-3': state.work['W-3'] },
+    artifacts: { k: { work: 'W-3', head: H('c'), status: 'retained' } },
+    manifests: { 'W-3/R1/1': { run: { work: 'W-3' } } } };
+  s.work['W-3'] = { ...s.work['W-3'], assignments: [{ id: 'R1', history: [{ status: 'started', at: '2026-11-03T00:00:00Z' }] }] };
+  const r = qualityReport(s, '2026-11-01T00:00:00Z');
+  assert.deepEqual(r.reviews, { total: 3, clean: 2, findings: 1, evidenceRetained: 1 });
+  assert.deepEqual(r.runs, { started: 1, withManifest: 1 });
+  assert.equal(r.escapesUnadjudicated, 1);
+});

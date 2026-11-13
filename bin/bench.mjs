@@ -1,4 +1,5 @@
 // The review benchmark (evolution phase 1 step 5).
+//   node bin/bench.mjs report [since]  → reviews, retained evidence, manifests and unadjudicated escapes since a time
 //   node bin/bench.mjs corpus   → data/bench/corpus-<date>.json (git-ignored: the repo is public) from the live board, each case's base pinned from GitHub
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -6,7 +7,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openStore } from '../core/store.mjs';
-import { corpusCandidates, selectCorpus } from '../core/bench.mjs';
+import { corpusCandidates, qualityReport, selectCorpus } from '../core/bench.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const run = promisify(execFile);
@@ -26,3 +27,5 @@ if (process.argv[2] === 'corpus') {
   writeFileSync(out, `${JSON.stringify({ builtAt: new Date().toISOString(), fromSeq: store.state.seq, cases }, null, 2)}\n`);
   console.log(`${out}: ${cases.length} cases (${cases.filter(c => c.split === 'eval').length} eval, ${cases.filter(c => c.split === 'tune').length} tune)`);
 }
+
+if (process.argv[2] === 'report') console.log(JSON.stringify(qualityReport(openStore(process.env.FACTORY_DB || join(ROOT, 'data/factory.db')).state, process.argv[3] || new Date(Date.now() - 7 * 864e5).toISOString()), null, 2));
