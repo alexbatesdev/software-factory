@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { escapes } from './work.mjs';
 
-const SHA = /\b[0-9a-f]{7,40}\b/;
+const SHA = /\b(?=[0-9a-f]*[a-f])[0-9a-f]{7,40}\b/;
 // Feedback after a clean review counts as a miss only when a fix commit is named for it and it isn't marked nothing-to-do.
 const confirmedFix = f => f.status === 'resolved' && SHA.test(f.note || '') && !/nothing to (fix|do)|not a (bug|defect)|already on main/i.test(f.note || '') ? f.note.match(SHA)[0] : null;
 

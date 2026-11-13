@@ -116,7 +116,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       const url = new URL(req.url, 'http://127.0.0.1');
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'Local requests only.' });
       const seat = req.headers['x-seat'];
-      if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq, artifacts = {} } = store.state; return send(res, 200, { work, questions, messages, seq, artifacts }); }
+      if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq, artifacts = {}, manifests = {} } = store.state; return send(res, 200, { work, questions, messages, seq, artifacts, manifests }); }
       const art = req.method === 'GET' && /^\/api\/artifacts\/([0-9a-f]{64})$/.exec(url.pathname)?.[1];
       if (art && artifactRoot && existsSync(join(artifactRoot, art.slice(0, 2), art))) { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(readFileSync(join(artifactRoot, art.slice(0, 2), art))); }
       // Vendored page libraries (markdown for review-thread messages), by exact name only.

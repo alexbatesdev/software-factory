@@ -58,3 +58,8 @@ test('the quality report counts reviews, retained evidence, manifests and unadju
   assert.deepEqual(r.runs, { started: 1, withManifest: 1 });
   assert.equal(r.escapesUnadjudicated, 1);
 });
+
+test('an 8-digit task id in a note is not a fix commit', () => {
+  const w = { work: { 'W-1': { ...state.work['W-1'], findings: [{ ...state.work['W-1'].findings[0], note: 'Answered on Teamwork 41073672.' }] } } };
+  assert.equal(corpusCandidates(w).miss.length, 0);
+});

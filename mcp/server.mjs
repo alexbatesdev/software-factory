@@ -40,6 +40,14 @@ const TOOLS = {
 for (const a of ACTIONS) if (!Object.values(TOOLS).some(t => t[2] === a)) throw new Error(`No MCP tool for board action ${a}.`);
 
 /** The tools a role holds, as tools/list returns them; the API serves this so running sessions see today's table. */
+const fileUrl = sha => sha ? `/api/artifacts/${sha}` : null;
+/** A record as a cold reader needs it: its retained review reports and what each run ran with, each file by url. */
+export function readRecord(s, id) {
+  if (!s.work[id]) return null;
+  return { ...s.work[id], artifacts: Object.values(s.artifacts || {}).filter(a => a.work === id).map(a => ({ ...a, url: fileUrl(a.sha256) })),
+    manifests: Object.values(s.manifests || {}).filter(m => m.run?.work === id).map(m => ({ ...m, instructions: m.instructions.map(i => ({ ...i, url: fileUrl(i.sha256) })) })) };
+}
+
 export const toolsFor = role => Object.entries(TOOLS).filter(([, t]) => role && ROLES[role].includes(t[2])).map(([name, [description, inputSchema]]) => ({ name, description, inputSchema }));
 
 /**
@@ -60,7 +68,7 @@ export function createMcp({ config, seatOf, api }) {
     if (name === 'read') {
       const s = await api.get('/api/state', seat), q = args.question || (/^TB-\d+$/.test(args.work || '') ? args.work : null);
       if (q) return text(s.questions[q] ? { id: q, ...s.questions[q] } : `There is no ${q}.`);
-      return text(args.work ? (s.work[args.work] ? { ...s.work[args.work], artifacts: Object.values(s.artifacts || {}).filter(a => a.work === args.work).map(a => ({ ...a, url: a.sha256 ? `/api/artifacts/${a.sha256}` : null })) } : `There is no ${args.work}.`) : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) });
+      return text(args.work ? readRecord(s, args.work) || `There is no ${args.work}.` : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) });
     }
     if (name === 'questions') {
       const s = await api.get('/api/state', seat);

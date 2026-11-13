@@ -63,3 +63,21 @@ test('config preflight names what the runtime would trip on: unknown roles, harn
   const found = checkConfig(bad, { roles: ROLES, exists }).join('\n');
   for (const want of [/no-such-role/, /"stream-1"/, /gemini/, /missing\.md/, /missing-host/, /nobody/, /"nope"/]) assert.match(found, want);
 });
+
+test("a cold reader sees a run's manifest on the board, next to its artifacts", async () => {
+  const http = await import('node:http');
+  const { createApi } = await import('../core/api.mjs');
+  const root = mkdtempSync(join(tmpdir(), 'spamton-mf-'));
+  const store = started();
+  await captureManifests(store, io(root));
+  const server = http.createServer(createApi({ store, config: { routing: { supervisors: { [SUP]: {} } } }, artifactRoot: root }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  try {
+    const s = await (await fetch(`http://127.0.0.1:${server.address().port}/api/state`)).json();
+    assert.deepEqual(Object.keys(s.manifests), ['W-1/R1/1']);
+  } finally { server.close(); }
+  const { readRecord } = await import('../mcp/server.mjs');
+  const r = readRecord({ work: store.state.work, manifests: store.state.manifests, artifacts: {} }, 'W-1');
+  assert.equal(r.manifests[0].key, 'W-1/R1/1');
+  assert.match(r.manifests[0].instructions.find(i => i.name === 'brief').url, /^\/api\/artifacts\/[0-9a-f]{64}$/);
+});
