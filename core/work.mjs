@@ -360,6 +360,8 @@ export function applyEvent(work, e, ctx) {
       setHead(w, e.sha, ctx);
       break;
     case 'review': {
+      // A review assignment can run on a PR record that never left queued (reviving a draft, W-485): it starts review there.
+      if (w.phase === 'queued' && prLinked(w) && (w.assignments || []).some(a => a.kind === 'review' && ['started', 'blocked', 'done'].includes(a.status))) w.phase = 'review';
       // A review can finish after a fixes round opened under it (e.g. GitHub saw a conflict mid-review): it still counts.
       if (![...REVIEWING, 'fixes', 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) fail(`${w.id} isn't waiting for review (it is ${w.phase}).`);
       // W-294: with no PR the poller can't see a review's pushed fixes, so a review from the current head may move it.

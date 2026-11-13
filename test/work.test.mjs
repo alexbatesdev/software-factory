@@ -796,3 +796,20 @@ test('a merge closes its record and the jobs still running on it, so no stale wo
   assert.match(d.updates.at(-1).text, /R10 cancelled: its PR merged while it ran/);
   assert.equal(applyEvent(w, { type: 'merged', prs: [{ url: 'u', state: 'MERGED' }] }, ctx({ now: '2026-11-12T23:37:19.422Z' })).work.assignments[0].status, 'started', 'replay: earlier merges as they were');
 });
+
+test('a review assignment run on a queued PR record (reviving a draft) records its review and takes the normal ready path (W-485: W-140)', () => {
+  const H = '3bb09501777b3f6d1b2482dd312b945747ef9407';
+  let w = { ...build({ links: { pr: 'https://github.com/acme-org/app/pull/8473' } }), criteria: [] };
+  w = run(w, { type: 'transition', to: 'ready' }, { type: 'head', sha: H },
+    { type: 'assign', assignmentId: 'R1', kind: 'review', status: 'started', owner: 'sup: stream-2', evidence: 'revive 8473' });
+  assert.equal(w.phase, 'queued');
+  w = run(w, { type: 'assignment_done', assignmentId: 'R1', expectedVersion: 1, head: H },
+    { type: 'review', head: H, by: 'sbx: stream-2 internal-review', result: 'clean', link: '/r.md' });
+  assert.equal(w.reviews.at(-1).result, 'clean');
+  assert.equal(w.phase, 'ready_for_human');
+});
+
+test('a queued record with no review assignment still refuses a review', () => {
+  const w = run({ ...build({ links: { pr: 'https://github.com/acme-org/app/pull/1' } }), criteria: [] }, { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' }, { type: 'head', sha: 'aaaaaaa1' });
+  assert.throws(() => applyEvent(w, { type: 'review', head: 'aaaaaaa1', by: 'r', result: 'clean' }, ctx()), /isn't waiting for review/);
+});
