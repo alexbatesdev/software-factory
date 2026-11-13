@@ -272,3 +272,28 @@ test("a PR's note on a check red on main names the open record already tracking 
   assert.match(note, /Tracked on W-463/);
   assert.doesNotMatch(note, /proposes it/);
 });
+
+test('declining a watcher record that names the record covering it moves every ci key there, so the watcher does not refile (W-474: W-467 → W-463)', async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const { healthCommands } = await import('../core/observe.mjs');
+  const store = openStore(':memory:'), c = { now: '2026-11-13T17:20:00.000Z', by: 'local-head' };
+  store.append({ kind: 'create', payload: { title: 'Brakeman', kind: 'build' } }, c);
+  store.append({ kind: 'create', payload: { title: 'unit-tests red on main', kind: 'build', source: { type: 'agent', by: 'board (ci)', key: 'ci:built-rails:ci/circleci: unit-tests' } } }, c);
+  store.state.work['W-2'].aliases = ['ci:built-rails:ci/circleci: test'];
+  store.append({ kind: 'event', target: 'W-2', payload: { type: 'withdraw', note: 'Alex declined (via local-head): "decline W-2 and approve the others". Note: Covered by W-1 R4, which ports the fix.' } }, c);
+  assert.deepEqual(store.state.work['W-1'].aliases.sort(), ['ci:built-rails:ci/circleci: test', 'ci:built-rails:ci/circleci: unit-tests']);
+  const health = new Map([['built-rails:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['ci/circleci: unit-tests', 'ci/circleci: test'], changesRequested: [], threads: [], comments: [] }]]);
+  const pr = { ...createWork({ id: 'W-9', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const cmds = healthCommands({ work: { ...store.state.work, 'W-9': pr } }, health, { owner: OWNER, now: '2026-11-13T17:06:00.000Z', mainFailing: new Map([['built-rails', ['ci/circleci: unit-tests', 'ci/circleci: test']]]) });
+  assert.equal(cmds.filter(x => x.kind === 'create').length, 0);
+});
+
+test('a watcher record declined without naming a covering record still holds its check for a week', async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const declined = { ...createWork({ id: 'W-5', title: 'red', kind: 'build', source: { type: 'agent', by: 'board (ci)', key: 'ci:built-rails:Audit Ruby' } }, ctx), phase: 'cancelled', completion: { withdrawn: 'Alex declined: not now', at: '2026-11-13T17:00:00.000Z' } };
+  const pr = { ...createWork({ id: 'W-9', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const health = new Map([['built-rails:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['Audit Ruby'], changesRequested: [], threads: [], comments: [] }]]);
+  const run = now => healthCommands({ work: { 'W-5': declined, 'W-9': pr } }, health, { owner: OWNER, now, mainFailing: new Map([['built-rails', ['Audit Ruby']]]) }).filter(x => x.kind === 'create').length;
+  assert.equal(run('2026-11-14T17:00:00.000Z'), 0);
+  assert.equal(run('2026-11-21T17:00:01.000Z'), 1, 'a week on, still red: proposed again');
+});

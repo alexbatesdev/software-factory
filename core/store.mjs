@@ -96,6 +96,14 @@ function foldMessage(state, { kind, target, payload, ctx }) {
   return target;
 }
 
+// W-474: a main-CI watcher record withdrawn with a note naming the open record that covers it ("Covered by W-463")
+// hands its check keys there, as a duplicate close does; otherwise the watcher refiles the check minutes later.
+const COVERED_BY_FROM = '2026-11-13T17:15:00.000Z';
+function coveredBy(state, id, cur, payload, ctx) {
+  if (ctx.now < COVERED_BY_FROM || ![cur.source?.key, ...(cur.aliases || [])].some(k => k?.startsWith('ci:'))) return null;
+  return (String(payload.note).match(/\bW-\d+\b/g) || []).find(x => x !== id && state.work[x] && !W.TERMINAL.includes(state.work[x].phase)) || null;
+}
+
 /** Apply one logged row to state in place. Throws when the reducer refuses it. */
 export function fold(state, row, { supervisors = [] } = {}) {
   const { kind, target: id, payload, ctx: observed } = row;
@@ -152,8 +160,10 @@ export function fold(state, row, { supervisors = [] } = {}) {
       state.work[id] = work;
       if (spawn) work.updates.at(-1).text += ` (${create(state, spawn, ctx)})`;
       // The absorbing record takes the absorbed one's source key, so pollers find it there.
-      const into = payload.type === 'absorb' ? payload.into : payload.type === 'withdraw' ? payload.duplicateOf : null;
-      if (into && cur.source?.key && state.work[into]) state.work[into] = { ...state.work[into], aliases: [...new Set([...(state.work[into].aliases || []), cur.source.key])] };
+      const into = payload.type === 'absorb' ? payload.into : payload.type === 'withdraw' ? payload.duplicateOf || coveredBy(state, id, cur, payload, ctx) : null;
+      // From W-474 a main-CI record's ci: aliases move too (W-467 held two checks).
+      const keys = [cur.source?.key, ...(ctx.now >= COVERED_BY_FROM ? (cur.aliases || []).filter(k => k.startsWith('ci:')) : [])].filter(Boolean);
+      if (into && keys.length && state.work[into]) state.work[into] = { ...state.work[into], aliases: [...new Set([...(state.work[into].aliases || []), ...keys])] };
       // ...and its PR link when it has none, or the ready gate never sees that PR (W-418: W-359 waited 24h on #8699).
       if (into && ctx.now >= DUP_PR_FROM && cur.links?.pr && state.work[into] && !state.work[into].links?.pr) state.work[into] = { ...state.work[into], links: { ...state.work[into].links, pr: cur.links.pr } };
       if (ctx.now >= SHARED_REVIEW_FROM && cur.phase !== 'ready_for_human' && work.phase === 'ready_for_human') settlePartners(state, id, ctx);
