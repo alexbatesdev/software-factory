@@ -152,7 +152,7 @@ test('a host stream with no paired worker is woken when the worker its started j
   const host = { id: 'host', supervisor: { label: 'sup: host' }, worker: null };
   const works = { 'W-234': { id: 'W-234', stream: 'sup: host', assignments: [{ id: 'R2', kind: 'review', owner: 'w234-create-task', status: 'started' }] } };
   const others = [{ label: 'w234-create-task', ref: 'w31:p1', status: 'done' }];
-  const r = planWorkerStops({ units: [host], others, works, watch: { host: { armed: true, stoppedAt: T0 } }, now: T0 + 70000, graceMs: 60000, supervisors: ['sup: host'] });
+  const r = planWorkerStops({ units: [host], others, works, watch: { 'host/w234-create-task': { armed: true, stoppedAt: T0 } }, now: T0 + 70000, graceMs: 60000, supervisors: ['sup: host'] });
   assert.deepEqual(r.due.map(d => [d.to, d.work, d.assignment, d.worker]), [['sup: host', 'W-234', 'R2', 'w234-create-task']]);
 });
 
@@ -168,8 +168,25 @@ test("a host worker whose job still names the supervisor as owner is found in th
   const host = { id: 'host', supervisor: { label: 'sup: host', workspace: 'Host' }, worker: null };
   const works = { 'W-354': { id: 'W-354', stream: 'sup: host', assignments: [{ id: 'R1', kind: 'implementation', owner: 'sup: host', status: 'started' }] } };
   const others = [{ label: 'tw-41503361-acme-req-submit', status: 'done', workspace: 'Host' }, { label: 'board lead', status: 'idle', workspace: 'Services' }];
-  const r = planWorkerStops({ units: [host], others, works, watch: { host: { armed: true, stoppedAt: T } }, now: T + 70000, graceMs: 60000, supervisors: ['sup: host'] });
+  const r = planWorkerStops({ units: [host], others, works, watch: { 'host/tw-41503361-acme-req-submit': { armed: true, stoppedAt: T } }, now: T + 70000, graceMs: 60000, supervisors: ['sup: host'] });
   assert.deepEqual(r.due.map(d => [d.to, d.work, d.assignment, d.worker]), [['sup: host', 'W-354', 'R1', 'tw-41503361-acme-req-submit']]);
   const two = [...others, { label: 'tw-other', status: 'working', workspace: 'Host' }];
-  assert.deepEqual(planWorkerStops({ units: [host], others: two, works, watch: { host: { armed: true, stoppedAt: T } }, now: T + 70000, graceMs: 60000, supervisors: ['sup: host'] }).due, [], 'two candidates: no guess');
+  // W-487: "no guess" between two panes dropped a second worker's stop; each pane is watched, and the working one isn't stopped.
+  assert.deepEqual(planWorkerStops({ units: [host], others: two, works, watch: { 'host/tw-41503361-acme-req-submit': { armed: true, stoppedAt: T } }, now: T + 70000, graceMs: 60000, supervisors: ['sup: host'] }).due.map(d => d.worker), ['tw-41503361-acme-req-submit']);
+});
+
+test('two host workers on one stream: each stop wakes the supervisor, naming the job its pane label carries (W-487: W-376 R1 phase 2 beside W-481 R1)', () => {
+  const T = 1_000_000;
+  const host = { id: 'host', supervisor: { label: 'sup: host', workspace: 'Host' }, worker: null };
+  const works = { 'W-376': { id: 'W-376', stream: 'sup: host', assignments: [{ id: 'R1', kind: 'implementation', owner: 'sup: host', status: 'started', history: [{ status: 'started', at: '2026-11-13T21:58:00Z' }] }] },
+    'W-481': { id: 'W-481', stream: 'sup: host', assignments: [{ id: 'R1', kind: 'implementation', owner: 'sup: host', status: 'started', history: [{ status: 'started', at: '2026-11-13T21:58:37Z' }] }] } };
+  const pane = (label, status) => ({ label, status, workspace: 'Host' });
+  const plan = (others, watch, now) => planWorkerStops({ units: [host], others, works, watch, now, graceMs: 60000, supervisors: ['sup: host'] });
+  let r = plan([pane('w376-mutation-action-plan', 'working'), pane('w481-mutation-gaps-6', 'working')], {}, T);
+  r = plan([pane('w376-mutation-action-plan', 'done'), pane('w481-mutation-gaps-6', 'working')], r.watch, T + 10000);
+  r = plan([pane('w376-mutation-action-plan', 'done'), pane('w481-mutation-gaps-6', 'working')], r.watch, T + 80000);
+  assert.deepEqual(r.due.map(d => [d.work, d.assignment, d.worker]), [['W-376', 'R1', 'w376-mutation-action-plan']]);
+  r = plan([pane('w376-mutation-action-plan', 'done'), pane('w481-mutation-gaps-6', 'done')], r.watch, T + 90000);
+  r = plan([pane('w376-mutation-action-plan', 'done'), pane('w481-mutation-gaps-6', 'done')], r.watch, T + 160000);
+  assert.deepEqual(r.due.map(d => [d.work, d.worker]), [['W-481', 'w481-mutation-gaps-6']], 'the second stop too, and the first is not repeated');
 });

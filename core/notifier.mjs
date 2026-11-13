@@ -77,28 +77,52 @@ export function workerJob(u, works) {
     .sort(([, a], [, b]) => startedAt(a).localeCompare(startedAt(b))).at(-1);
 }
 
-// A host stream has no paired worker (W-295): its worker is the unpaired agent its started job names as owner.
-// Failing that, its worker is the one other agent in the supervisor's own workspace (W-357 puts it there; W-362: R1 kept the supervisor as owner).
-const hostWorker = (u, works, others) => others.find(a => Object.values(works).some(r => r.stream === u.supervisor?.label && (r.assignments || []).some(x => x.status === 'started' && x.owner === a.label)))
-  || (([one, ...more]) => (more.length ? undefined : one))(others.filter(a => u.supervisor?.workspace && a.workspace === u.supervisor.workspace && a.label !== u.supervisor.label));
+// A host stream has no paired worker (W-295) and may run several at once, one per tab (W-357, W-487): each agent its
+// started jobs name as owner, and each other agent in the supervisor's own workspace (W-362), is watched on its own.
+const hostWorkers = (u, works, others) => {
+  const named = others.filter(a => Object.values(works).some(r => r.stream === u.supervisor?.label && (r.assignments || []).some(x => x.status === 'started' && x.owner === a.label)));
+  const near = others.filter(a => u.supervisor?.workspace && a.workspace === u.supervisor.workspace && a.label !== u.supervisor.label);
+  return [...new Set([...named, ...near])];
+};
+// The job a host worker is on: the one naming it as owner, else the record its pane label carries (w376-… is W-376),
+// else the stream's only started job. Several left: none is guessed, and the notice lists them.
+function hostJob(u, works, label) {
+  const to = u.supervisor?.label;
+  const jobs = Object.values(works).flatMap(r => r.stream === to ? (r.assignments || []).filter(a => a.status === 'started' && (a.kind !== 'review' || a.owner === label)).map(a => [r, a]) : []);
+  const n = String(label).match(/^w-?(\d+)\b/i)?.[1];
+  const pick = jobs.filter(([, a]) => a.owner === label);
+  const byLabel = pick.length ? pick : jobs.filter(([r]) => n && r.id === `W-${n}`);
+  return byLabel.length === 1 ? byLabel[0] : jobs.length === 1 ? jobs[0] : jobs.length ? { several: jobs } : null;
+}
+
+function watchStop(next, key, st, hasJob, now, graceMs) {
+  // A worker first seen with a started job is armed: the watch is in memory, and a restart must not swallow a stop.
+  const w = next[key] || { armed: hasJob, stoppedAt: null };
+  if (st === 'working') { next[key] = { armed: true, stoppedAt: null }; return null; }
+  if (!['done', 'idle'].includes(st)) { next[key] = { ...w, stoppedAt: null }; return null; }
+  const stoppedAt = w.stoppedAt ?? now;
+  next[key] = { ...w, stoppedAt };
+  if (!w.armed || now - stoppedAt < graceMs || !hasJob) return null;
+  next[key] = { armed: false, stoppedAt };
+  return stoppedAt;
+}
 
 export function planWorkerStops({ units, works, watch = {}, now, graceMs = 60000, supervisors, others = [] }) {
   const next = { ...watch }, due = [];
-  for (const unit of units) {
-    const u = unit.worker ? unit : { ...unit, worker: hostWorker(unit, works, others) };
-    const to = u.supervisor?.label, st = u.worker?.status;
-    if (!u.worker || !supervisors.includes(to)) continue;
-    // A unit first seen with a started job is armed: the watch is in memory, and a restart must not swallow a stop.
-    const w = next[u.id] || { armed: !!workerJob(u, works), stoppedAt: null };
-    if (st === 'working') { next[u.id] = { armed: true, stoppedAt: null }; continue; }
-    if (!['done', 'idle'].includes(st)) { next[u.id] = { ...w, stoppedAt: null }; continue; }
-    const stoppedAt = w.stoppedAt ?? now;
-    next[u.id] = { ...w, stoppedAt };
-    if (!w.armed || now - stoppedAt < graceMs) continue;
-    const started = workerJob(u, works);
-    if (!started) continue;
-    next[u.id] = { armed: false, stoppedAt };
-    due.push({ unit: u.id, to, work: started[0].id, assignment: started[1].id, version: started[1].version, worker: u.worker.label, workerRef: u.worker.ref, stoppedAt });
+  for (const u of units) {
+    const to = u.supervisor?.label;
+    if (!supervisors.includes(to)) continue;
+    if (u.worker) {
+      const job = workerJob(u, works), stoppedAt = watchStop(next, u.id, u.worker.status, !!job, now, graceMs);
+      if (stoppedAt !== null) due.push({ unit: u.id, to, work: job[0].id, assignment: job[1].id, version: job[1].version, worker: u.worker.label, workerRef: u.worker.ref, stoppedAt });
+      continue;
+    }
+    for (const a of hostWorkers(u, works, others)) {
+      const job = hostJob(u, works, a.label), stoppedAt = watchStop(next, `${u.id}/${a.label}`, a.status, !!job, now, graceMs);
+      if (stoppedAt === null) continue;
+      if (job.several) due.push({ unit: u.id, to, work: job.several[0][0].id, assignment: job.several.map(([r, x]) => `${r.id} ${x.id}`).join(' or '), worker: a.label, workerRef: a.ref, stoppedAt, unsure: true });
+      else due.push({ unit: u.id, to, work: job[0].id, assignment: job[1].id, version: job[1].version, worker: a.label, workerRef: a.ref, stoppedAt });
+    }
   }
   return { watch: next, due };
 }

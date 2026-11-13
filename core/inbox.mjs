@@ -71,7 +71,7 @@ export function inboxCommands(state, cfg, fleet = null) {
     const stops = planWorkerStops({ units: fleet.units, others: fleet.others || [], works: state.work, watch: watches.workerStops, now: fleet.now, supervisors: cfg.supervisors });
     // The watch fires once per stop; a told-key check here would swallow a second stop on the same assignment.
     for (const d of stops.due)
-      cmds.push(msg(d.to, d.work, { workerStop: `${d.work}/${d.assignment}` }, `${d.worker} stopped while ${d.work} ${d.assignment} is started: read its pane and record what it reported.`));
+      cmds.push(msg(d.to, d.work, { workerStop: `${d.work}/${d.assignment}` }, `${d.worker} stopped while ${d.unsure ? `${d.assignment} are started (its job isn't known)` : `${d.work} ${d.assignment} is started`}: read its pane and record what it reported.`));
     const blocked = planBlockedWorkers({ units: fleet.units, works: state.work, watch: watches.blockedWorkers, now: fleet.now, supervisors: cfg.supervisors });
     for (const d of blocked.due)
       cmds.push(msg(d.to, d.work, { workerBlocked: `${d.work}/${d.since}` }, `${d.worker} has been blocked at a dialog for 5+ min while ${d.work} is started: read its pane. A permission prompt is the agent unblocker's; a question is yours to answer.`));
