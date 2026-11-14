@@ -84,13 +84,13 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
   return out;
 }
 
-/** repo → the oid of main's latest commit when its checks passed, else null (red, pending or unknown). */
-/** Main's head per repo: its sha when CI is green, and the checks failing there (a pending check isn't failing). */
+/** Main's head per repo: its sha when CI is green, the checks failing there (a pending check isn't failing), and the checks that passed. */
 export async function readMain(repos, owner, run = exec) {
   if (!repos.length) return new Map();
   const q = `query{${repos.map((r, i) => `r${i}: repository(owner:"${owner}",name:"${r}"){ref(qualifiedName:"refs/heads/main"){target{... on Commit{oid statusCheckRollup{state ${CONTEXTS}}}}}}`).join(' ')}}`;
   const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000 })).stdout);
-  return new Map(repos.map((r, i) => { const t = data?.[`r${i}`]?.ref?.target; return [r, { green: t?.statusCheckRollup?.state === 'SUCCESS' ? t.oid : null, failing: redChecks(t?.statusCheckRollup) }]; }));
+  return new Map(repos.map((r, i) => { const t = data?.[`r${i}`]?.ref?.target; return [r, { green: t?.statusCheckRollup?.state === 'SUCCESS' ? t.oid : null, failing: redChecks(t?.statusCheckRollup),
+    passing: (t?.statusCheckRollup?.contexts?.nodes || []).filter(c => (c.conclusion || c.state) === 'SUCCESS').map(c => c.name || c.context) }]; }));
 }
 
 /** Open PRs with their changed files, per repo (W-471's duplicate re-check). */

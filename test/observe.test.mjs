@@ -256,8 +256,8 @@ test('a CI proposal waits in New PRs for Alex, like any new PR nobody asked for 
 test('the main read returns the green head and the names of the checks failing on main (W-459)', async () => {
   const { readMain } = await import('../sources/github.mjs');
   const reply = (state, nodes) => async () => ({ stdout: JSON.stringify({ data: { r0: { ref: { target: { oid: 'main0001', statusCheckRollup: { state, contexts: { nodes } } } } } } }) });
-  assert.deepEqual((await readMain(['app'], 'o', reply('SUCCESS', [{ name: 'rspec', conclusion: 'SUCCESS' }]))).get('app'), { green: 'main0001', failing: [] });
-  assert.deepEqual((await readMain(['app'], 'o', reply('FAILURE', [{ name: 'Audit Ruby', conclusion: 'FAILURE' }, { name: 'rspec', conclusion: null, status: 'IN_PROGRESS' }]))).get('app'), { green: null, failing: ['Audit Ruby'] });
+  assert.deepEqual((await readMain(['app'], 'o', reply('SUCCESS', [{ name: 'rspec', conclusion: 'SUCCESS' }]))).get('app'), { green: 'main0001', failing: [], passing: ['rspec'] });
+  assert.deepEqual((await readMain(['app'], 'o', reply('FAILURE', [{ name: 'Audit Ruby', conclusion: 'FAILURE' }, { name: 'rspec', conclusion: null, status: 'IN_PROGRESS' }]))).get('app'), { green: null, failing: ['Audit Ruby'], passing: [] });
 });
 
 test("a PR's note on a check red on main names the open record already tracking it, rather than promising a new proposal (W-470: W-221, W-463)", async () => {
@@ -305,4 +305,17 @@ test("an own PR whose record was withdrawn (Alex is closing it) is settled for a
   const audit = now => auditMissed({ work: { 'W-97': w } }, new Set(['app:8403']), new Map(), { owner: OWNER, now }).map(m => m.id);
   assert.deepEqual(audit('2026-11-13T21:31:00.000Z'), []);
   assert.deepEqual(audit('2026-11-21T00:00:00.000Z'), ['pr'], 'still open a week on: missed again');
+});
+
+test('main counts as green for a PR only when every check failing on the PR passed on main; a check main never runs is unknown (W-489)', async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const { readMain } = await import('../sources/github.mjs');
+  const reply = async () => ({ stdout: JSON.stringify({ data: { r0: { ref: { target: { oid: 'main0002', statusCheckRollup: { state: 'SUCCESS', contexts: { nodes: [{ name: 'rspec', conclusion: 'SUCCESS' }] } } } } } } }) });
+  const main = (await readMain(['app'], 'o', reply)).get('app');
+  assert.deepEqual(main.passing, ['rspec']);
+  const pr = { ...createWork({ id: 'W-1', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const payload = failing => healthCommands({ work: { 'W-1': pr } }, new Map([['app:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing, changesRequested: [], threads: [], comments: [] }]]),
+    { owner: OWNER, now: ctx.now, mainGreen: new Map([['app', main.green]]), mainPassing: new Map([['app', main.passing]]) })[0].payload;
+  assert.equal(payload(['Audit Ruby']).mainGreen, null, 'Brakeman never ran on main: not cleared');
+  assert.equal(payload(['rspec']).mainGreen, 'main0002');
 });

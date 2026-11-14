@@ -194,11 +194,11 @@ async function githubTick() {
     const { prs, heads } = projectPrs(lines, own);
     const health = await readPrHealth([...own], owner, undefined, config.githubLogin, COMMENTS_FROM);
     const main = await readMain([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
-    const mainGreen = new Map([...main].map(([r, m]) => [r, m.green])), mainFailing = new Map([...main].map(([r, m]) => [r, m.failing]));
+    const mainGreen = new Map([...main].map(([r, m]) => [r, m.green])), mainFailing = new Map([...main].map(([r, m]) => [r, m.failing])), mainPassing = new Map([...main].map(([r, m]) => [r, m.passing]));
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
     if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, skipped()), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {

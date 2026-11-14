@@ -100,7 +100,7 @@ const declined = (w, now) => w.phase === 'cancelled' && !!w.completion?.withdraw
  * observe_health commands for Alex's PRs into main whose merge or CI state at the record's head needs work.
  * @param health Map(repo:num → {head, base, conflict, failing}); a PR GitHub hasn't finished computing says neither.
  */
-export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map(), mainFailing = new Map(), branches = new Map() }) {
+export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map(), mainFailing = new Map(), mainPassing = new Map(), branches = new Map() }) {
   const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
   const byPr = new Map(), fromMain = new Map();
@@ -124,7 +124,8 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
     const baseFailing = onMain ? mainFailing.get(repo) || [] : baseId ? health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing : [];
     const inherited = h.failing.filter(f => (baseFailing || []).includes(f)), failing = baseFailing ? h.failing.filter(f => !inherited.includes(f)) : [];
     if (onMain) for (const f of inherited) fromMain.set(`${repo}:${f}`, [...(fromMain.get(`${repo}:${f}`) || []), key]);
-    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, ...(inherited.length ? { inherited } : {}), ...(onMain && inherited.some(f => tracked.has(`ci:${repo}:${f}`)) ? { trackedOn: Object.fromEntries(inherited.filter(f => tracked.has(`ci:${repo}:${f}`)).map(f => [f, tracked.get(`ci:${repo}:${f}`)])) } : {}), changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && mainGreen.get(repo) || null };
+    // Main is green for this PR only where it ran and passed what fails here: a check main never runs is unknown (W-489).
+    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, ...(inherited.length ? { inherited } : {}), ...(onMain && inherited.some(f => tracked.has(`ci:${repo}:${f}`)) ? { trackedOn: Object.fromEntries(inherited.filter(f => tracked.has(`ci:${repo}:${f}`)).map(f => [f, tracked.get(`ci:${repo}:${f}`)])) } : {}), changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], mainGreen: onMain && failing.every(f => (mainPassing.get(repo) || []).includes(f)) && mainGreen.get(repo) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   // One proposal per check red on main, while no open record holds it (Alex, 11-12: unrelated fixes are his to approve).
