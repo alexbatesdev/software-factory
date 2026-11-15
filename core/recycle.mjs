@@ -1,5 +1,5 @@
 // Cycling a worker's host when its disk fills (Alex, 11-04: at 75%, between tasks). Pure: the host adapter does the cycling.
-import { LIVE_ASSIGNMENT, parked } from './work.mjs';
+import { LIVE_ASSIGNMENT, parked, TERMINAL, workIdOf } from './work.mjs';
 
 /**
  * Which streams drain (take no new work) and which workers are ready to cycle now.
@@ -36,3 +36,9 @@ export function planRecycles({ units, health = {}, works, threshold = 0.75, recy
   }
   return { drain, due };
 }
+
+/** A worktree named for a finished record holds nothing a later job needs (W-493): it goes with the sandbox, and is named. */
+export const releaseFinished = (found, works) => found.map(p => {
+  const w = works[workIdOf(p.path.split('/').at(-1))];
+  return p.blocking && w && TERMINAL.includes(w.phase) ? { ...p, problem: `${p.problem}, and ${w.id} is ${w.phase}`, blocking: false } : p;
+});

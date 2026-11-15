@@ -34,7 +34,7 @@ import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
-import { planRecycles } from '../core/recycle.mjs';
+import { planRecycles, releaseFinished } from '../core/recycle.mjs';
 import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
 import { readReport } from '../hosts/sbx.mjs';
 import { readFile } from 'node:fs/promises';
@@ -470,7 +470,7 @@ async function recycleTick() {
     // Its reviews' reports are copied out first; a sandbox that still holds one isn't removed.
     await artifactTick(w => w.stream === d.to);
     if (unretainedStreams(store.state).has(d.to)) { once(`recycle ${d.worker.label}: waiting to copy its review reports`); continue; }
-    const found = await host.preflight(d.worker).catch(e => [{ path: '(preflight)', problem: e.message, blocking: true }]);
+    const found = releaseFinished(await host.preflight(d.worker).catch(e => [{ path: '(preflight)', problem: e.message, blocking: true }]), store.state.work);
     const problems = found.filter(p => p.blocking), dropped = found.filter(p => !p.blocking).map(p => `${p.path}: ${p.problem}`).join('; ');
     if (problems.length) {
       const key = `${d.worker.sandbox}/${problems.length}`, list = problems.map(p => `${p.path}: ${p.problem}`).join('; ');

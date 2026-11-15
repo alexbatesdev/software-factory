@@ -182,3 +182,18 @@ test("a recreated sandbox gets the checkout's pinned Ruby as a prebuilt download
   assert.match(pinnedToolsCommand, /MISE_RUBY_COMPILE=false mise install/);
   assert.match(pinnedToolsCommand, /^cd '?\/Users\/[^ ]+\/[\w-]+'? && /);
 });
+
+test("a finished record's leftover worktree doesn't block a recycle; it is dropped with the sandbox and named (W-493: w439-r5)", async () => {
+  const { releaseFinished } = await import('../core/recycle.mjs');
+  const works = { 'W-439': { id: 'W-439', phase: 'cancelled' }, 'W-440': { id: 'W-440', phase: 'fixes' } };
+  const found = [
+    { path: '/tmp/claude-1000/x/scratchpad/w439-r5', problem: '1 uncommitted change(s)', blocking: true },
+    { path: '/tmp/claude-1000/x/scratchpad/w440-r2', problem: '1 uncommitted change(s)', blocking: true },
+    { path: '/home/agent/built-rails-a', problem: '2 uncommitted change(s)', blocking: true },
+  ];
+  assert.deepEqual(releaseFinished(found, works).map(p => [p.path.split('/').at(-1), p.blocking, p.problem]), [
+    ['w439-r5', false, '1 uncommitted change(s), and W-439 is cancelled'],
+    ['w440-r2', true, '1 uncommitted change(s)'],
+    ['built-rails-a', true, '2 uncommitted change(s)'],
+  ]);
+});

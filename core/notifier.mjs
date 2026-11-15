@@ -1,4 +1,4 @@
-import { TERMINAL as TERMINAL_PHASES, REVIEWING, queueOrder } from './work.mjs';
+import { TERMINAL as TERMINAL_PHASES, REVIEWING, queueOrder, workIdOf } from './work.mjs';
 // Automatic request pickup: decide which board requests each stream supervisor should hear about, and when.
 // Pure functions; the server persists notification records and owns the transport.
 
@@ -89,9 +89,9 @@ const hostWorkers = (u, works, others) => {
 function hostJob(u, works, label) {
   const to = u.supervisor?.label;
   const jobs = Object.values(works).flatMap(r => r.stream === to ? (r.assignments || []).filter(a => a.status === 'started' && (a.kind !== 'review' || a.owner === label)).map(a => [r, a]) : []);
-  const n = String(label).match(/^w-?(\d+)\b/i)?.[1];
+  const n = workIdOf(label);
   const pick = jobs.filter(([, a]) => a.owner === label);
-  const byLabel = pick.length ? pick : jobs.filter(([r]) => n && r.id === `W-${n}`);
+  const byLabel = pick.length ? pick : jobs.filter(([r]) => n && r.id === n);
   return byLabel.length === 1 ? byLabel[0] : jobs.length === 1 ? jobs[0] : jobs.length ? { several: jobs } : null;
 }
 

@@ -25,6 +25,8 @@ export const REVIEWING = ['review', 'rereview'];
 export const AWAITING_HUMAN = ['ready_for_human', 'awaiting_human_approval', 'awaiting_alex_review'];
 export const ACTIVE = ['queued', ...BUILDING, ...REVIEWING, ...AWAITING_HUMAN];
 export const TERMINAL = ['done', 'cancelled'];
+/** The W-n a pane label or worktree folder is named for (`w439-r5`, `w-481-gaps`), or null. */
+export const workIdOf = name => { const n = String(name).match(/^w-?(\d+)\b/i)?.[1]; return n ? `W-${n}` : null; };
 // An assignment still holding its lane.
 export const LIVE_ASSIGNMENT = ['queued', 'started', 'blocked'];
 // Blocked on something named: the assignment is parked and holds no stream (Alex 11-04: flag it stuck, move on).
