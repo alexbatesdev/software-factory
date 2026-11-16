@@ -248,7 +248,7 @@ function audited(sha) {
   if (audits.has(sha)) return audits.get(sha).result;
   const entry = { result: null }; audits.set(sha, entry);
   auditChain = auditChain.then(() => runBrakeman({ checkout: join(homedir(), 'Code/repos/built-rails-a'), sha, cacheDir: join(ROOT, 'data/audit'), log })
-    .then(r => { entry.result = r; log(`audit ${sha.slice(0, 7)}: ${r.warnings.length} Brakeman warning(s) in ${Math.round(r.durationMs / 1000)}s`); }, e => { audits.delete(sha); once(`audit ${sha.slice(0, 7)}: ${e.message}`); }));
+    .then(r => { entry.result = r; log(`audit ${sha.slice(0, 7)}: ${r.warnings.length} Brakeman warning(s) in ${Math.round(r.durationMs / 1000)}s`); }, e => { entry.result = { error: e.message }; log(`audit ${sha.slice(0, 7)} failed: ${e.message}`); }));
   return null;
 }
 async function compareAudit(health, ciCompare) {
@@ -260,8 +260,19 @@ async function compareAudit(health, ciCompare) {
   const git = await mainGit('built-rails'), main = git && (await git('rev-parse', 'origin/main')).stdout.trim();
   const onMain = main && audited(main);
   for (const [k, h] of wanting) {
+    const set = c => { if (!ciCompare.has(k)) ciCompare.set(k, {}); ciCompare.get(k)[AUDIT_CHECK] = c; };
     const pr = audited(h.head);
-    if (pr && onMain) { if (!ciCompare.has(k)) ciCompare.set(k, {}); ciCompare.get(k)[AUDIT_CHECK] = compareWarnings(pr.warnings, onMain.warnings); }
+    if (pr?.error || onMain?.error) continue; // a run that failed decides nothing: the name match stands
+    // Until both runs are in, the failure waits rather than opening a fixes round on a guess (W-520).
+    if (!pr || !onMain) { set({ verdict: 'pending', prOnly: [], shared: [] }); continue; }
+    let c = compareWarnings(pr.warnings, onMain.warnings);
+    if (c.verdict === 'ours') {
+      // Warnings gone from main may predate the branch: Brakeman where it left main tells "merge main" from "fix it".
+      const base = (await git('merge-base', main, h.head).catch(() => null))?.stdout.trim(), atBase = base && audited(base);
+      if (base && !atBase) { set({ verdict: 'pending', prOnly: [], shared: [] }); continue; }
+      if (atBase && !atBase.error) c = compareWarnings(pr.warnings, onMain.warnings, atBase.warnings);
+    }
+    set(c);
   }
 }
 

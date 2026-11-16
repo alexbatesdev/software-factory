@@ -391,3 +391,12 @@ test("a PR may link a subtask of a task its records own, and a record that cover
   const f = observeHealth(followUp, c.payload, { now: '2026-11-16T23:00:00.000Z', by: 'github' }).findings.at(-1);
   assert.deepEqual(f.source.ids, ['290'], 'the subtask is fine; the project parent is not');
 });
+
+test("a check whose comparison is still running opens nothing yet: neither the PR's nor main's (W-520: findings opened before Brakeman finished)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const pr = { ...createWork({ id: 'W-264', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const health = new Map([['app:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['Audit Ruby code and dependencies', 'ci/circleci: test'], changesRequested: [], threads: [], comments: [] }]]);
+  const ciCompare = new Map([['app:1', { 'Audit Ruby code and dependencies': { verdict: 'pending', prOnly: [], shared: [] } }]]);
+  const [c] = healthCommands({ work: { 'W-264': pr } }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['app', []]]), ciCompare });
+  assert.deepEqual([c.payload.failing, c.payload.inherited ?? []], [['ci/circleci: test'], []]);
+});

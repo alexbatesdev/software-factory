@@ -19,6 +19,7 @@ const list = ts => `${ts.slice(0, 5).join(', ')}${ts.length > 5 ? `, and ${ts.le
 /** One line for the record. */
 export function compareText(check, c) {
   if (c.verdict === 'no test results') return `${check}: failed before any test ran: rerun it, it says nothing about this PR's code.`;
+  if (c.verdict === 'fixed on main') return `${check}: ${c.prOnly.length} ${c.unit || 'failure'}(s) here are fixed on main since this branch's base (${list(c.prOnly)}): merge origin/main into the branch (merge, never rebase or force push) and push; no code fix needed.`;
   if (c.unit) {
     if (c.verdict === 'red on main') return `${check}: all ${c.shared.length} ${c.unit}(s) are also on main.`;
     if (c.verdict === 'ours') return `${check}: ${c.prOnly.length} ${c.unit}(s) here and not on main (${list(c.prOnly)})${c.shared.length ? `; ${c.shared.length} also on main` : ''}.`;
@@ -32,9 +33,11 @@ export function compareText(check, c) {
  * The Audit check by Brakeman warning (Alex 11-16: run Brakeman ourselves, on demand): main's when every warning on the PR
  * (by fingerprint) is also on main; the PR's when any isn't. No warnings on the PR: the red check is something else.
  */
-export function compareWarnings(pr, main) {
+export function compareWarnings(pr, main, base = null) {
   const label = w => `${w.type} ${w.file}:${w.line}`, onMain = new Set(main.map(w => w.fingerprint));
   if (!pr.length) return { verdict: 'unknown', prOnly: [], shared: [], unit: 'Brakeman warning' };
   const prOnly = pr.filter(w => !onMain.has(w.fingerprint)).map(label), shared = pr.filter(w => onMain.has(w.fingerprint)).map(label);
-  return { verdict: prOnly.length ? 'ours' : 'red on main', prOnly, shared, unit: 'Brakeman warning' };
+  // Gone from main but present where the branch started (W-520): main fixed them since; merging main clears them.
+  const atBase = base && new Set(base.map(w => w.fingerprint)), stale = atBase && prOnly.length && pr.filter(w => !onMain.has(w.fingerprint)).every(w => atBase.has(w.fingerprint));
+  return { verdict: stale ? 'fixed on main' : prOnly.length ? 'ours' : 'red on main', prOnly, shared, unit: 'Brakeman warning' };
 }

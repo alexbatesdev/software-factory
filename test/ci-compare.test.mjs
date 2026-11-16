@@ -81,3 +81,13 @@ test('the comparison line names Brakeman warnings, not tests', async () => {
     'Audit Ruby code and dependencies: 1 Brakeman warning(s) here and not on main (SQL Injection app/new.rb:1).');
   assert.match(compareText('Audit Ruby code and dependencies', { verdict: 'red on main', prOnly: [], shared: ['a', 'b'], unit: 'Brakeman warning' }), /all 2 Brakeman warning\(s\) are also on main/);
 });
+
+// W-520: #8869 fixed main's Audit at 23:21Z; branches cut before it still carry those warnings.
+test("warnings a PR carries from where it branched off, gone from main since, are 'fixed on main': merge main, no code fix", async () => {
+  const { compareWarnings, compareText } = await import('../core/ci-compare.mjs');
+  const w = (fp, line) => ({ fingerprint: fp, type: 'SQL Injection', file: 'app/q.rb', line });
+  const c = compareWarnings([w('f1', 122), w('f2', 782)], [], [w('f1', 122), w('f2', 782)]);
+  assert.deepEqual([c.verdict, c.prOnly.length], ['fixed on main', 2]);
+  assert.match(compareText('Audit Ruby code and dependencies', c), /2 Brakeman warning\(s\) here are fixed on main since this branch's base.*merge origin\/main.*no code fix/);
+  assert.equal(compareWarnings([w('f1', 122), w('f9', 5)], [], [w('f1', 122)]).verdict, 'ours', 'one warning new on the branch: the PR\'s');
+});
