@@ -378,3 +378,16 @@ test("a PR completing several tasks may link each of them: its own tasks are eve
   const f = observeHealth(work[cmds[0].target], cmds[0].payload, { now: '2026-11-16T23:00:00.000Z', by: 'github' }).findings.at(-1);
   assert.deepEqual(f.source.ids, ['290'], 'only the parent task is flagged');
 });
+
+test("a PR may link a subtask of a task its records own, and a record that covers the PR counts; a parent stays flagged (W-519 follow-up: #8244)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const { observeHealth } = await import('../core/work.mjs');
+  const parent = { ...createWork({ id: 'W-40', title: 'Editing', kind: 'build', source: { type: 'teamwork', key: 'tw-299' }, links: { pr: PR(8236) } }, ctx), phase: 'awaiting_human_approval', head: 'bbbbbbb1',
+    coverage: { prs: [{ url: PR(8236) }, { url: PR(8244) }] } };
+  const followUp = { ...createWork({ id: 'W-85', title: 'Follow-up', kind: 'build', source: { type: 'teamwork', key: 'tw-181' }, links: { pr: PR(8244) } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const h = { head: 'aaaaaaa1', base: 'main', conflict: false, failing: [], changesRequested: [], threads: [], comments: [], bodyTasks: ['318', '181', '290'] };
+  const [c] = healthCommands({ work: { 'W-40': parent, 'W-85': followUp } }, new Map([['app:8244', h]]), { owner: OWNER, now: '2026-11-16T23:00:00.000Z', subtasks: new Map([['299', ['316', '317', '318', '319']]]) });
+  assert.deepEqual(c.payload.prOwnTasks.sort(), ['181', '299', '316', '317', '318', '319']);
+  const f = observeHealth(followUp, c.payload, { now: '2026-11-16T23:00:00.000Z', by: 'github' }).findings.at(-1);
+  assert.deepEqual(f.source.ids, ['290'], 'the subtask is fine; the project parent is not');
+});

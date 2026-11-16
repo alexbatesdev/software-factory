@@ -207,6 +207,13 @@ function healTick() {
   }
 }
 
+/** task id → every task below it, from the project trees (a PR may link a subtask of a task it owns, W-519). */
+function subtasksOf(trees = {}) {
+  const kids = new Map(); for (const nodes of Object.values(trees)) for (const n of nodes) kids.set(n.parent, [...(kids.get(n.parent) || []), n.id]);
+  const below = id => (kids.get(id) || []).flatMap(k => [k, ...below(k)]);
+  return new Map([...kids.keys()].map(id => [id, below(id)]));
+}
+
 async function projectsTick() {
   if (DRY) return;
   const planning = await readPlanning(), trees = { ...projectsRead.trees };
@@ -292,7 +299,7 @@ async function githubTick() {
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
     if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, ciCompare, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, ciCompare, subtasks: subtasksOf(projectsRead.trees), branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, skipped()), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {
