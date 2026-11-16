@@ -111,11 +111,20 @@ test('a project gets one planning job when the factory has a record on one of it
 
 test("the planning job's brief keeps the work off main, names the files to write, the tasks missing test plans and where questions go", async () => {
   const { triageObjective } = await import('../core/projects.mjs');
-  const o = triageObjective(C(), { questionsTo: 'alex' });
+  const unbuilt = p => ({ ...p, leaves: p.leaves.map(l => l.task === '102' ? { ...l, pr: null, work: null, state: 'not started' } : l) });
+  const o = triageObjective(unbuilt(C()), { questionsTo: 'alex' });
   for (const want of [/branch alex\/factory\/2026-10-position-end-date-plan/, /never commit or push to main/i, /draft PR/, /Alex merges/,
     /projects\/2026-10-position-end-date\/factory\/implementation-plan\.md/, /factory\/decisions\.md/, /FD-001/, /built-test-plans/, /102 Import column/, /ask on this record/])
     assert.match(o, want);
   assert.doesNotMatch(o, /111 Edit modal.*missing/);
   assert.match(triageObjective(C(), { questionsTo: 'owner' }), /needs: Casey Example/);
   assert.match(triageObjective(C(), { questionsTo: 'developers' }), /needs: (Alex Bates, Casey Example|Casey Example, Alex Bates)/);
+});
+
+test('the brief plans only tasks not built yet; built ones are context, and only unbuilt ones get test plans drafted', async () => {
+  const { triageObjective } = await import('../core/projects.mjs');
+  const p = C(), o = triageObjective({ ...p, leaves: p.leaves.map(l => l.task === '102' ? { ...l, pr: null, work: null, state: 'not started' } : l) }, {});
+  assert.match(o, /plan these 1 task\(s\): 102 Import column/);
+  assert.match(o, /Already built or done \(context only\): 111 Edit modal; 112 Bulk edit/);
+  assert.match(o, /Draft the missing test plans .*: 102 Import column\./);
 });

@@ -46,7 +46,7 @@ export function buildProjects({ planning, trees, works, prs }) {
       const w = byTask.get(n.id) || (pr && byPr.get(pr.url)) || null;
       if (pr) used.add(pr.url);
       leaves.push({ task: n.id, name: n.name, path: [...path, n.name].join(' / '), state: n.status === 'completed' ? 'done' : w ? stateOf(w) : pr ? 'PR open' : 'not started',
-        work: w?.id || null, pr: prView(pr), testPlan: (pl.testPlans || []).includes(n.id), gate: leafGate(pl, n.id) });
+        work: w?.id || null, pr: prView(pr), testPlan: (pl.testPlans || []).includes(n.id), testPlanPath: pl.testPlanFiles?.[n.id] || null, gate: leafGate(pl, n.id) });
     } };
     if (tree) walk(root, []);
     return { slug: pl.slug, title: pl.readme.title, stage: pl.readme.stage, status: pl.readme.status, owner: pl.readme.owner, teamworkTask: root,
@@ -72,17 +72,18 @@ export function triageCreates(projects, works, cfg = {}) {
 
 /** The planning job's brief: the record's objective, so the supervisor briefs from it and nothing Built-specific lives in this repo. */
 export function triageObjective(p, { questionsTo = 'alex' } = {}) {
-  const dir = `projects/${p.slug}`, missing = p.leaves.filter(l => !l.testPlan);
+  const built = l => !!l.pr || ['done', 'cancelled', 'awaiting approval', 'in review'].includes(l.state);
+  const dir = `projects/${p.slug}`, todo = p.leaves.filter(l => !built(l)), missing = todo.filter(l => !l.testPlan), list = ls => ls.map(l => `${l.task} ${l.name}`).join('; ');
   const route = questionsTo === 'owner' ? `put needs: ${p.owner || 'the README Owner'} on the entry, and list them in the PR body for Alex to forward`
     : questionsTo === 'developers' ? `put needs: ${p.developers.join(', ') || "the tasks' assignees"} on the entry, and list them in the PR body for Alex to forward`
     : 'have your supervisor file each one as an ask on this record (distinct, one decision each) and put its TB-n in the entry\'s refs';
   return [
     `Plan the project ${p.title || p.slug} (${dir} in builtforteams/project-planning) so its tasks can be built without raising anything to Alex. Alex merges the result; nothing here is final until he does.`,
     `Repo and branch: project-planning, branch alex/factory/${p.slug}-plan from origin/main. Never commit or push to main, even though the repo's own skills do: one draft PR, ordinary pushes only, and Alex merges it.`,
-    `Read first, in full: ${dir}/README.md, intent.md, spec.md, decisions.md, discussion.md, plan.md and test-plans/ if present, and templates/decisions.md. The Teamwork tree (top task ${p.teamworkTask}) has ${p.leaves.length} tasks: ${p.leaves.map(l => `${l.task} ${l.name}`).join('; ')}.`,
-    `Write ${dir}/factory/implementation-plan.md: for each task, the approach, the code areas it touches, the order and which PRs stack, risks, and every edge case and ambiguity with how it is settled (cite REQ IDs and D-/FD- entries). Workers follow it, so write it for someone with the repo and none of this context.`,
+    `Read first, in full: ${dir}/README.md, intent.md, spec.md, decisions.md, discussion.md, plan.md and test-plans/ if present, and templates/decisions.md. The Teamwork tree (top task ${p.teamworkTask}): plan these ${todo.length} task(s): ${list(todo)}.${todo.length < p.leaves.length ? ` Already built or done (context only): ${list(p.leaves.filter(built))}.` : ''}`,
+    `Write ${dir}/factory/implementation-plan.md: for each task to plan, the approach, the code areas it touches, the order and which PRs stack, risks, and every edge case and ambiguity with how it is settled (cite REQ IDs and D-/FD- entries). Workers follow it, so write it for someone with the repo and none of this context.`,
     `Write ${dir}/factory/decisions.md in templates/decisions.md's format, numbered FD-001 upward (never reuse the team's D- numbers): one entry per ambiguity you found. Settle what the spec, the team's decisions or the codebase answers (say which, with the source). What only a person can answer stays status: open; for each, ${route}.`,
-    missing.length ? `Draft the missing test plans in the same PR, following project-planning's built-test-plans skill (plugins/built-intent/skills/built-test-plans) for format and rules, but skipping its commit to main: ${missing.map(l => `${l.task} ${l.name}`).join('; ')}.` : 'Every task already has a test plan; bring any that disagree with the spec back in line.',
+    missing.length ? `Draft the missing test plans in the same PR, following project-planning's built-test-plans skill (plugins/built-intent/skills/built-test-plans) for format and rules, but skipping its commit to main: ${list(missing)}.` : 'Every task to plan already has a test plan; bring any that disagree with the spec back in line.',
     'Review before you report: a fresh subagent reads the plan, the decision log and the test plans against the spec and the team decisions for gaps, contradictions and unanswered edge cases. Fix what it finds. The built-rails review lenses do not apply to this repo.',
     'Stop when the draft PR is open and pushed: report the PR, the pushed head SHA, and the FD entries left open.',
   ].join('\n\n');

@@ -319,3 +319,12 @@ test('a fixes round the dispatch plan holds in the factory queue is not told to 
   assert.equal(told({ ...cfg, heldRequests: new Set(['W-71/R5']) }), 0);
   assert.equal(told(cfg), 1);
 });
+
+test("a project task's dispatch notice names the project's implementation plan and the task's test plan (projects phase C)", async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const work = { id: 'W-3', title: 'Import column', phase: 'queued', stream: 'sup: stream-1', requests: [{ id: 'R1', type: 'dispatch', ack: null, at: '2026-11-16T20:00:00.000Z' }], assignments: [] };
+  const state = { work: { 'W-3': work }, questions: {}, messages: {}, notifications: {} };
+  const note = 'Project 2026-10-position-end-date: build to projects/2026-10-position-end-date/factory/implementation-plan.md';
+  const [m] = inboxCommands(state, { supervisors: ['sup: stream-1'], seats: [], projectNotes: { 'W-3': note } }, null).cmds.filter(c => c.payload.about?.requests);
+  assert.match(m.payload.text, /build to projects\/2026-10-position-end-date\/factory\/implementation-plan\.md/);
+});

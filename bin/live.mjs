@@ -28,7 +28,7 @@ import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findT
 import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
 import { compareCheck } from '../core/ci-compare.mjs';
-import { buildProjects } from '../core/projects.mjs';
+import { buildProjects, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -85,7 +85,7 @@ if (CONFIG_PROBLEMS.length && !DRY) { const key = createHash('sha256').update(CO
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
-let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map(), heldRequests = new Set();
+let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map(), heldRequests = new Set(), projectNotes = {};
 // Projects (Alex, 11-16): the planning repo and each active project's Teamwork tree, read every 30 min and kept for a restart.
 const PROJECTS_CACHE = join(ROOT, 'data/projects-cache.json');
 let projectsRead = (() => { try { return JSON.parse(readFileSync(PROJECTS_CACHE, 'utf8')); } catch { return { planning: [], trees: {}, readAt: null }; } })();
@@ -124,7 +124,11 @@ function autoDispatchTick() {
   const s = store.state;
   const prs = { owner: config.githubOwner, prState: u => openPrs.get(u)?.state || null };
   // Projects phase B: a project's task carries whether its project is ready for it.
-  const gates = new Map(buildProjects({ ...projectsRead, works: s.work, prs: ownPrs }).projects.flatMap(p => p.leaves.filter(l => l.work).map(l => [l.work, { slug: p.slug, ...l.gate }])));
+  const built = buildProjects({ ...projectsRead, works: s.work, prs: ownPrs }).projects;
+  const gates = new Map(built.flatMap(p => p.leaves.filter(l => l.work).map(l => [l.work, { slug: p.slug, ...l.gate }])));
+  // Phase C: a project task's notices point its supervisor at the plan the worker follows and the task's test plan.
+  projectNotes = Object.fromEntries(built.flatMap(p => p.leaves.filter(l => l.work && p.factoryPlan).map(l => [l.work,
+    `Project ${p.slug}: build to projects/${p.slug}/factory/implementation-plan.md${l.testPlanPath ? ` and test against ${l.testPlanPath}` : ''} (project-planning origin/main); put both paths in the brief.`])));
   const views = Object.values(s.work).map(w => ({ ...prGateView(s, w), ...derivedCtx(s, w.id, prs), ...(gates.has(w.id) ? { projectGate: gates.get(w.id) } : {}) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
   const toldRequests = new Set(Object.values(s.messages).flatMap(m => [m.about?.requests].flat().filter(Boolean)));
@@ -171,7 +175,7 @@ async function inboxTick() {
   const workers = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.worker).map(([sup, s]) => [s.worker, sup]));
   const developer = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
   const hostHowTo = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.howTo).map(([l, s]) => [l, s.howTo]));
-  const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs, heldRequests },
+  const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs, heldRequests, projectNotes },
     fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
@@ -207,6 +211,9 @@ async function projectsTick() {
   for (const p of planning.filter(p => p.readme.teamworkTask && !['Archived', 'Complete'].includes(p.readme.status)))
     try { trees[p.readme.teamworkTask] = await readTree(p.readme.teamworkTask); } catch (e) { once(`project tree ${p.slug}: ${e.message}`); }
   projectsRead = { planning, trees, readAt: now() };
+  // Phase C: a planning job for each project the factory is about to work that has no plan on main yet.
+  if (config.projects?.planningJobs) for (const c of triageCreates(buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs }).projects, store.state.work, config.projects))
+    try { const { id } = store.append({ kind: 'create', payload: c }, by('board (projects)')); log(`planning job ${id}: ${c.title}`); } catch (e) { log(`planning job refused: ${e.message}`); }
   writeFileSync(PROJECTS_CACHE, JSON.stringify(projectsRead));
   log(`projects: ${planning.length} read, ${Object.keys(trees).length} trees`);
 }

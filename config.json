@@ -17,7 +17,8 @@
         "howTo": "~/Code/plans/software-factory-v2/host-streams.md",
         "repos": {
           "teamwork-mini-mcp": "~/Code/repos/teamwork mini mcp",
-          "built-customer-implementations": "~/Code/repos/built-customer-implementations"
+          "built-customer-implementations": "~/Code/repos/built-customer-implementations",
+        "project-planning": "~/Code/repos/project-planning"
         },
         "branches": "alex/(mutation-tester|test-quality/mutation-gaps)"
       }
@@ -226,5 +227,10 @@
     "everyHours": 6,
     "keep": 14,
     "_backup": "Evolution phase 1 step 2: verified copies of data/factory.db and data/artifacts, one folder per day. enabled false turns them off; keep is days. Local for now (Alex, 11-13); off-machine once the factory runs headless in the cloud."
+  },
+  "projects": {
+    "_doc": "Projects (Alex 11-16, ~/Code/plans/software-factory-v2/projects-design.md). questionsTo: where a planning job's open questions go: 'alex' (an ask each on the planning record), 'owner' (the README Owner) or 'developers' (the tasks' assignees); the last two are written as needs: in the factory decision log and listed in the PR for Alex to forward. planningJobs: false stops the board creating planning jobs.",
+    "questionsTo": "alex",
+    "planningJobs": true
   }
 }

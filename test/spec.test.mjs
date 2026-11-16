@@ -33,3 +33,7 @@ test('decisions yield their status and who they need', () => {
   const d = parseDecisions('# Decisions\n### D-010 — Can mapping express it?\n- status: open\n- needs: dev to verify\n\n### D-011 — Done one\n- status: decided\n');
   assert.deepEqual(d.map(({ text, ...x }) => x), [{ id: 'D-010', title: 'Can mapping express it?', status: 'open', needs: 'dev to verify' }, { id: 'D-011', title: 'Done one', status: 'decided', needs: null }]);
 });
+
+test("the factory's own decision log, numbered FD-, parses like the team's", () => {
+  assert.deepEqual(parseDecisions('### FD-001 — Bulk limit\n- status: open\n- needs: Casey\n').map(({ text, ...d }) => d), [{ id: 'FD-001', title: 'Bulk limit', status: 'open', needs: 'Casey' }]);
+});

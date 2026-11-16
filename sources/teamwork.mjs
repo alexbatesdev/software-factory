@@ -45,7 +45,10 @@ export async function readTree(rootId, maxNodes = 500) {
   const tw = await client(), out = [];
   for (let level = [String(rootId)]; level.length && out.length < maxNodes;) {
     const next = [];
-    for (const id of level) for (const t of (await paced(() => tw.listSubtasks(id))).tasks || []) { out.push({ id: String(t.id), name: t.name, parent: id, status: t.status }); next.push(String(t.id)); }
+    for (const id of level) {
+      const { tasks = [], users = {} } = await paced(() => tw.listSubtasks(id)), name = u => [users[u.id]?.firstName, users[u.id]?.lastName].filter(Boolean).join(' ');
+      for (const t of tasks) { out.push({ id: String(t.id), name: t.name, parent: id, status: t.status, assignees: (t.assignees || []).map(name).filter(Boolean) }); next.push(String(t.id)); }
+    }
     level = next;
   }
   return out;
