@@ -62,3 +62,22 @@ test("a job that fails with no test results on main as well (a fan-in like ci/ci
   assert.equal(compareCheck(job(null), job(null)).verdict, 'unknown');
   assert.equal(compareCheck(job(null), job(['a'])).verdict, 'no test results', 'main ran tests and the PR ran none: rerun');
 });
+
+// On-demand Brakeman (Alex 11-16): the Audit check is Brakeman alone (CI's bundler-audit step always exits 0).
+test("Brakeman's JSON becomes warnings keyed by fingerprint; the PR's warnings are main's only when every one is on main", async () => {
+  const { parseBrakeman } = await import('../sources/audit.mjs');
+  const { compareWarnings } = await import('../core/ci-compare.mjs');
+  const json = { warnings: [{ fingerprint: 'f1', warning_type: 'SQL Injection', confidence: 'Medium', file: 'app/q.rb', line: 782, message: 'Possible SQL injection' }] };
+  assert.deepEqual(parseBrakeman(JSON.stringify(json)), [{ fingerprint: 'f1', type: 'SQL Injection', confidence: 'Medium', file: 'app/q.rb', line: 782, message: 'Possible SQL injection' }]);
+  const w = (fp, file = 'app/q.rb') => ({ fingerprint: fp, type: 'SQL Injection', file, line: 1 });
+  assert.deepEqual(compareWarnings([w('f1')], [w('f1'), w('f2')]), { verdict: 'red on main', prOnly: [], shared: ['SQL Injection app/q.rb:1'], unit: 'Brakeman warning' });
+  assert.deepEqual(compareWarnings([w('f1'), w('f3', 'app/new.rb')], [w('f1')]).prOnly, ['SQL Injection app/new.rb:1']);
+  assert.equal(compareWarnings([], [w('f1')]).verdict, 'unknown', 'Brakeman finds nothing here: the red check is something else');
+});
+
+test('the comparison line names Brakeman warnings, not tests', async () => {
+  const { compareText } = await import('../core/ci-compare.mjs');
+  assert.equal(compareText('Audit Ruby code and dependencies', { verdict: 'ours', prOnly: ['SQL Injection app/new.rb:1'], shared: [], unit: 'Brakeman warning' }),
+    'Audit Ruby code and dependencies: 1 Brakeman warning(s) here and not on main (SQL Injection app/new.rb:1).');
+  assert.match(compareText('Audit Ruby code and dependencies', { verdict: 'red on main', prOnly: [], shared: ['a', 'b'], unit: 'Brakeman warning' }), /all 2 Brakeman warning\(s\) are also on main/);
+});

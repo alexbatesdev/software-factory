@@ -344,3 +344,12 @@ test("a check an open record tracks as red on main stays main's when main's newe
   assert.deepEqual(c.payload.failing, ['ci/circleci: test'], 'an untracked check main does not show stays the PR\'s');
   assert.deepEqual(c.payload.trackedOn, { 'Audit Ruby code and dependencies': 'W-463' });
 });
+
+test("a check compared red on main counts as main's even when main's head doesn't show it and no record tracks it (on-demand Brakeman)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const pr = { ...createWork({ id: 'W-80', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const health = new Map([['app:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['Audit Ruby code and dependencies'], changesRequested: [], threads: [], comments: [] }]]);
+  const ciCompare = new Map([['app:1', { 'Audit Ruby code and dependencies': { verdict: 'red on main', prOnly: [], shared: ['SQL Injection app/q.rb:782'], unit: 'Brakeman warning' } }]]);
+  const [c] = healthCommands({ work: { 'W-80': pr } }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['app', []]]), ciCompare });
+  assert.deepEqual([c.payload.inherited, c.payload.failing], [['Audit Ruby code and dependencies'], []]);
+});

@@ -27,7 +27,8 @@ import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.
 import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask, readTree } from '../sources/teamwork.mjs';
 import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
-import { compareCheck } from '../core/ci-compare.mjs';
+import { compareCheck, compareWarnings } from '../core/ci-compare.mjs';
+import { runBrakeman, AUDIT_CHECK } from '../sources/audit.mjs';
 import { buildProjects, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat, seatRenames } from '../fleet/factory.mjs';
@@ -231,6 +232,32 @@ async function ciRun(key, read, ttl = Infinity) {
   if (jobs) ciRuns.set(key, { jobs, at: Date.now() });
   return jobs;
 }
+// On-demand Brakeman (Alex 11-16): only when a built-rails PR into main fails Audit and no open record tracks Audit as red
+// on main, Brakeman runs on the host for main's head and the PR's head (one run at a time, cached per commit) and the
+// warnings are compared. Never on a timer, never in a sandbox.
+const audits = new Map();
+let auditChain = Promise.resolve();
+function audited(sha) {
+  if (audits.has(sha)) return audits.get(sha).result;
+  const entry = { result: null }; audits.set(sha, entry);
+  auditChain = auditChain.then(() => runBrakeman({ checkout: join(homedir(), 'Code/repos/built-rails-a'), sha, cacheDir: join(ROOT, 'data/audit'), log })
+    .then(r => { entry.result = r; log(`audit ${sha.slice(0, 7)}: ${r.warnings.length} Brakeman warning(s) in ${Math.round(r.durationMs / 1000)}s`); }, e => { audits.delete(sha); once(`audit ${sha.slice(0, 7)}: ${e.message}`); }));
+  return null;
+}
+async function compareAudit(health, ciCompare) {
+  if (config.audit?.auto === false || DRY) return;
+  const key = `ci:built-rails:${AUDIT_CHECK}`;
+  if (Object.values(store.state.work).some(w => !TERMINAL.includes(w.phase) && [w.source?.key, ...(w.aliases || [])].includes(key))) return;
+  const wanting = [...health].filter(([k, h]) => k.startsWith('built-rails:') && h.base === 'main' && h.failing.includes(AUDIT_CHECK));
+  if (!wanting.length) return;
+  const git = await mainGit('built-rails'), main = git && (await git('rev-parse', 'origin/main')).stdout.trim();
+  const onMain = main && audited(main);
+  for (const [k, h] of wanting) {
+    const pr = audited(h.head);
+    if (pr && onMain) { if (!ciCompare.has(k)) ciCompare.set(k, {}); ciCompare.get(k)[AUDIT_CHECK] = compareWarnings(pr.warnings, onMain.warnings); }
+  }
+}
+
 async function compareCi(health, mainFailing, prs, owner) {
   const out = new Map();
   if (!circleReady()) return out;
@@ -261,6 +288,7 @@ async function githubTick() {
     const main = await readMain([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
     const mainGreen = new Map([...main].map(([r, m]) => [r, m.green])), mainFailing = new Map([...main].map(([r, m]) => [r, m.failing])), mainPassing = new Map([...main].map(([r, m]) => [r, m.passing]));
     const ciCompare = await compareCi(health, mainFailing, prs, owner);
+    await compareAudit(health, ciCompare);
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
     if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
