@@ -103,3 +103,11 @@ test('the score sheet puts each case\'s expected findings beside every run\'s ou
   assert.match(md, /Expected found: ___/);
   assert.match(md, /history/i, 'the sheet says a reviewer could have read the fix commit on main');
 });
+
+test("a fixed internal-review finding recorded with only a note still gives the case an answer to score against (W-408)", () => {
+  const s = { work: { 'W-8': rec('W-8', { reviews: [{ head: H('8'), by: 'sbx: s internal-review', result: 'findings', at: '2026-11-11T00:00:00Z' }],
+    findings: [{ id: 'F1', status: 'resolved', reviewHead: H('8'), note: 'Fixed in a8bc536: install now updates an existing map.' }] }) } };
+  const [d] = corpusCandidates(s).defect;
+  assert.equal(d.expected[0].text, 'Fixed in a8bc536: install now updates an existing map.');
+  assert.equal(d.expected[0].note, 'Fixed in a8bc536: install now updates an existing map.');
+});

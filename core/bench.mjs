@@ -33,7 +33,7 @@ export function corpusCandidates(state) {
     }
     for (const r of ours.filter(r => r.result === 'findings')) {
       const fixed = w.findings.filter(f => f.reviewHead === r.head && f.status === 'resolved');
-      if (fixed.length) out.defect.push({ ...base(w, r), at: r.at, expected: fixed.map(f => ({ text: f.text, severity: f.severity || null, source: 'internal review', confirmedBy: 'fixed in a later round' })) });
+      if (fixed.length) out.defect.push({ ...base(w, r), at: r.at, expected: fixed.map(f => ({ text: f.text || f.note, note: f.note || null, severity: f.severity || null, source: 'internal review', confirmedBy: 'fixed in a later round' })) });
     }
     if (['done', 'merged'].includes(w.phase) && ours.length === 1 && ours[0].result === 'clean' && !escapes(w).length && !(w.findings || []).length)
       out.clean.push({ ...base(w, ours[0]), at: ours[0].at, expected: [] });
