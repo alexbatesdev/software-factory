@@ -813,3 +813,13 @@ test('a queued record with no review assignment still refuses a review', () => {
   const w = run({ ...build({ links: { pr: 'https://github.com/acme-org/app/pull/1' } }), criteria: [] }, { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' }, { type: 'head', sha: 'aaaaaaa1' });
   assert.throws(() => applyEvent(w, { type: 'review', head: 'aaaaaaa1', by: 'r', result: 'clean' }, ctx()), /isn't waiting for review/);
 });
+
+test('recording a review settles the review request it answers, so it never sits unacked (W-502: W-221 R2 and seven more)', () => {
+  const at = now => ({ ctx: { now } });
+  const w = run(toImplementation(), { type: 'implementation_done', head: 'aaa', ...at('2026-11-16T20:00:00.000Z') });
+  assert.equal(w.requests.find(r => r.type === 'review').ack, null);
+  const after = run(w, { type: 'review', head: 'aaa', by: 'reviewer', result: 'clean', ...at('2026-11-16T20:00:05.000Z') });
+  assert.deepEqual(after.requests.find(r => r.type === 'review').ack, { by: 'test', outcome: 'done', note: 'Settled by the review at aaa.', at: '2026-11-16T20:00:05.000Z' });
+  const before = run(w, { type: 'review', head: 'aaa', by: 'reviewer', result: 'clean', ...at('2026-11-12T18:01:57.769Z') });
+  assert.equal(before.requests.find(r => r.type === 'review').ack, null, 'a replayed review from before the change leaves the request as it was');
+});

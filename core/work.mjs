@@ -143,6 +143,7 @@ export function updateWork(work, fields, ctx) {
 const QUESTIONS_KEEP_READY_FROM = '2026-11-12T06:15:00.000Z';
 const PARKED_FIXES_HEAR_FROM = '2026-11-12T20:30:00.000Z';
 const MERGE_CANCELS_JOBS_FROM = '2026-11-13T00:45:00.000Z';
+const REVIEW_SETTLES_REQUEST_FROM = '2026-11-16T19:30:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
@@ -374,6 +375,8 @@ export function applyEvent(work, e, ctx) {
       if (!e.by || e.by === w.implementer) fail('A review must be independent of the implementer.');
       if (!['clean', 'findings'].includes(e.result)) fail('A review result is "clean" or "findings".');
       w.reviews.push({ head: e.head, by: e.by, result: e.result, at: ctx.now, link: e.link || null, pr: w.links?.pr || null });
+      // A supervisor records the review its worker already ran without acking the request it answers (W-502): the review settles it.
+      if (ctx.now >= REVIEW_SETTLES_REQUEST_FROM) for (const r of w.requests.filter(r => r.type === 'review' && !r.ack)) r.ack = { by: ctx.by, outcome: 'done', note: `Settled by the review at ${e.head}.`, at: ctx.now };
       // A finding may come as plain text (W-160 had four stored with none).
       for (const f of e.findings || []) w.findings.push({ id: nextId(w.findings, 'F'), text: typeof f === 'string' ? f : f.text, severity: f.severity || null, status: 'open', reviewHead: e.head, note: null });
       if (e.result === 'findings' && w.phase !== 'fixes') {
