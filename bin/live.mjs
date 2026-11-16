@@ -18,7 +18,7 @@ import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
 import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
-import { autoDispatchPlan } from '../core/dispatch.mjs';
+import { autoDispatchPlan, busyStreams } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
 import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue, contradictions } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
@@ -85,7 +85,7 @@ if (CONFIG_PROBLEMS.length && !DRY) { const key = createHash('sha256').update(CO
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
-let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map(), heldRequests = new Set(), projectNotes = {};
+let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map(), heldRequests = new Set(), projectNotes = {}, lastBusy = [];
 // Projects (Alex, 11-16): the planning repo and each active project's Teamwork tree, read every 30 min and kept for a restart.
 const PROJECTS_CACHE = join(ROOT, 'data/projects-cache.json');
 let projectsRead = (() => { try { return JSON.parse(readFileSync(PROJECTS_CACHE, 'utf8')); } catch { return { planning: [], trees: {}, readAt: null }; } })();
@@ -142,6 +142,7 @@ function autoDispatchTick() {
     catch (e) { log(`route ${p.request} refused: ${e.message}`); }
   }
   lastPlan = plan;
+  lastBusy = [...busyStreams(views, { supervisors: config.routing.supervisors, drain, toldRequests })];
   for (const p of plan.filter(p => p.action === 'retune')) if (!retune.has(p.to)) { retune.set(p.to, p); log(`retune ${p.to} for ${p.id}: ${p.reason}`); }
   for (const p of plan.filter(p => p.action === 'resume')) {
     const key = `${p.id}/${p.assignmentId}/v${p.version}`;
@@ -451,7 +452,7 @@ http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, gh: DRY ? 
   const git = await mainGit(repo);
   return !git || git('cat-file', '-e', `origin/main:${path}`).then(() => true, () => false);
 }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs }), readAt: projectsRead.readAt }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
+  observed: () => ({ projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs }), readAt: projectsRead.readAt }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 
 // The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never

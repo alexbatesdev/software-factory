@@ -458,3 +458,12 @@ test("a discovery citing a file that isn't on origin/main is the PR's own code: 
     assert.equal((await f.act('triage board worker', 'progress', { work: 'W-1', discovery: 'Position save is slow', text: 'app/models/position.rb:120 N+1' }))[0], 200, 'code on main is real separate work');
   } finally { f.close(); }
 });
+
+test('the queue page and its data are served from the last dispatch plan and busy streams (W-505 follow-up)', async () => {
+  const f = await serveWith({ observed: () => ({ queue: [{ id: 'W-1', action: null, reason: 'every stream is busy; waits its turn' }], busy: [[S1, 'W-2']] }) });
+  try {
+    const d = await (await fetch(`${f.base}/api/queue`)).json();
+    assert.deepEqual([d.queue.map(q => q.id), d.streams[0].busyWith], [['W-1'], 'W-2']);
+    assert.match(await (await fetch(`${f.base}/queue`)).text(), /\/api\/queue/);
+  } finally { f.close(); }
+});
