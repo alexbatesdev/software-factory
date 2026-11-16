@@ -95,7 +95,7 @@ export function scoreSheet(corpus, runs) {
     'Caveat: a miss case\'s fix commit is in the checkout\'s history (main). The prompt forbids reading history but can\'t prevent it; note any run that cites a later commit.', ''];
   for (const c of corpus.cases.filter(x => runs.some(r => r.case === x.id))) {
     out.push(`## ${c.id} (${c.kind}, ${c.repo} #${c.pr.split('/').pop()}, head ${c.head.slice(0, 7)})`, '', 'Expected:');
-    out.push(...(c.expected.length ? c.expected.map(e => `- ${e.text}${e.confirmedBy ? ` (confirmed by ${e.confirmedBy})` : ''}`) : ['- none: a clean merge, so every finding is extra']), '');
+    out.push(...(c.expected.length ? c.expected.map(e => `- ${e.text || '(no text)'}${e.note ? `\n  Fix note: ${e.note}` : ''}${e.confirmedBy ? ` (confirmed by ${e.confirmedBy})` : ''}`) : ['- none: a clean merge, so every finding is extra']), '');
     for (const r of runs.filter(x => x.case === c.id).sort((a, b) => a.agent.localeCompare(b.agent) || a.n - b.n))
       out.push(`### ${r.agent} #${r.n} · ${r.status} · ${mins(r.durationMs)}${r.usage ? ` · ${r.usage}` : ''}`, '', '~~~~', r.output || '(no output)', '~~~~', '',
         `Expected found: ___ / ${c.expected.length}   Extra findings: ___   Notes:`, '');

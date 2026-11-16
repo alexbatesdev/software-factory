@@ -98,7 +98,7 @@ test('the score sheet puts each case\'s expected findings beside every run\'s ou
   const runs = [{ case: 'B-miss-W-1-aaaaaaa', agent: 'claude', n: 1, status: 'ok', durationMs: 60000, output: 'reviewed aaaa: 1 findings\n- app/x.rb:3 nil crash' },
     { case: 'B-miss-W-1-aaaaaaa', agent: 'codex', n: 1, status: 'timeout', durationMs: 1800000, output: '' }];
   const md = scoreSheet(CORPUS, runs);
-  assert.match(md, /B-miss-W-1-aaaaaaa/); assert.match(md, /SECRET-ANSWER/);
+  assert.match(md, /B-miss-W-1-aaaaaaa/); assert.match(md, /SECRET-ANSWER/); assert.match(md, /Fix note: e8f4468: fixed/);
   assert.match(md, /claude #1.*ok.*1m/); assert.match(md, /codex #1.*timeout/);
   assert.match(md, /Expected found: ___/);
   assert.match(md, /history/i, 'the sheet says a reviewer could have read the fix commit on main');
