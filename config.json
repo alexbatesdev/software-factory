@@ -141,7 +141,7 @@
         "workspace": "Services",
         "tab": "Board",
         "cwd": "~/Code/repos/software-factory",
-        "run": "FACTORY_MODE=live node --env-file=\"$HOME/Code/repos/teamwork mini mcp/.env\" bin/live.mjs",
+        "run": "FACTORY_MODE=live node --env-file=\"$HOME/Code/repos/teamwork mini mcp/.env\" --env-file-if-exists=.env bin/live.mjs",
         "expect": "live.mjs"
       },
       {
