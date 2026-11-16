@@ -904,8 +904,12 @@ export const FEEDBACK_TYPES = ['changes_requested', 'threads', 'comments'];
 // Work waiting on review or on Alex goes back to fixes; work being built only gets the finding.
 export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
 
+/** The Teamwork task ids a record completes: its Teamwork source, its tw- keys, and its Teamwork links. */
+export const ownTasks = w => new Set([w.source?.key, ...(w.aliases || [])].map(k => String(k || '').match(/^tw-(\d+)$/)?.[1])
+  .concat([w.links?.teamwork, w.links?.source].map(u => String(u || '').match(/teamwork\.com\/app\/tasks\/(\d+)/)?.[1])).filter(Boolean));
+
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, base, failing = [], inherited = [], trackedOn = {}, changesRequested = [], threads = [], comments = [], mainGreen = null, ciCompare = {} }, ctx) {
+export function observeHealth(work, { head, conflict, base, failing = [], inherited = [], trackedOn = {}, changesRequested = [], threads = [], comments = [], mainGreen = null, ciCompare = {}, prBodyTasks = null, prOwnTasks = [] }, ctx) {
   const atHead = !!head && sameSha(head, work.head);
   if (TERMINAL.includes(work.phase) || !head || (!atHead && ctx.now < FEEDBACK_ANY_HEAD_FROM)) return work;
   if (!atHead) { conflict = false; failing = []; inherited = []; mainGreen = null; } // CI and conflicts are judged at the record's head only
@@ -923,7 +927,11 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
   const compared = names => names.filter(f => ciCompare[f]).map(f => compareText(f, ciCompare[f])).join(' ');
   const inheritedNote = inherited.length ? `${inherited.join(', ')} also fails on ${base || 'main'} at ${head.slice(0, 7)}: not this PR's to fix. ${base ? 'Its base PR handles it.' : inherited.every(f => trackedOn[f]) ? `Tracked on ${[...new Set(inherited.map(f => trackedOn[f]))].join(', ')}.` : 'The board proposes it as separate work for Alex.'}${compared(inherited) ? ` Compared test by test: ${compared(inherited)}` : ''}` : null;
   const newInherited = inheritedNote && !(work.updates || []).some(u => u.text === inheritedNote);
-  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length && !newInherited) return work;
+  // Alex 11-16 hard rule (W-519): the body links only the Teamwork task this PR completes; others are plain text.
+  const own = new Set([...ownTasks(work), ...prOwnTasks]), linked = prBodyTasks || [], foreign = !own.size && linked.length <= 1 ? [] : linked.filter(t => !own.has(t));
+  const openBody = (work.findings || []).filter(f => f.status === 'open' && f.source?.type === 'pr_body');
+  const bodyNew = foreign.length > 0 && !openBody.some(f => f.source.ids.join() === foreign.join()), bodyFixed = !!prBodyTasks && !foreign.length && openBody.length > 0;
+  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length && !newInherited && !bodyNew && !bodyFixed) return work;
   const w = structuredClone(work);
   if (newInherited) note(w, ctx, inheritedNote);
   for (const f of w.findings.filter(x => unquoted.some(u => u.id === x.id))) {
@@ -931,14 +939,20 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
     f.source.quoted = true;
     note(w, ctx, `Finding ${f.id} now quotes its comments.`);
   }
-  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain) return w;
+  for (const f of w.findings.filter(f => f.status === 'open' && f.source?.type === 'pr_body' && (bodyFixed || bodyNew))) Object.assign(f, { status: 'resolved', note: bodyFixed ? 'The PR body no longer links it.' : 'Superseded by the newer read of the PR body.' });
+  if (bodyFixed) note(w, ctx, 'The PR body now links only its own Teamwork task.');
+  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !bodyNew) return w;
+  if (bodyNew) w.findings.push({ id: nextId(w.findings, 'F'), text: own.size
+      ? `The PR body links Teamwork task${foreign.length > 1 ? 's' : ''} ${foreign.join(', ')}, which this PR doesn't complete. Link only ${[...own].join(', ')}; mention ${foreign.length > 1 ? 'the others' : 'it'} as plain text (the number, no URL), since Product's automations treat every linked task as this PR's. A factual PR-description edit: no question needed.`
+      : `The PR body links ${foreign.length} Teamwork tasks (${foreign.join(', ')}): a PR links only the one it completes. Keep that link and mention the others as plain text (the number, no URL). A factual PR-description edit: no question needed.`,
+    severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'pr_body', head, ids: foreign, at: ctx.now } });
   if (mergeMain) w.findings.push({ id: nextId(w.findings, 'F'), text: `main is green again at ${mainGreen.slice(0, 7)}, and CI at ${head.slice(0, 7)} failed only on what was red on main. Merge origin/main into the branch (merge, never rebase or force push) and push, so CI reruns.`, severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'merge_main', head, main: mainGreen } });
   for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: `${HEALTH_TEXT[type](head, failing, base)}${type === 'ci' && compared(failing) ? ` Compared with main test by test: ${compared(failing)}` : ''}`, severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
   if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id), at: ctx.now } });
   if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id), at: ctx.now, quoted: newComments.some(c => c.text) || undefined } });
   if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id), at: ctx.now } });
   const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : `conflicts with ${base || 'main'}`),
-    ...(mergeMain ? ['main is green again: merge it in'] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : []), ...(newComments.length ? [`${newComments.length} new comment(s)`] : [])];
+    ...(mergeMain ? ['main is green again: merge it in'] : []), ...(bodyNew ? [`the PR body links Teamwork task(s) it doesn't complete (${foreign.join(', ')})`] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : []), ...(newComments.length ? [`${newComments.length} new comment(s)`] : [])];
   note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${said.join('; ')}.`);
   if (HEALTH_REOPENS.includes(w.phase)) {
     w.phase = 'fixes'; w.approvalWait = null;

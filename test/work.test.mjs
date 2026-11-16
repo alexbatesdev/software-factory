@@ -851,3 +851,22 @@ test('a merge settles every request still pending on the record, so none sits un
   assert.deepEqual(merged('2026-11-16T21:30:00.000Z').requests.find(r => r.id === 'R10').ack, { by: 'github', outcome: 'done', note: 'Settled: the PR merged.', at: '2026-11-16T21:30:00.000Z' });
   assert.equal(merged('2026-11-16T20:34:00.000Z').requests.find(r => r.id === 'R10').ack, null, 'replayed from before the change: as it was');
 });
+
+// Alex 11-16 hard rule (W-519): a PR body links only the Teamwork task the PR completes; others are mentioned as plain text.
+test("a PR body linking a Teamwork task the record doesn't complete opens one finding, resolved once the link is gone", () => {
+  const T = '2026-11-16T22:30:00.000Z', c = { now: T, by: 'github' };
+  const w = { ...readyPr(), source: { type: 'teamwork', key: 'tw-41384303' }, head: 'aaa' };
+  const one = observeHealth(w, { head: 'aaa', conflict: false, failing: [], prBodyTasks: ['41384303', '41384290'] }, c);
+  const f = one.findings.at(-1);
+  assert.deepEqual([f.status, f.source.type, f.source.ids], ['open', 'pr_body', ['41384290']]);
+  assert.match(f.text, /links Teamwork task 41384290, which this PR doesn't complete.*plain text/);
+  assert.equal(observeHealth(one, { head: 'aaa', conflict: false, failing: [], prBodyTasks: ['41384303', '41384290'] }, c), one, 'said once');
+  const fixed = observeHealth(one, { head: 'aaa', conflict: false, failing: [], prBodyTasks: ['41384303'] }, c);
+  assert.equal(fixed.findings.at(-1).status, 'resolved');
+});
+
+test("with no task of its own a record's single linked task is taken as its own; two or more are flagged", () => {
+  const c = { now: '2026-11-16T22:30:00.000Z', by: 'github' }, w = { ...readyPr(), source: { type: 'pr', key: 'app-77' }, links: { pr: PR }, head: 'aaa' };
+  assert.equal(observeHealth(w, { head: 'aaa', conflict: false, failing: [], prBodyTasks: ['111'] }, c), w);
+  assert.match(observeHealth(w, { head: 'aaa', conflict: false, failing: [], prBodyTasks: ['111', '222'] }, c).findings.at(-1).text, /links 2 Teamwork tasks \(111, 222\).*only the one it completes/);
+});

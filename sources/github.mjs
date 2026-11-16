@@ -56,7 +56,7 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
   const out = new Map();
   for (let i = 0; i < specs.length; i += 30) {
     const chunk = specs.slice(i, i + 30).map(x => x.split(':'));
-    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} refs: timelineItems(last:50,itemTypes:[CROSS_REFERENCED_EVENT]){nodes{... on CrossReferencedEvent{source{... on Issue{${ISSUE} subIssues(first:50){nodes{${ISSUE}}}}}}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state ${CONTEXTS}}}}}}}`).join(' ')}}`;
+    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid body reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} refs: timelineItems(last:50,itemTypes:[CROSS_REFERENCED_EVENT]){nodes{... on CrossReferencedEvent{source{... on Issue{${ISSUE} subIssues(first:50){nodes{${ISSUE}}}}}}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state ${CONTEXTS}}}}}}}`).join(' ')}}`;
     const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000, maxBuffer: 1 << 23 })).stdout);
     chunk.forEach(([repo, n], j) => {
       const p = data?.[`p${j}`]?.pullRequest; if (!p) return;
@@ -78,7 +78,9 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
       // QA files findings as sub-issues of an issue that references the PR (#8244): each open one is feedback until QA closes it.
       const issues = [...new Map((p.refs?.nodes || []).map(r => r.source).filter(x => x?.id).flatMap(x => x.subIssues?.nodes?.length ? x.subIssues.nodes : [x])
         .filter(x => x.state === 'OPEN' && by(x) !== me && x.author?.__typename !== 'Bot' && by(x.comments?.nodes?.[0]) !== me && x.createdAt > since).map(x => [x.id, { id: x.id, by: by(x), url: x.url }])).values()];
-      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads, comments: [...said, ...issues] });
+      // The Teamwork tasks the body links (W-519: a PR links only the task it completes); a bare number is a mention.
+      const bodyTasks = [...new Set([...String(p.body || '').matchAll(/teamwork\.com\/app\/tasks\/(\d+)/g)].map(m => m[1]))];
+      out.set(`${repo}:${n}`, { head: p.headRefOid, base: p.baseRefName, conflict: p.mergeable === 'CONFLICTING', failing, changesRequested, threads, comments: [...said, ...issues], bodyTasks });
     });
   }
   return out;

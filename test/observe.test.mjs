@@ -353,3 +353,28 @@ test("a check compared red on main counts as main's even when main's head doesn'
   const [c] = healthCommands({ work: { 'W-80': pr } }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['app', []]]), ciCompare });
   assert.deepEqual([c.payload.inherited, c.payload.failing], [['Audit Ruby code and dependencies'], []]);
 });
+
+test("the health read keeps the Teamwork tasks a PR body links, and hands them to the record (W-519)", async () => {
+  const { readPrHealth } = await import('../sources/github.mjs');
+  const { healthCommands } = await import('../core/observe.mjs');
+  const body = 'Teamwork: [41384303](https://builtforteams.teamwork.com/app/tasks/41384303)\nPart of https://builtforteams.teamwork.com/app/tasks/41384290 (parent). Also see task 41384301.';
+  const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'aaaaaaa1', body, commits: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, summaries: { nodes: [] } } } };
+  const h = (await readPrHealth(['app:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '')).get('app:1');
+  assert.deepEqual(h.bodyTasks, ['41384303', '41384290'], 'linked only: a bare number is a mention');
+  const pr = { ...createWork({ id: 'W-1', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const [c] = healthCommands({ work: { 'W-1': pr } }, new Map([['app:1', h]]), { owner: OWNER, now: ctx.now });
+  assert.deepEqual(c.payload.prBodyTasks, ['41384303', '41384290']);
+});
+
+test("a PR completing several tasks may link each of them: its own tasks are every record's on that PR (W-519: #8242, W-54..W-57)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const rec = (id, tw) => ({ ...createWork({ id, title: id, kind: 'build', source: { type: 'teamwork', key: `tw-${tw}` }, links: { pr: PR(8242) } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' });
+  const work = { 'W-54': rec('W-54', '312'), 'W-55': rec('W-55', '313') };
+  const h = { head: 'aaaaaaa1', base: 'main', conflict: false, failing: [], changesRequested: [], threads: [], comments: [], bodyTasks: ['312', '313', '290'] };
+  const cmds = healthCommands({ work }, new Map([['app:8242', h]]), { owner: OWNER, now: '2026-11-16T23:00:00.000Z' });
+  assert.equal(cmds.length, 1);
+  assert.deepEqual(cmds[0].payload.prOwnTasks.sort(), ['312', '313']);
+  const { observeHealth } = await import('../core/work.mjs');
+  const f = observeHealth(work[cmds[0].target], cmds[0].payload, { now: '2026-11-16T23:00:00.000Z', by: 'github' }).findings.at(-1);
+  assert.deepEqual(f.source.ids, ['290'], 'only the parent task is flagged');
+});
