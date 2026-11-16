@@ -1,7 +1,7 @@
 // The factory's HTTP API: every write is a board action, checked against the caller's role, appended atomically.
 // The caller's seat comes from the x-seat header, which the MCP server fills from its pane. ponytail: trusted because
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
-import { refusal, isTrustedReviewSeat, ROLES } from './capabilities.mjs';
+import { refusal, isTrustedReviewSeat, ROLES, onAlexWord } from './capabilities.mjs';
 import { commandsFor } from './actions.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -112,6 +112,9 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     // PR work whose PR was closed unmerged (Alex's call, e.g. TB-126 a) resolves once GitHub confirms it closed.
     if (action === 'resolve' && rec?.links?.pr && (await readPr(rec.links.pr))?.state === 'CLOSED')
       cmds = cmds.map(c => c.payload?.type === 'resolve' ? { ...c, payload: { ...c.payload, prClosed: rec.links.pr } } : c);
+    // What local-head did beyond its own grant shows Alex's words on the record (W-503).
+    const word = role === 'local-head' && onAlexWord(args) && refusal(role, action, { ...args, alexAsked: undefined }, { seat, questions: s.questions });
+    if (word && s.work[args.work]) cmds = [...cmds, { kind: 'event', target: args.work, payload: { type: 'note', text: `On Alex's word: "${onAlexWord(args)}"` } }];
     if (exitReport) { const r = args.report; cmds = [...cmds, { kind: 'event', target: args.work, payload: { type: 'exit_report', assignmentId: args.assignmentId, version: args.expectedVersion, head: args.head, changed: r.changed, proven: r.proven, unverified: r.unverified, risk: r.risk } }]; }
     return [200, { ok: true, results: store.appendAll(cmds, ctx) }];
   }

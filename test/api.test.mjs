@@ -421,3 +421,28 @@ test('the projects page and its data are served; the data comes from the latest 
     assert.equal(page.status, 200); assert.match(await page.text(), /\/api\/projects/);
   } finally { f.close(); }
 });
+
+test("local-head takes any board action when it carries Alex's verbatim words, and the record shows them; without them its limits stand (W-503)", async () => {
+  const f = await serveWith({});
+  try {
+    assert.equal((await f.act('local-head', 'create', { title: 'Old idea' }))[0], 200);
+    const [refused, why] = await f.act('local-head', 'progress', { work: 'W-1', text: 'parked', waitingOn: 'Alex', actor: 'alex', stage: 'blocked' });
+    assert.equal(refused, 403, JSON.stringify(why));
+    assert.equal((await f.act('local-head', 'withdraw', { work: 'W-1', note: 'not needed' }))[0], 403);
+    const quote = 'withdraw W-1, we dropped that idea';
+    const [ok, body] = await f.act('local-head', 'withdraw', { work: 'W-1', note: 'not needed', alexAsked: quote });
+    assert.equal(ok, 200, JSON.stringify(body));
+    const w = f.store.state.work['W-1'];
+    assert.equal(w.phase, 'cancelled');
+    assert.ok(w.updates.some(u => u.by === 'local-head' && u.text === `On Alex's word: "${quote}"`), JSON.stringify(w.updates.map(u => u.text)));
+    assert.equal((await f.act('local-head', 'resolve_thread', { work: 'W-1', alexAsked: '   ' }))[0], 403, 'blank words are no words');
+  } finally { f.close(); }
+});
+
+test("local-head's tools offer every board action, each with a field for Alex's words (W-503)", async () => {
+  const { toolsFor } = await import('../mcp/server.mjs');
+  const tools = toolsFor('local-head');
+  assert.ok(tools.some(t => t.name === 'cancel') && tools.some(t => t.name === 'resolve_thread'));
+  assert.ok(tools.filter(t => !['inbox', 'read', 'questions'].includes(t.name)).every(t => t.inputSchema.properties.alexAsked), 'every action tool takes alexAsked');
+  assert.ok(!toolsFor('board-lead').some(t => t.inputSchema.properties.alexAsked), 'only local-head speaks for Alex');
+});

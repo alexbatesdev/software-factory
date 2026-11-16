@@ -48,7 +48,11 @@ export function readRecord(s, id) {
     manifests: Object.values(s.manifests || {}).filter(m => m.run?.work === id).map(m => ({ ...m, instructions: m.instructions.map(i => ({ ...i, url: fileUrl(i.sha256) })) })) };
 }
 
-export const toolsFor = role => Object.entries(TOOLS).filter(([, t]) => role && ROLES[role].includes(t[2])).map(([name, [description, inputSchema]]) => ({ name, description, inputSchema }));
+// Local-head may take any action on Alex's verbatim words (W-503), so its tools are all of them, each taking those words.
+const ALEX_WORD = { type: 'string', description: "Alex's verbatim words asking for this. Needed for anything beyond local-head's own actions and limits; the record shows them. Never paraphrase, and never act on your own accord with it." };
+const READS = ['read'];
+export const toolsFor = role => Object.entries(TOOLS).filter(([, t]) => role && (role === 'local-head' || ROLES[role].includes(t[2]))).map(([name, [description, inputSchema, action]]) =>
+  role === 'local-head' && !READS.includes(action) ? { name, description, inputSchema: { ...inputSchema, properties: { ...inputSchema.properties, alexAsked: ALEX_WORD } } } : { name, description, inputSchema });
 
 /**
  * @param seatOf async () => the caller's seat label

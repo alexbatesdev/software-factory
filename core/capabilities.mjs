@@ -33,11 +33,16 @@ const LIMITS = {
   'questions-router': { set_owner: noPin, ack: a => /^M-\d+$/.test(a.ref || '') || 'the questions router acks only messages addressed to it' },
 };
 
+/** Alex's verbatim words on a local-head command, when it carries them. */
+export const onAlexWord = a => String(a?.alexAsked || '').trim() || null;
+
 /** Why `role` may not take `action` with these arguments; null when it may. */
 /** @param ctx {seat, questions} for checks that depend on who is asking. */
 export function refusal(role, action, args = {}, ctx = {}) {
   if (!ACTIONS.includes(action)) return `"${action}" is not a board action.`;
   if (!ROLES[role]) return `"${role}" is not a factory role.`;
+  // Alex 11-16 (W-503): local-head acts on his word, never on its own. With his verbatim words, any action; without, its limits.
+  if (role === 'local-head' && onAlexWord(args)) return null;
   if (!ROLES[role].includes(action)) return `${role} may not ${action}.`;
   const why = LIMITS[role]?.[action]?.(args, ctx);
   return why === true || why === undefined ? null : `${role} may not ${action} here: ${why}.`;
