@@ -26,6 +26,8 @@ import { readPrLines, readPrHealth, readPrs, readMain, readCompare, readOpenPrFi
 import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.mjs';
 import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask, readTree } from '../sources/teamwork.mjs';
 import { readPlanning } from '../sources/planning.mjs';
+import { circleReady, readJobFailures } from '../sources/circleci.mjs';
+import { compareCheck } from '../core/ci-compare.mjs';
 import { buildProjects } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
@@ -198,6 +200,32 @@ async function projectsTick() {
   log(`projects: ${planning.length} read, ${Object.keys(trees).length} trees`);
 }
 
+// W-501: a PR's CircleCI check that fails on main by name is compared test by test with main's latest finished run.
+// A finished run never changes, so a PR head's jobs are read once; main's are re-read every 10 minutes.
+const ciRuns = new Map();
+async function ciRun(key, read, ttl = Infinity) {
+  const hit = ciRuns.get(key);
+  if (hit && Date.now() - hit.at < ttl) return hit.jobs;
+  const jobs = await read();
+  if (jobs) ciRuns.set(key, { jobs, at: Date.now() });
+  return jobs;
+}
+async function compareCi(health, mainFailing, prs, owner) {
+  const out = new Map();
+  if (!circleReady()) return out;
+  for (const [key, h] of health) {
+    const [repo, n] = key.split(':'), slug = `gh/${owner}/${repo}`, branch = prs.get(`${repo}-${n}`)?.branch;
+    const checks = h.failing.filter(f => f.startsWith('ci/circleci: ') && (mainFailing.get(repo) || []).includes(f));
+    if (h.base !== 'main' || !branch || !checks.length) continue;
+    try {
+      const pr = await ciRun(`${slug}@${h.head}`, () => readJobFailures(slug, branch, h.head));
+      const main = await ciRun(`${slug}@main`, () => readJobFailures(slug, 'main'), 600000);
+      if (pr && main) out.set(key, Object.fromEntries(checks.map(f => [f, compareCheck(pr.get(f), main.get(f))])));
+    } catch (e) { once(`circleci ${key}: ${e.message}`); }
+  }
+  return out;
+}
+
 // Conversation comments count from here (W-219): 11-05 catches #8577's codex finding without reopening older threads.
 const COMMENTS_FROM = '2026-11-05T00:00:00.000Z';
 let lastAudit = 0, contradictionsDue = false;
@@ -211,10 +239,11 @@ async function githubTick() {
     const health = await readPrHealth([...own], owner, undefined, config.githubLogin, COMMENTS_FROM);
     const main = await readMain([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
     const mainGreen = new Map([...main].map(([r, m]) => [r, m.green])), mainFailing = new Map([...main].map(([r, m]) => [r, m.failing])), mainPassing = new Map([...main].map(([r, m]) => [r, m.passing]));
+    const ciCompare = await compareCi(health, mainFailing, prs, owner);
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
     if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, ciCompare, branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, skipped()), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {

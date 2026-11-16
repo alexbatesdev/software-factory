@@ -319,3 +319,17 @@ test('main counts as green for a PR only when every check failing on the PR pass
   assert.equal(payload(['Audit Ruby']).mainGreen, null, 'Brakeman never ran on main: not cleared');
   assert.equal(payload(['rspec']).mainGreen, 'main0002');
 });
+
+test("a CircleCI check red on main by name stays the PR's when its failing tests differ from main's, or it died before its tests; the comparison is on the record (W-501: #8638)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const { observeHealth } = await import('../core/work.mjs');
+  const pr = { ...createWork({ id: 'W-282', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const health = new Map([['app:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['ci/circleci: unit-tests', 'ci/circleci: test', 'Audit Ruby'], changesRequested: [], threads: [], comments: [] }]]);
+  const ciCompare = new Map([['app:1', { 'ci/circleci: unit-tests': { verdict: 'no test results', prOnly: [], shared: [] }, 'ci/circleci: test': { verdict: 'red on main', prOnly: [], shared: ['spec/a_spec.rb::x'] } }]]);
+  const [c] = healthCommands({ work: { 'W-282': pr } }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['app', ['ci/circleci: unit-tests', 'ci/circleci: test', 'Audit Ruby']]]), ciCompare });
+  assert.deepEqual(c.payload.failing, ['ci/circleci: unit-tests'], 'died before its tests: the PR reruns it');
+  assert.deepEqual(c.payload.inherited, ['ci/circleci: test', 'Audit Ruby'], 'same failing tests, and a check that is not CircleCI keeps its name match');
+  const w = observeHealth(pr, c.payload, ctx);
+  assert.match(w.findings.at(-1).text, /unit-tests: failed before any test ran: rerun it/);
+  assert.match(w.updates.map(u => u.text).join('\n'), /ci\/circleci: test: all 1 failing test\(s\) also fail on main/);
+});

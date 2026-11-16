@@ -1,3 +1,4 @@
+import { compareText } from './ci-compare.mjs';
 import { prKey } from './units.mjs';
 import { isTrustedReviewSeat } from './capabilities.mjs';
 // Work records: the durable lifecycle behind every board item. Pure functions, no I/O.
@@ -884,7 +885,7 @@ export const FEEDBACK_TYPES = ['changes_requested', 'threads', 'comments'];
 export const HEALTH_REOPENS = [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'];
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, base, failing = [], inherited = [], trackedOn = {}, changesRequested = [], threads = [], comments = [], mainGreen = null }, ctx) {
+export function observeHealth(work, { head, conflict, base, failing = [], inherited = [], trackedOn = {}, changesRequested = [], threads = [], comments = [], mainGreen = null, ciCompare = {} }, ctx) {
   const atHead = !!head && sameSha(head, work.head);
   if (TERMINAL.includes(work.phase) || !head || (!atHead && ctx.now < FEEDBACK_ANY_HEAD_FROM)) return work;
   if (!atHead) { conflict = false; failing = []; inherited = []; mainGreen = null; } // CI and conflicts are judged at the record's head only
@@ -899,7 +900,8 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
   // W-445: a comments finding that holds only ids takes the comments' text when a read brings it.
   const byId = new Map(comments.filter(c => c.text).map(c => [c.id, c]));
   const unquoted = (work.findings || []).filter(f => f.status === 'open' && f.source?.type === 'comments' && !f.source.quoted && f.source.ids.some(id => byId.has(id)));
-  const inheritedNote = inherited.length ? `${inherited.join(', ')} also fails on ${base || 'main'} at ${head.slice(0, 7)}: not this PR's to fix. ${base ? 'Its base PR handles it.' : inherited.every(f => trackedOn[f]) ? `Tracked on ${[...new Set(inherited.map(f => trackedOn[f]))].join(', ')}.` : 'The board proposes it as separate work for Alex.'}` : null;
+  const compared = names => names.filter(f => ciCompare[f]).map(f => compareText(f, ciCompare[f])).join(' ');
+  const inheritedNote = inherited.length ? `${inherited.join(', ')} also fails on ${base || 'main'} at ${head.slice(0, 7)}: not this PR's to fix. ${base ? 'Its base PR handles it.' : inherited.every(f => trackedOn[f]) ? `Tracked on ${[...new Set(inherited.map(f => trackedOn[f]))].join(', ')}.` : 'The board proposes it as separate work for Alex.'}${compared(inherited) ? ` Compared test by test: ${compared(inherited)}` : ''}` : null;
   const newInherited = inheritedNote && !(work.updates || []).some(u => u.text === inheritedNote);
   if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length && !newInherited) return work;
   const w = structuredClone(work);
@@ -911,7 +913,7 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
   }
   if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain) return w;
   if (mergeMain) w.findings.push({ id: nextId(w.findings, 'F'), text: `main is green again at ${mainGreen.slice(0, 7)}, and CI at ${head.slice(0, 7)} failed only on what was red on main. Merge origin/main into the branch (merge, never rebase or force push) and push, so CI reruns.`, severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'merge_main', head, main: mainGreen } });
-  for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: HEALTH_TEXT[type](head, failing, base), severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
+  for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: `${HEALTH_TEXT[type](head, failing, base)}${type === 'ci' && compared(failing) ? ` Compared with main test by test: ${compared(failing)}` : ''}`, severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
   if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id), at: ctx.now } });
   if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id), at: ctx.now, quoted: newComments.some(c => c.text) || undefined } });
   if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id), at: ctx.now } });
