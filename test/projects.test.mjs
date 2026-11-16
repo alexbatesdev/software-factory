@@ -64,7 +64,7 @@ test('a project whose Teamwork tree is not read yet still shows, with no leaves'
 
 // Phase B (Alex 11-16, decision 5): no leaf of a project starts until the project has a spec with REQ IDs, the leaf a test
 // plan, and no open decision touches it (mentions its task or a REQ its plan covers).
-const gated = (over = {}) => buildProjects({ planning: [{ ...planning[0], reqs: 12, testPlanReqs: { 111: ['REQ-001'], 112: ['REQ-019'] }, decisions: [], ...over }], trees: { 100: TREE }, works, prs }).projects[0];
+const gated = (over = {}) => buildProjects({ planning: [{ ...planning[0], reqs: 12, testPlanReqs: { 111: ['REQ-001'], 112: ['REQ-019'] }, decisions: [], factoryPlan: true, ...over }], trees: { 100: TREE }, works, prs }).projects[0];
 const leaf = (p, t) => p.leaves.find(l => l.task === t);
 
 test('a project leaf is ready to start once the spec has REQs, it has a test plan and no open decision touches it', () => {
@@ -86,4 +86,36 @@ test("a decision keeps its full text, so a gate can see which REQ or task it men
   const { parseDecisions } = await import('../core/spec.mjs');
   const [d] = parseDecisions('### D-033 — Generous Brands\n- status: open\n- rationale: only Yamaha for now (REQ-019).\n');
   assert.match(d.text, /REQ-019/);
+});
+
+// Phase C (Alex 11-16): one planning job per project the factory is about to work, on the host stream, through a PR Alex merges.
+const C = (over = {}, worksOver = works) => buildProjects({ planning: [{ ...planning[0], reqs: 12, testPlanReqs: { 111: [], 112: [] }, decisions: [], factoryPlan: false, factoryDecisions: [], ...over }], trees: { 100: TREE.map(n => ({ ...n, assignees: n.id === '112' ? ['Alex Bates'] : ['Casey Example'] })) }, works: worksOver, prs }).projects[0];
+
+test('a leaf also waits for the project\'s factory plan on main, and open factory decisions hold it like the team\'s', () => {
+  assert.match(leaf(C(), '112').gate.reasons.join(), /no factory implementation plan on project-planning main \(projects\/2026-10-position-end-date\/factory\/implementation-plan\.md\)/);
+  assert.deepEqual(leaf(C({ factoryPlan: true }), '112').gate, { ready: true, reasons: [] });
+  const held = leaf(C({ factoryPlan: true, factoryDecisions: [{ id: 'FD-002', title: 'Bulk edit limit', text: 'needs: Casey\nrefs: 112' }] }), '112');
+  assert.deepEqual(held.gate.reasons, ['open decision FD-002 (Bulk edit limit) names task 112']);
+});
+
+test('a project gets one planning job when the factory has a record on one of its tasks not built yet and no plan is on main', async () => {
+  const { triageCreates } = await import('../core/projects.mjs');
+  const queued = { ...works, 'W-3': { id: 'W-3', phase: 'ready', source: { type: 'teamwork', key: 'tw-102' }, links: {} } };
+  const [c] = triageCreates([C({}, queued)], queued, { questionsTo: 'alex' });
+  assert.deepEqual([c.title, c.repo, c.kind, c.phase, c.source], ['Plan project: Position End Date', 'project-planning', 'build', 'ready', { type: 'agent', by: 'board (projects)', key: 'project:2026-10-position-end-date' }]);
+  assert.deepEqual(triageCreates([C({ factoryPlan: true }, queued)], queued, {}), [], 'planned');
+  assert.deepEqual(triageCreates([C({}, works)], works, {}), [], 'nothing of ours waiting to start');
+  const open = { ...queued, 'W-9': { id: 'W-9', phase: 'implementation', source: { type: 'agent', by: 'board (projects)', key: 'project:2026-10-position-end-date' } } };
+  assert.deepEqual(triageCreates([C({}, open)], open, {}), [], 'one planning job at a time');
+});
+
+test("the planning job's brief keeps the work off main, names the files to write, the tasks missing test plans and where questions go", async () => {
+  const { triageObjective } = await import('../core/projects.mjs');
+  const o = triageObjective(C(), { questionsTo: 'alex' });
+  for (const want of [/branch alex\/factory\/2026-10-position-end-date-plan/, /never commit or push to main/i, /draft PR/, /Alex merges/,
+    /projects\/2026-10-position-end-date\/factory\/implementation-plan\.md/, /factory\/decisions\.md/, /FD-001/, /built-test-plans/, /102 Import column/, /ask on this record/])
+    assert.match(o, want);
+  assert.doesNotMatch(o, /111 Edit modal.*missing/);
+  assert.match(triageObjective(C(), { questionsTo: 'owner' }), /needs: Casey Example/);
+  assert.match(triageObjective(C(), { questionsTo: 'developers' }), /needs: (Alex Bates, Casey Example|Casey Example, Alex Bates)/);
 });
