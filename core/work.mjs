@@ -939,7 +939,7 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
     f.source.quoted = true;
     note(w, ctx, `Finding ${f.id} now quotes its comments.`);
   }
-  for (const f of w.findings.filter(f => f.status === 'open' && f.source?.type === 'pr_body' && (bodyFixed || bodyNew))) Object.assign(f, { status: 'resolved', note: bodyFixed ? 'The PR body no longer links it.' : 'Superseded by the newer read of the PR body.' });
+  for (const f of w.findings.filter(f => f.status === 'open' && f.source?.type === 'pr_body' && (bodyFixed || bodyNew))) Object.assign(f, { status: 'resolved', note: bodyFixed ? 'Settled: the PR body now links only tasks this PR completes.' : 'Superseded by the newer read of the PR body.' });
   if (bodyFixed) note(w, ctx, 'The PR body now links only its own Teamwork task.');
   if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !bodyNew) return w;
   if (bodyNew) w.findings.push({ id: nextId(w.findings, 'F'), text: own.size
