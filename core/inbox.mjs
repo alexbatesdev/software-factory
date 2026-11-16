@@ -97,7 +97,9 @@ export function inboxCommands(state, cfg, fleet = null) {
     for (const w of Object.values(state.work).filter(x => !['done', 'cancelled'].includes(x.phase))) for (const a of w.assignments || []) {
       const key = `${w.id}/${a.id}/v${a.version ?? 1}`;
       // A supervisor may record the worker before spawning its pane (host streams, W-417): give the pane time to appear.
-      if (fleet.now - Date.parse(a.at) < GHOST_GRACE_MS) continue;
+      // Timed from when it last became started, so a restart after a block gets the same grace (W-497).
+      const h = a.history || [], k = h.findLastIndex((x, i) => x.status === 'started' && h[i - 1]?.status !== 'started');
+      if (fleet.now - Date.parse(h[k]?.at || a.at) < GHOST_GRACE_MS) continue;
       if (a.status !== 'started' || !a.owner || live.has(a.owner) || (cfg.seats || []).includes(a.owner) || /^sbx: /.test(a.owner) || told.has(`ghost:${key}`)) continue;
       cmds.push(msg(lead, w.id, { ghost: key }, `${w.id} ${a.id} (${a.kind}) is started by ${a.owner}, but no pane has that label, so it will never report. Re-dispatch it or have it cancelled (board developer: cancel).`));
     }

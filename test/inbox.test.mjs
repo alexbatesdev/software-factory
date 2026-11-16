@@ -297,3 +297,15 @@ test("local-head's note on a record a worker owns reaches its stream's superviso
   const got = inboxCommands(state, { supervisors: ['sup: stream-2'], seats: [] }, null).cmds.filter(c => c.payload.about?.localHeadNote);
   assert.deepEqual(got.map(c => c.payload.to), ['sup: stream-2']);
 });
+
+test('an assignment restarted after it was blocked gets the same five minutes from its restart, not from when it was first recorded (W-497: W-376 R2)', async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const restart = Date.parse('2026-11-16T17:36:47.656Z');
+  const work = { id: 'W-376', title: 'Mutation tester', phase: 'review', requests: [], assignments: [{ id: 'R2', kind: 'review', owner: 'w376-review', status: 'started', version: 3, at: '2026-11-13T23:02:19.412Z',
+    history: [{ status: 'queued', at: '2026-11-13T23:02:19.412Z' }, { status: 'blocked', at: '2026-11-13T23:02:24.704Z' }, { status: 'started', at: '2026-11-16T16:50:00.000Z' }, { status: 'blocked', at: '2026-11-16T16:57:54.000Z' }, { status: 'started', at: '2026-11-16T17:36:47.656Z' }, { status: 'started', at: '2026-11-16T17:38:00.000Z' }] }] };
+  const state = { work: { 'W-376': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: [], seats: ['board lead'], triage: { seat: 'board lead' } };
+  const ghosts = now => inboxCommands(state, cfg, { units: [], others: [{ label: 'board lead', status: 'working' }], now, watches: {} }).cmds.filter(c => c.payload.about?.ghost).length;
+  assert.equal(ghosts(restart + 4758), 0, 'M-3057 fired 4.8s after the restart');
+  assert.equal(ghosts(restart + 5 * 60000), 1, 'a later progress note keeps the restart time');
+});
