@@ -7,6 +7,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMcp } from '../mcp/server.mjs';
 import { herdrRaw } from '../fleet/herdr.mjs';
+import { boardFetch } from '../mcp/retry.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const config = JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8'));
@@ -18,9 +19,9 @@ const seatOf = async () => {
   return panes.find(p => p.pane_id === pane)?.label || (() => { throw new Error(`Pane ${pane} has no label.`); })();
 };
 const api = {
-  get: async (path, seat) => (await fetch(BASE + path, { headers: { 'x-seat': seat } })).json(),
-  tools: async seat => (await fetch(`${BASE}/api/tools`, { headers: { 'x-seat': seat } })).json(),
-  post: async (action, args, seat) => (await fetch(`${BASE}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1', 'x-seat': seat }, body: JSON.stringify({ action, args }) })).json(),
+  get: async (path, seat) => (await boardFetch(BASE + path, { headers: { 'x-seat': seat } })).json(),
+  tools: async seat => (await boardFetch(`${BASE}/api/tools`, { headers: { 'x-seat': seat } })).json(),
+  post: async (action, args, seat) => (await boardFetch(`${BASE}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1', 'x-seat': seat }, body: JSON.stringify({ action, args }) })).json(),
 };
 const handle = createMcp({ config, seatOf, api });
 // A schema change on the server reaches this session without a restart: Claude Code refetches on list_changed.
