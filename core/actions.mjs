@@ -1,5 +1,6 @@
 // The board actions (capabilities.mjs) as log commands. Each action yields only its own command kinds and event types,
 // so a role granted `progress` can't send an `await_approval` by naming it.
+import { DEFAULT_REPO } from './work.mjs';
 const fail = msg => { throw new Error(msg); };
 const TYPED_WAIT = /^(TB-\d+|W-\d+|#\d+|https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+)$/, ACTORS = ['alex', 'other'];
 export const PROPOSAL_FIELDS = ['prompted', 'addresses', 'whyThisFix', 'since', 'customerImpact', 'duplicateSearch'];
@@ -88,7 +89,9 @@ const BUILD = {
     if (a.alexAsked !== undefined && !String(a.alexAsked).trim()) fail('alexAsked quotes Alex\'s request, with when he said it.');
     const asked = a.alexAsked ? [{ kind: 'update', target: a.work, payload: { alexAsked: String(a.alexAsked).trim().slice(0, 1000) } }] : [];
     const tuning = Object.fromEntries(['model', 'effort'].filter(k => a[k] !== undefined).map(k => [k, a[k] === 'default' ? null : a[k]]));
-    return [...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), ...(Object.keys(tuning).length ? [{ kind: 'update', target: a.work, payload: tuning }] : []), ...asked, ...(a.support === true ? [{ kind: 'update', target: a.work, payload: { support: true } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
+    // The record tracking a check red on main (W-510): PRs failing that check inherit it while this record is open.
+    const tracks = a.tracksCheck ? [{ kind: 'update', target: a.work, payload: { addAliases: [`ci:${a.repo || DEFAULT_REPO}:${String(a.tracksCheck).trim()}`] } }] : [];
+    return [...tracks, ...(a.repo ? [{ kind: 'update', target: a.work, payload: { repo: a.repo } }] : []), ...(Object.keys(tuning).length ? [{ kind: 'update', target: a.work, payload: tuning }] : []), ...asked, ...(a.support === true ? [{ kind: 'update', target: a.work, payload: { support: true } }] : []), { kind: 'sync_intake', target: a.work, payload: { bucket: a.bucket, note: a.note } }, ...(a.releaseHold ? [ev(a.work, { type: 'hold_released', text: String(a.releaseHold) })] : []), ...holds.map(h => ev(a.work, { type: 'hold', ...h })), ...(a.carriesOut ? [ev(a.work, { type: 'carries_out', question: String(a.carriesOut) })] : []), ...proposal];
   },
   // A complete request, so the dashboard's Resolve button can act on GitHub with no agent in the loop.
   // A new Teamwork task waits for Alex's click on the dashboard (W-382); the factory creates it, never a seat.

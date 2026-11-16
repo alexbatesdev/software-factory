@@ -467,3 +467,14 @@ test('the queue page and its data are served from the last dispatch plan and bus
     assert.match(await (await fetch(`${f.base}/queue`)).text(), /\/api\/queue/);
   } finally { f.close(); }
 });
+
+test("triage can mark a record as the one tracking a check red on main, so PRs failing that check inherit it (W-510 follow-up: W-513)", async () => {
+  const f = await serveWith({});
+  try {
+    assert.equal((await f.act('local-head', 'create', { title: 'Brakeman SQLi in datasheet_query_support.rb' }))[0], 200);
+    f.store.append({ kind: 'update', target: 'W-1', payload: { aliases: ['built-rails-9000'] } }, { now: '2026-11-16T21:00:00.000Z', by: 'test' });
+    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'tracks main audit', reviewBy: '2026-11-20', reviewer: 'board lead', tracksCheck: 'Audit Ruby code and dependencies' });
+    assert.equal(code, 200, JSON.stringify(body));
+    assert.deepEqual(f.store.state.work['W-1'].aliases, ['built-rails-9000', 'ci:built-rails:Audit Ruby code and dependencies'], 'added, not replaced');
+  } finally { f.close(); }
+});

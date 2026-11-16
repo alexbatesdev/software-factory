@@ -143,9 +143,11 @@ export function fold(state, row, { supervisors = [] } = {}) {
   switch (kind) {
     case 'create': touched = create(state, payload, ctx); break;
     case 'update': {
-      const claim = payload.links?.pr && claimPr(state, id, payload.links.pr);
+      // addAliases merges keys into the record's aliases (a check it tracks, W-510) instead of replacing them.
+      const { addAliases, ...rest } = payload, fields = addAliases ? { ...rest, aliases: [...new Set([...(cur.aliases || []), ...addAliases])] } : payload;
+      const claim = fields.links?.pr && claimPr(state, id, fields.links.pr);
       if (claim) state.work[claim.absorb] = W.applyEvent(state.work[claim.absorb], { type: 'absorb', into: id }, ctx).work;
-      state.work[id] = W.updateWork(cur, claim ? { ...payload, aliases: [...new Set([...(cur.aliases || []), claim.key])] } : payload, ctx);
+      state.work[id] = W.updateWork(cur, claim ? { ...fields, aliases: [...new Set([...(fields.aliases || cur.aliases || []), claim.key])] } : fields, ctx);
       break;
     }
     case 'source_gone': {
