@@ -144,3 +144,16 @@ test("a seat whose role's board tools changed restarts at its next idle gap, out
   assert.deepEqual(plan({ ...state, work: {} }, { 'board lead': 'a', 'sup: s1': 'b2' }), [], 'once');
   assert.deepEqual(plan({ ...state, work: {} }, {}), ['board lead', 'sup: s1'], 'never recorded: restart once to be sure; a stays seat never');
 });
+
+test("a running agent seat with no herdr agent name gets its name, so `herdr agent prompt <seat>` reaches it (W-495: local-head started by hand)", () => {
+  const plan = planFactory(seatsOf(config), [
+    pane('local-head', 'Main', 'Local head', 'claude --agent local-head'),
+    pane('unblocker', 'Main', 'Agent Unblocker', 'codex resume abc', { agentName: 'unblocker' }),
+    pane('board', 'Terminals', 'Triage board', 'node server.mjs'),
+  ]);
+  const of = l => plan.find(s => s.seat.label === l);
+  assert.equal(of('local-head').action, 'none');
+  assert.equal(of('local-head').name, 'local-head');
+  assert.equal(of('unblocker').name, undefined, 'already named');
+  assert.equal(of('board').name, undefined, 'a shell seat has no agent');
+});

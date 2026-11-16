@@ -66,7 +66,8 @@ async function up(apply) {
   const seen = await observe(), home0 = seen.panes.find(p => p.focused);
   await remember(seen);
   for (const s of planFactory(seats, seen.panes)) {
-    console.log(`${s.action.padEnd(16)} ${s.seat.label.padEnd(28)} ${s.seat.workspace} / ${s.seat.tab}${s.rename ? ' (label it)' : ''}: ${s.why}`);
+    console.log(`${s.action.padEnd(16)} ${s.seat.label.padEnd(28)} ${s.seat.workspace} / ${s.seat.tab}${s.rename ? ' (label it)' : ''}${s.name ? ` (name its agent ${s.name})` : ''}: ${s.why}`);
+    if (apply && s.name) await herdr('agent', 'rename', s.pane, s.name);
     if (!apply || s.action === 'none' || s.action.startsWith('report')) { if (apply && s.rename && s.pane) await herdr('pane', 'rename', s.pane, s.seat.label); continue; }
     try {
       const fresh = ['create', 'adopt'].includes(s.action);

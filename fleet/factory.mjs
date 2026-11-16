@@ -44,7 +44,9 @@ export function planFactory(seats, panes) {
     if (!p) return seat.workspace === TERMINALS || seat.kind === 'sbx'
       ? { seat, action: 'report-missing', why: seat.kind === 'sbx' ? 'no worker pane; creating a sandbox is Alex\'s call' : 'Terminals is Alex\'s; start it there yourself' }
       : { seat, action: 'create', why: `new pane in ${seat.workspace} / ${seat.tab}` };
-    const base = { seat, pane: p.pane, rename: p.label !== seat.label };
+    // An agent started by hand has no herdr name, and `herdr agent prompt <seat>` finds agents by name (W-495).
+    const name = ['claude', 'codex'].includes(seat.kind) && running(seat, p.argv) && p.agentName !== slug(seat.label) ? slug(seat.label) : undefined;
+    const base = { seat, pane: p.pane, rename: p.label !== seat.label, ...(name ? { name } : {}) };
     if (p.workspace !== seat.workspace) return { ...base, action: 'report-misplaced', why: `in ${p.workspace}, the manifest says ${seat.workspace}` };
     if (!running(seat, p.argv) && seat.workspace === TERMINALS) return { ...base, action: 'report-stopped', why: `stopped; Terminals is Alex's, run \`${seat.run}\` there` };
     if (!running(seat, p.argv)) return { ...base, action: { shell: 'run', sbx: 'reconnect' }[seat.kind] || 'start', why: 'pane is up, its process is not' };
