@@ -24,7 +24,9 @@ import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue, contr
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMain, readCompare, readOpenPrFiles } from '../sources/github.mjs';
 import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.mjs';
-import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask } from '../sources/teamwork.mjs';
+import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask, readTree } from '../sources/teamwork.mjs';
+import { readPlanning } from '../sources/planning.mjs';
+import { buildProjects } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -81,7 +83,10 @@ if (CONFIG_PROBLEMS.length && !DRY) { const key = createHash('sha256').update(CO
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
-let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [];
+let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map();
+// Projects (Alex, 11-16): the planning repo and each active project's Teamwork tree, read every 30 min and kept for a restart.
+const PROJECTS_CACHE = join(ROOT, 'data/projects-cache.json');
+let projectsRead = (() => { try { return JSON.parse(readFileSync(PROJECTS_CACHE, 'utf8')); } catch { return { planning: [], trees: {}, readAt: null }; } })();
 // Worker hosts (Alex, 11-04): disk readings, cycles under way or failed, and the streams draining for one.
 const RC = { enabled: false, threshold: 0.75, host: 'sbx', healthMs: 300000, ...config.recycle };
 const host = RC.enabled ? await import(`../hosts/${RC.host}.mjs`) : null;
@@ -183,6 +188,16 @@ function healTick() {
   }
 }
 
+async function projectsTick() {
+  if (DRY) return;
+  const planning = await readPlanning(), trees = { ...projectsRead.trees };
+  for (const p of planning.filter(p => p.readme.teamworkTask && !['Archived', 'Complete'].includes(p.readme.status)))
+    try { trees[p.readme.teamworkTask] = await readTree(p.readme.teamworkTask); } catch (e) { once(`project tree ${p.slug}: ${e.message}`); }
+  projectsRead = { planning, trees, readAt: now() };
+  writeFileSync(PROJECTS_CACHE, JSON.stringify(projectsRead));
+  log(`projects: ${planning.length} read, ${Object.keys(trees).length} trees`);
+}
+
 // Conversation comments count from here (W-219): 11-05 catches #8577's codex finding without reopening older threads.
 const COMMENTS_FROM = '2026-11-05T00:00:00.000Z';
 let lastAudit = 0, contradictionsDue = false;
@@ -192,6 +207,7 @@ async function githubTick() {
     const tracked = [...new Set(Object.values(s.work).filter(w => !TERMINAL.includes(w.phase)).map(w => recordPrKey(w, owner)).filter(Boolean))];
     const { lines, own } = await readPrLines({ owner, tracked });
     const { prs, heads } = projectPrs(lines, own);
+    ownPrs = prs;
     const health = await readPrHealth([...own], owner, undefined, config.githubLogin, COMMENTS_FROM);
     const main = await readMain([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
     const mainGreen = new Map([...main].map(([r, m]) => [r, m.green])), mainFailing = new Map([...main].map(([r, m]) => [r, m.failing])), mainPassing = new Map([...main].map(([r, m]) => [r, m.passing]));
@@ -373,7 +389,7 @@ http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, gh: DRY ? 
   if (!(await git('merge-base', '--is-ancestor', m.sha, 'origin/main').then(() => true, () => false))) return false;
   return (await git('show', `${m.sha}:${m.path}`).then(r => r.stdout, () => '')).includes(String(m.code).trim());
 }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
+  observed: () => ({ projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs }), readAt: projectsRead.readAt }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 
 // The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never
@@ -521,6 +537,7 @@ every(config.notify?.intervalMs ?? 15000, inboxTick);
 every(config.notify?.intervalMs ?? 15000, readyTick);
 every(config.notify?.intervalMs ?? 15000, questionHoldTick);
 every(config.poll.githubMs, githubTick);
+every(1800000, projectsTick);
 every(config.poll.githubMs, rerequestTick);
 every(config.poll.teamworkMs, teamworkTick);
 every(RC.healthMs, recycleTick);

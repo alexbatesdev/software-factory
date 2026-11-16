@@ -14,7 +14,7 @@ import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval, DEFAU
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
 
-const PAGE = new URL('../views/index.html', import.meta.url);
+const PAGE = new URL('../views/index.html', import.meta.url), PROJECTS_PAGE = new URL('../views/projects.html', import.meta.url);
 const VENDOR = ['marked-12.0.2.min.js', 'purify-3.1.6.min.js'];
 
 /** The role a seat label holds; every stream supervisor label is a stream-supervisor. */
@@ -127,6 +127,8 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       // Vendored page libraries (markdown for review-thread messages), by exact name only.
       const vendor = req.method === 'GET' && /^\/vendor\/([\w.-]+\.js)$/.exec(url.pathname)?.[1];
       if (vendor && VENDOR.includes(vendor)) { res.writeHead(200, { 'content-type': 'text/javascript; charset=utf-8', 'cache-control': 'max-age=86400' }); return res.end(readFileSync(new URL(`../views/vendor/${vendor}`, import.meta.url))); }
+      if (req.method === 'GET' && url.pathname === '/projects') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(readFileSync(PROJECTS_PAGE)); }
+      if (req.method === 'GET' && url.pathname === '/api/projects') return send(res, 200, observed().projects?.() || { projects: [], loose: [], readAt: null });
       if (req.method === 'GET' && url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(readFileSync(PAGE)); }
       if (req.method === 'GET' && url.pathname === '/api/board') {
         const s = store.state, inbox = {};

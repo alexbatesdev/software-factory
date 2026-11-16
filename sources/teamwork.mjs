@@ -31,6 +31,17 @@ export async function readTopParents(ids, cache = new Map()) {
   return out;
 }
 
+/** Every task below a root, [{id, name, parent, status}], walked level by level (a project's tree, Alex 11-16). */
+export async function readTree(rootId, maxNodes = 500) {
+  const tw = await client(), out = [];
+  for (let level = [String(rootId)]; level.length && out.length < maxNodes;) {
+    const next = [];
+    for (const id of level) for (const t of (await tw.listSubtasks(id)).tasks || []) { out.push({ id: String(t.id), name: t.name, parent: id, status: t.status }); next.push(String(t.id)); }
+    level = next;
+  }
+  return out;
+}
+
 /** Alex's assigned tasks, projected. */
 export async function readTasks() {
   const { TeamworkClient } = await import(pathToFileURL(join(TW_DIR, 'dist/teamwork/client.js')));

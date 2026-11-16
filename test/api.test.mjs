@@ -411,3 +411,13 @@ test("a worker's note naming its assignment lands first time, as a note; the sta
     assert.match(w.updates.at(-1).text, /R2.*blocked.*TB-9.*specs green, pushing/);
   } finally { server.close(); }
 });
+
+test('the projects page and its data are served; the data comes from the latest planning, Teamwork and GitHub reads (Alex 11-16)', async () => {
+  const view = { projects: [{ slug: 'p1', progress: { done: 1, total: 2 } }], loose: [], readAt: '2026-11-16T18:00:00.000Z' };
+  const f = await serveWith({ observed: () => ({ projects: () => view }) });
+  try {
+    assert.deepEqual(await (await fetch(`${f.base}/api/projects`)).json(), view);
+    const page = await fetch(`${f.base}/projects`);
+    assert.equal(page.status, 200); assert.match(await page.text(), /\/api\/projects/);
+  } finally { f.close(); }
+});

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Projects</title>
+<style>
+:root {
+  --bg: #f4f4f1; --card: #fff; --ink: #1d1d1b; --mute: #6b6b66; --line: #e2e1dc; --link: #1a5fd0;
+  --done: #2e7d32; --done-bg: #e8f5e9; --wait: #9a6200; --wait-bg: #fdf3e1; --work: #3d6b8f; --work-bg: #eef3f7; --idle: #8a8a84; --idle-bg: #f0efeb; --warn: #c2261b;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #161615; --card: #22221f; --ink: #ecebe6; --mute: #9b9a94; --line: #34332f; --link: #7fb0ff;
+  --done: #81c784; --done-bg: #1b2e1c; --wait: #e9b65c; --wait-bg: #33291a; --work: #8fb6d6; --work-bg: #1c262e; --idle: #77766f; --idle-bg: #2a2a27; --warn: #ff8a7e;
+} }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+a { color: var(--link); }
+header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 14px; }
+h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { color: var(--mute); font-size: 12px; }
+.project { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
+.top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.tag { font-size: 11px; font-weight: 600; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; color: var(--mute); }
+.facts { display: flex; gap: 16px; font-size: 12px; color: var(--mute); margin: 6px 0 8px; } .facts .warn { color: var(--warn); font-weight: 600; }
+.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--idle-bg); margin: 4px 0 10px; }
+.bar span { display: block; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+td.state { width: 140px; } td.pr { width: 260px; } td.tp { width: 70px; text-align: center; }
+.pill { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 10px; padding: 1px 8px; }
+.s-done { color: var(--done); background: var(--done-bg); } .s-approval, .s-review { color: var(--wait); background: var(--wait-bg); }
+.s-building, .s-queued, .s-pr { color: var(--work); background: var(--work-bg); } .s-none { color: var(--idle); background: var(--idle-bg); }
+.stack { font-size: 12px; color: var(--mute); }
+details > summary { cursor: pointer; }
+</style>
+</head>
+<body>
+<header><h1>Projects</h1><span class="mute" id="meta">loading…</span><a href="/" class="mute">Board</a></header>
+<div id="projects"></div>
+<section class="project"><h2>Your other open PRs</h2><div class="mute">Open PRs on no project's task.</div><table id="loose"></table></section>
+<script>
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const KIND = { done: 'done', 'awaiting approval': 'approval', 'in review': 'review', building: 'building', queued: 'queued', 'PR open': 'pr', 'not started': 'none', cancelled: 'none' };
+const COLOR = { done: 'var(--done)', approval: 'var(--wait)', review: 'var(--wait)', building: 'var(--work)', queued: 'var(--work)', pr: 'var(--work)' };
+const ACTIVE = ['Development', 'Design', 'Requirements', 'Discovery'];
+const prCell = pr => pr ? `<a href="${esc(pr.url)}">#${pr.number}</a>${pr.draft ? ' <span class="tag">draft</span>' : ''}${pr.stackedOn ? ` <span class="stack">stacked on #${pr.stackedOn}</span>` : ''}` : '';
+const recordCell = id => id ? `<a href="/#${esc(id)}">${esc(id)}</a>` : '';
+function bar(leaves) {
+  const n = {}; for (const l of leaves) { const k = KIND[l.state] || 'none'; n[k] = (n[k] || 0) + 1; }
+  return `<div class="bar">${['done', 'approval', 'review', 'building', 'pr', 'queued'].filter(k => n[k]).map(k => `<span title="${n[k]} ${k}" style="width:${100 * n[k] / leaves.length}%;background:${COLOR[k]}"></span>`).join('')}</div>`;
+}
+function project(p) {
+  const planned = p.leaves.filter(l => l.testPlan).length;
+  return `<section class="project"><div class="top"><h2>${esc(p.title || p.slug)}</h2><span class="tag">${esc(p.stage || 'no stage')}</span><span class="tag">${esc(p.status || 'no status')}</span>
+    <span class="mute">${esc(p.owner || '')}</span><span class="mute" style="margin-left:auto"><b>${p.progress.done}/${p.progress.total}</b> tasks done</span></div>
+    <div class="facts"><span>${p.reqs} requirements</span><span>test plans for ${planned}/${p.leaves.length} tasks</span><span class="${p.openDecisions ? 'warn' : ''}">${p.openDecisions} open decision(s)</span>
+    ${p.teamworkTask ? `<a href="https://builtforteams.teamwork.com/app/tasks/${esc(p.teamworkTask)}">Teamwork</a>` : ''}<span class="mute">${esc(p.slug)}</span></div>
+    ${p.treeRead ? (p.leaves.length ? bar(p.leaves) : '') : '<div class="mute">Teamwork tree not read yet.</div>'}
+    ${p.leaves.length ? `<details ${p.leaves.some(l => !['done', 'not started'].includes(l.state)) ? 'open' : ''}><summary class="mute">Tasks</summary><table>${p.leaves.map(l => `<tr>
+      <td><a href="https://builtforteams.teamwork.com/app/tasks/${esc(l.task)}">${esc(l.path)}</a></td>
+      <td class="state"><span class="pill s-${KIND[l.state] || 'none'}">${esc(l.state)}</span></td>
+      <td class="pr">${prCell(l.pr)} ${recordCell(l.work)}</td><td class="tp mute">${l.testPlan ? 'test plan' : ''}</td></tr>`).join('')}</table></details>` : ''}</section>`;
+}
+async function render() {
+  let d; try { d = await (await fetch('/api/projects')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
+  const shown = d.projects.filter(p => p.teamworkTask && !['Archived', 'Complete'].includes(p.status))
+    .sort((a, b) => ACTIVE.indexOf(a.stage) - ACTIVE.indexOf(b.stage) || b.leaves.filter(l => l.pr).length - a.leaves.filter(l => l.pr).length);
+  document.getElementById('meta').textContent = `${shown.length} active projects · planning and Teamwork read ${d.readAt ? new Date(d.readAt).toLocaleTimeString() : 'not yet'} (every 30 min)`;
+  document.getElementById('projects').innerHTML = shown.map(project).join('');
+  document.getElementById('loose').innerHTML = d.loose.map(pr => `<tr><td>${esc(pr.title)}</td><td class="pr">${prCell(pr)}</td></tr>`).join('') || '<tr><td class="mute">none</td></tr>';
+}
+render(); setInterval(render, 60000);
+</script>
+</body>
+</html>
