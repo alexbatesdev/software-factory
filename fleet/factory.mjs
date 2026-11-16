@@ -142,3 +142,9 @@ export async function stopSeat(seat, pane, herdr) {
   }
   return false;
 }
+
+/** Running claude/codex seats whose herdr agent isn't named for the seat (started by hand): [{ref, label, name}] to rename. */
+export const seatRenames = (seats, agents) => seats.filter(s => ['claude', 'codex'].includes(s.kind)).flatMap(s => {
+  const a = agents.find(x => x.label === s.label && x.agent);
+  return a && a.name !== slug(s.label) ? [{ ref: a.ref, label: s.label, name: slug(s.label) }] : [];
+});

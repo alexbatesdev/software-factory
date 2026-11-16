@@ -53,7 +53,7 @@ export async function list(pairs = {}) {
     const a = byPane.get(p.pane_id) || {};
     return { ref: p.pane_id, label: p.label || `${wsById.get(p.workspace_id)?.label || p.workspace_id} / ${tabById.get(p.tab_id)?.label || p.tab_id}`,
       status: ['working', 'idle', 'blocked', 'done'].includes(a.agent_status) ? a.agent_status : 'unknown',
-      now: (a.terminal_title_stripped || p.terminal_title || '').replace(/^[^\w#]+/, ''), sandbox: null, session: a.agent_session?.value || null,
+      now: (a.terminal_title_stripped || p.terminal_title || '').replace(/^[^\w#]+/, ''), sandbox: null, session: a.agent_session?.value || null, name: a.name || null, agent: a.agent || null,
       workspace: wsById.get(p.workspace_id)?.label || '', tab: tabById.get(p.tab_id)?.label || '' };
   });
   await Promise.all(all.map(async a => { a.sandbox = await sandboxOf(a.ref).catch(() => null); }));

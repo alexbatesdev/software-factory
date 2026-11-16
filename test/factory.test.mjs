@@ -157,3 +157,10 @@ test("a running agent seat with no herdr agent name gets its name, so `herdr age
   assert.equal(of('unblocker').name, undefined, 'already named');
   assert.equal(of('board').name, undefined, 'a shell seat has no agent');
 });
+
+test('the server names any running seat agent that lost its herdr name, so `herdr agent prompt <seat>` keeps working (W-495 follow-up)', async () => {
+  const { seatRenames } = await import('../fleet/factory.mjs');
+  const agents = [{ ref: 'p1', label: 'local-head', agent: 'claude', name: null }, { ref: 'p2', label: 'unblocker', agent: 'codex', name: 'unblocker' },
+    { ref: 'p3', label: 'sup: s1', agent: 'claude', name: 'sup-s1' }, { ref: 'p4', label: 'sbx: s1', agent: 'claude', name: null }, { ref: 'p5', label: 'board', agent: null, name: null }];
+  assert.deepEqual(seatRenames(seatsOf(config), agents), [{ ref: 'p1', label: 'local-head', name: 'local-head' }]);
+});

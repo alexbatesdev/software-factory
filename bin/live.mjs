@@ -30,7 +30,7 @@ import { circleReady, readJobFailures } from '../sources/circleci.mjs';
 import { compareCheck } from '../core/ci-compare.mjs';
 import { buildProjects, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
-import { seatsOf, planSeatRestarts, stopSeat, startSeat } from '../fleet/factory.mjs';
+import { seatsOf, planSeatRestarts, stopSeat, startSeat, seatRenames } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
 import { roleOf } from '../core/api.mjs';
 import { execFile } from 'node:child_process';
@@ -416,6 +416,9 @@ async function teamworkTick() {
 async function fleetTick() {
   try {
     fleet = await readFleet(store.state.legacy.pairs);
+    // A seat started by hand has no herdr agent name, and `herdr agent prompt <seat>` finds agents by name (W-495).
+    for (const r of seatRenames(seatsOf(config), [...fleet.others, ...fleet.units.flatMap(u => [u.supervisor].filter(Boolean))]))
+      await herdrRaw('agent', 'rename', r.ref, r.name).then(() => log(`named ${r.label}'s agent ${r.name}`), e => once(`naming ${r.label}: ${e.message}`));
     for (const u of fleet.units) if (u.worker) u.worker.agent = agentOf(config, u.worker.label);
     for (const u of fleet.units) {
       if (u.worker?.status !== 'working') { delete quiet[u.id]; delete screens[u.id]; continue; }
