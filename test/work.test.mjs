@@ -823,3 +823,15 @@ test('recording a review settles the review request it answers, so it never sits
   const before = run(w, { type: 'review', head: 'aaa', by: 'reviewer', result: 'clean', ...at('2026-11-12T18:01:57.769Z') });
   assert.equal(before.requests.find(r => r.type === 'review').ack, null, 'a replayed review from before the change leaves the request as it was');
 });
+
+test("work Alex asks for, queued on a record held \"deferred to alex\", lifts that hold, so the ready gate doesn't later fail on it (W-504: W-376)", () => {
+  const held = run(build(), { type: 'hold', deferred: 'alex', ctx: { now: '2026-11-16T20:00:00.000Z' } });
+  assert.deepEqual(held.externalDeps.map(d => d.text), ['deferred to alex']);
+  const assign = by => ({ type: 'assign', assignmentId: 'R1', kind: 'implementation', status: 'queued', evidence: 'Alex: "I want to catch up 8283 to main"', ctx: { now: '2026-11-16T20:01:00.000Z', by } });
+  const lifted = run(held, assign('local-head'));
+  assert.deepEqual(lifted.externalDeps, []);
+  assert.match(lifted.updates.map(u => u.text).join("\n"), /Hold released: deferred to alex.*I want to catch up 8283/);
+  assert.deepEqual(run(held, assign('sup: host')).externalDeps.map(d => d.text), ['deferred to alex'], "a supervisor's assign isn't Alex's say-so");
+  const product = run(build(), { type: 'hold', deferred: 'product', ctx: { now: '2026-11-16T20:00:00.000Z' } });
+  assert.deepEqual(run(product, assign('local-head')).externalDeps.map(d => d.text), ['deferred to product'], 'only a hold deferred to Alex');
+});

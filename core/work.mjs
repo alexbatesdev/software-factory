@@ -144,6 +144,7 @@ const QUESTIONS_KEEP_READY_FROM = '2026-11-12T06:15:00.000Z';
 const PARKED_FIXES_HEAR_FROM = '2026-11-12T20:30:00.000Z';
 const MERGE_CANCELS_JOBS_FROM = '2026-11-13T00:45:00.000Z';
 const REVIEW_SETTLES_REQUEST_FROM = '2026-11-16T19:30:00.000Z';
+const ALEX_LIFTS_DEFERRAL_FROM = '2026-11-16T19:45:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
@@ -614,6 +615,11 @@ export function applyEvent(work, e, ctx) {
       if (!['queued', 'started', 'done'].includes(e.status)) fail('An assignment is recorded as queued, started or done.');
       if (!e.evidence) fail('assign needs evidence (the brief or dispatch message).');
       if ((w.assignments || []).some(a => a.id === e.assignmentId)) fail(`${e.assignmentId} is already recorded on ${w.id}; report its stage with progress.`);
+      // Work Alex asked for (local-head or his dashboard) is his decision to pick the record back up (W-504).
+      if (ctx.now >= ALEX_LIFTS_DEFERRAL_FROM && /^(local-head$|Alex\b)/.test(ctx.by || '')) for (const d of w.externalDeps.filter(d => /^alex$/i.test(d.deferred || ''))) {
+        w.externalDeps = w.externalDeps.filter(x => x !== d);
+        note(w, ctx, `Hold released: ${d.text}. Alex asked for this work: ${String(e.evidence).slice(0, 200)}`);
+      }
       if (e.status === 'done') {
         // History only: the phase, owner and requests already reflect the finished work.
         if (liveAssignment(w, laneOf(e))) fail(`${liveAssignment(w, laneOf(e)).id} is the current assignment on ${w.id}; finish it with done --assignment.`);
