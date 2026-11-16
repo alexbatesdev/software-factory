@@ -1,6 +1,7 @@
 // CircleCI reads for W-501 (GET only): a branch's latest run of each job at a commit, and the tests that failed in it.
 // Needs CIRCLE_TOKEN in the server's environment; without it nothing is read and check names decide as before.
 const API = 'https://circleci.com/api/v2';
+const FINISHED = ['success', 'failed', 'error', 'canceled'];
 
 async function circle(path, f = fetch) {
   const r = await f(API + path, { headers: { 'Circle-Token': process.env.CIRCLE_TOKEN ?? '' } });
@@ -25,9 +26,11 @@ export const circleReady = () => !!process.env.CIRCLE_TOKEN;
  */
 export async function readJobFailures(slug, branch, sha = null, f = fetch) {
   const pipelines = (await circle(`/project/${slug}/pipeline?branch=${encodeURIComponent(branch)}`, f)).items || [];
-  for (const p of pipelines.filter(p => !sha || p.vcs?.revision === sha).slice(0, 5)) {
+  // A GitHub App pipeline names its commit in trigger_parameters, an OAuth one in vcs (both seen 11-16).
+  const revision = p => p.vcs?.revision || p.trigger_parameters?.github_app?.commit_sha || p.trigger_parameters?.github_app?.checkout_sha;
+  for (const p of pipelines.filter(p => !sha || revision(p) === sha).slice(0, 5)) {
     const workflows = (await circle(`/pipeline/${p.id}/workflow`, f)).items || [];
-    if (!workflows.length || workflows.some(w => ['running', 'on_hold', 'not_run'].includes(w.status))) continue;
+    if (!workflows.length || !workflows.every(w => FINISHED.includes(w.status))) continue;
     const out = new Map();
     for (const w of workflows) for (const j of await allPages(`/workflow/${w.id}/job`, f)) {
       if (j.status !== 'failed' || !j.job_number) { out.set(`ci/circleci: ${j.name}`, { status: j.status, tests: [] }); continue; }

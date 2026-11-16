@@ -43,3 +43,22 @@ test("the reader takes the newest finished pipeline at the commit, and a failed 
   const jobs = await readJobFailures('gh/o/app', 'b', 'abc', f);
   assert.deepEqual(Object.fromEntries(jobs), { 'ci/circleci: unit-tests': { status: 'failed', tests: null }, 'ci/circleci: test': { status: 'failed', tests: ['spec/a_spec.rb::x'] }, 'ci/circleci: lint': { status: 'success', tests: [] } });
 });
+
+test('a GitHub App pipeline names its commit in trigger_parameters, and a queued workflow is not finished (W-501, seen live 11-16)', async () => {
+  process.env.CIRCLE_TOKEN ||= 'test';
+  const { readJobFailures } = await import('../sources/circleci.mjs');
+  const routes = {
+    '/project/gh/o/app/pipeline': { items: [{ id: 'p-q', trigger_parameters: { github_app: { commit_sha: 'abc' } } }, { id: 'p-ok', trigger_parameters: { github_app: { commit_sha: 'abc' } } }] },
+    '/pipeline/p-q/workflow': { items: [{ id: 'wq', status: 'queued' }, { id: 'ws', status: 'success' }] },
+    '/pipeline/p-ok/workflow': { items: [{ id: 'w1', status: 'failed' }] },
+    '/workflow/w1/job': { items: [{ name: 'test', status: 'failed', job_number: 8 }] },
+    '/project/gh/o/app/8/tests': { items: [{ file: 'spec/a_spec.rb', name: 'x', result: 'failure' }] },
+  };
+  const f = async url => { const path = url.replace('https://circleci.com/api/v2', '').split('?')[0]; return { ok: !!routes[path], status: routes[path] ? 200 : 404, json: async () => routes[path] }; };
+  assert.deepEqual(Object.fromEntries(await readJobFailures('gh/o/app', 'b', 'abc', f)), { 'ci/circleci: test': { status: 'failed', tests: ['spec/a_spec.rb::x'] } });
+});
+
+test("a job that fails with no test results on main as well (a fan-in like ci/circleci: test, seen 11-16) is unknown, so the name match decides", () => {
+  assert.equal(compareCheck(job(null), job(null)).verdict, 'unknown');
+  assert.equal(compareCheck(job(null), job(['a'])).verdict, 'no test results', 'main ran tests and the PR ran none: rerun');
+});

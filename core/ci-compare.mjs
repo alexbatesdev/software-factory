@@ -7,7 +7,8 @@
  */
 export function compareCheck(pr, main) {
   if (!pr) return { verdict: 'unknown', prOnly: [], shared: [] };
-  if (!pr.tests?.length) return { verdict: 'no test results', prOnly: [], shared: [] };
+  // A job failing without test results on main too (a fan-in job) says nothing test by test: the name match decides.
+  if (!pr.tests?.length) return { verdict: main?.status === 'failed' && !main.tests?.length ? 'unknown' : 'no test results', prOnly: [], shared: [] };
   if (!main) return { verdict: 'ours', prOnly: [...pr.tests], shared: [] };
   if (!main.tests) return { verdict: 'unknown', prOnly: [], shared: [] };
   const onMain = new Set(main.tests), prOnly = pr.tests.filter(t => !onMain.has(t)), shared = pr.tests.filter(t => onMain.has(t));
