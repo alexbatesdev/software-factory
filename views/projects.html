@@ -43,6 +43,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const KIND = { done: 'done', 'awaiting approval': 'approval', 'in review': 'review', building: 'building', queued: 'queued', 'PR open': 'pr', 'not started': 'none', cancelled: 'none' };
 const COLOR = { done: 'var(--done)', approval: 'var(--wait)', review: 'var(--wait)', building: 'var(--work)', queued: 'var(--work)', pr: 'var(--work)' };
 const ACTIVE = ['Development', 'Design', 'Requirements', 'Discovery'];
+const rank = p => (i => i < 0 ? ACTIVE.length : i)(ACTIVE.indexOf(p.stage));
 const prCell = pr => pr ? `<a href="${esc(pr.url)}">#${pr.number}</a>${pr.draft ? ' <span class="tag">draft</span>' : ''}${pr.stackedOn ? ` <span class="stack">stacked on #${pr.stackedOn}</span>` : ''}` : '';
 const recordCell = id => id ? `<a href="/#${esc(id)}">${esc(id)}</a>` : '';
 function bar(leaves) {
@@ -64,7 +65,7 @@ function project(p) {
 async function render() {
   let d; try { d = await (await fetch('/api/projects')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
   const shown = d.projects.filter(p => p.teamworkTask && !['Archived', 'Complete'].includes(p.status))
-    .sort((a, b) => ACTIVE.indexOf(a.stage) - ACTIVE.indexOf(b.stage) || b.leaves.filter(l => l.pr).length - a.leaves.filter(l => l.pr).length);
+    .sort((a, b) => rank(a) - rank(b) || b.leaves.filter(l => l.pr).length - a.leaves.filter(l => l.pr).length);
   document.getElementById('meta').textContent = `${shown.length} active projects · planning and Teamwork read ${d.readAt ? new Date(d.readAt).toLocaleTimeString() : 'not yet'} (every 30 min)`;
   document.getElementById('projects').innerHTML = shown.map(project).join('');
   document.getElementById('loose').innerHTML = d.loose.map(pr => `<tr><td>${esc(pr.title)}</td><td class="pr">${prCell(pr)}</td></tr>`).join('') || '<tr><td class="mute">none</td></tr>';
