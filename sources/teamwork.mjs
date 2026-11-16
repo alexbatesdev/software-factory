@@ -31,12 +31,21 @@ export async function readTopParents(ids, cache = new Map()) {
   return out;
 }
 
+// Teamwork answers 429 when read fast (11-16: 11 trees in a burst): space the calls, and wait out a 429 up to three times.
+const wait = ms => new Promise(r => setTimeout(r, ms));
+async function paced(call) {
+  for (let attempt = 0; ; attempt++) {
+    await wait(300);
+    try { return await call(); } catch (e) { if (!/\b429\b/.test(e.message) || attempt === 3) throw e; await wait(20000 * (attempt + 1)); }
+  }
+}
+
 /** Every task below a root, [{id, name, parent, status}], walked level by level (a project's tree, Alex 11-16). */
 export async function readTree(rootId, maxNodes = 500) {
   const tw = await client(), out = [];
   for (let level = [String(rootId)]; level.length && out.length < maxNodes;) {
     const next = [];
-    for (const id of level) for (const t of (await tw.listSubtasks(id)).tasks || []) { out.push({ id: String(t.id), name: t.name, parent: id, status: t.status }); next.push(String(t.id)); }
+    for (const id of level) for (const t of (await paced(() => tw.listSubtasks(id))).tasks || []) { out.push({ id: String(t.id), name: t.name, parent: id, status: t.status }); next.push(String(t.id)); }
     level = next;
   }
   return out;
