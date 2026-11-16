@@ -24,3 +24,10 @@ export function parseDecisions(text) {
     return m && { id: m[1], title: m[2].trim(), status: field('status'), needs: field('needs') };
   }).filter(Boolean);
 }
+
+/** A project README's title and its Stage, Status, Teamwork and Owner rows (empty cells are null). */
+export function parseReadme(text) {
+  const row = k => String(text).match(new RegExp(`^\\|\\s*${k}\\s*\\|\\s*(.*?)\\s*\\|\\s*$`, 'm'))?.[1] || null;
+  return { title: String(text).match(/^# (.+)$/m)?.[1].trim() || null, stage: row('Stage'), status: row('Status'),
+    teamworkTask: row('Teamwork')?.match(/tasks\/(\d+)/)?.[1] || null, owner: row('Owner') };
+}
