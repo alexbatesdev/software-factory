@@ -39,13 +39,15 @@ details > summary { cursor: pointer; }
 <header><h1>Projects</h1><span class="mute" id="meta">loading…</span><a href="/" class="mute">Board</a> <a href="/queue" class="mute">Queue</a></header>
 <div id="projects"></div>
 <section class="project"><h2>Your other open PRs</h2><div class="mute">Open PRs on no project's task.</div><table id="loose"></table></section>
+<section class="project"><h2>The team's open PRs <span class="mute" id="teamN"></span></h2><div class="mute">Everyone else's open PRs in the team repos, read-only, by author.</div><div id="team"></div></section>
 <script>
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const KIND = { done: 'done', 'awaiting approval': 'approval', 'in review': 'review', building: 'building', queued: 'queued', 'PR open': 'pr', 'not started': 'none', cancelled: 'none' };
 const COLOR = { done: 'var(--done)', approval: 'var(--wait)', review: 'var(--wait)', building: 'var(--work)', queued: 'var(--work)', pr: 'var(--work)' };
 const ACTIVE = ['Development', 'Design', 'Requirements', 'Discovery'];
 const rank = p => (i => i < 0 ? ACTIVE.length : i)(ACTIVE.indexOf(p.stage));
-const prCell = pr => pr ? `<a href="${esc(pr.url)}">#${pr.number}</a>${pr.draft ? ' <span class="tag">draft</span>' : ''}${pr.stackedOn ? ` <span class="stack">stacked on #${pr.stackedOn}</span>` : ''}` : '';
+let me = null;
+const prCell = pr => pr ? `<a href="${esc(pr.url)}">#${pr.number}</a>${pr.draft ? ' <span class="tag">draft</span>' : ''}${pr.stackedOn ? ` <span class="stack">stacked on #${pr.stackedOn}</span>` : ''}${pr.author && pr.author !== me ? ` <span class="stack">by ${esc(pr.author)}</span>` : ''}` : '';
 const recordCell = id => id ? `<a href="/#${esc(id)}">${esc(id)}</a>` : '';
 function bar(leaves) {
   const n = {}; for (const l of leaves) { const k = KIND[l.state] || 'none'; n[k] = (n[k] || 0) + 1; }
@@ -64,11 +66,14 @@ function project(p) {
       <td class="pr">${prCell(l.pr)} ${recordCell(l.work)}</td><td class="tp mute">${l.testPlan ? 'test plan' : ''}</td></tr>`).join('')}</table></details>` : ''}</section>`;
 }
 async function render() {
-  let d; try { d = await (await fetch('/api/projects')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
+  let d; try { d = await (await fetch('/api/projects')).json(); me = d.me || null; } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
   const shown = d.projects.filter(p => p.teamworkTask && !['Archived', 'Complete'].includes(p.status))
     .sort((a, b) => rank(a) - rank(b) || b.leaves.filter(l => l.pr).length - a.leaves.filter(l => l.pr).length);
   document.getElementById('meta').textContent = `${shown.length} active projects · planning and Teamwork read ${d.readAt ? new Date(d.readAt).toLocaleTimeString() : 'not yet'} (every 30 min)`;
   document.getElementById('projects').innerHTML = shown.map(project).join('');
+  const by = {}; for (const pr of d.team || []) (by[pr.author] ||= []).push(pr);
+  document.getElementById('teamN').textContent = `${(d.team || []).length} PRs`;
+  document.getElementById('team').innerHTML = Object.entries(by).map(([a, ps]) => `<details><summary><b>${esc(a)}</b> <span class="mute">${ps.length}</span></summary><table>${ps.map(pr => `<tr><td>${esc(pr.title)}</td><td class="pr">${prCell(pr)}</td></tr>`).join('')}</table></details>`).join('') || '<div class="mute">none read yet</div>';
   document.getElementById('loose').innerHTML = d.loose.map(pr => `<tr><td>${esc(pr.title)}</td><td class="pr">${prCell(pr)}</td></tr>`).join('') || '<tr><td class="mute">none</td></tr>';
 }
 render(); setInterval(render, 60000);

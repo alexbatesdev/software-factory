@@ -31,18 +31,20 @@ const stateOf = w => w.phase === 'done' ? 'done' : w.phase === 'cancelled' ? 'ca
  * @param prs Map(id → {url, number, title, branch, base, isDraft}) Alex's open PRs
  * @returns {projects, loose} loose: open PRs on no project's leaf
  */
-export function buildProjects({ planning, trees, works, prs }) {
+export function buildProjects({ planning, trees, works, prs, teamPrs = [], me = null }) {
   const byTask = new Map(), byPr = new Map();
   for (const w of Object.values(works)) { const t = taskOf(w); if (t && !byTask.has(t)) byTask.set(t, w); if (w.links?.pr) byPr.set(w.links.pr, w); }
-  const open = [...prs.values()], byBranch = new Map(open.map(p => [p.branch, p])), used = new Set();
-  const prView = p => p && { url: p.url, number: p.number, title: p.title, draft: !!p.isDraft, stackedOn: byBranch.get(p.base)?.number ?? null };
+  const open = [...prs.values()], others = teamPrs.filter(p => p.author !== me && !open.some(o => o.url === p.url));
+  const byBranch = new Map([...others, ...open].map(p => [p.branch, p])), used = new Set();
+  const prView = p => p && { url: p.url, number: p.number, title: p.title, draft: !!p.isDraft, stackedOn: byBranch.get(p.base)?.number ?? null, author: p.author || me };
   const projects = planning.map(pl => {
     const root = pl.readme.teamworkTask, tree = trees[root];
     const kids = new Map(); for (const n of tree || []) kids.set(n.parent, [...(kids.get(n.parent) || []), n]);
     const leaves = [];
     const walk = (id, path) => { for (const n of kids.get(id) || []) {
       if (kids.has(n.id)) { walk(n.id, [...path, n.name]); continue; }
-      const pr = open.find(p => new RegExp(`tw-${n.id}(?!\\d)`).test(p.branch)) || open.find(p => p.url === byTask.get(n.id)?.links?.pr);
+      const pr = open.find(p => new RegExp(`tw-${n.id}(?!\\d)`).test(p.branch)) || open.find(p => p.url === byTask.get(n.id)?.links?.pr)
+        || others.find(p => (p.tasks || []).includes(n.id) || new RegExp(`tw-${n.id}(?!\\d)`).test(p.branch)); // a teammate's PR (phase D)
       const w = byTask.get(n.id) || (pr && byPr.get(pr.url)) || null;
       if (pr) used.add(pr.url);
       leaves.push({ task: n.id, name: n.name, path: [...path, n.name].join(' / '), state: n.status === 'completed' ? 'done' : w ? stateOf(w) : pr ? 'PR open' : 'not started',
@@ -53,7 +55,9 @@ export function buildProjects({ planning, trees, works, prs }) {
       reqs: pl.reqs, openDecisions: pl.openDecisions, decisions: (pl.decisions || []).map(d => ({ id: d.id, title: d.title })), treeRead: !!tree, factoryPlan: !!pl.factoryPlan,
       developers: [...new Set((tree || []).filter(n => !kids.has(n.id)).flatMap(n => n.assignees || []))], leaves, progress: { done: leaves.filter(l => l.state === 'done').length, total: leaves.length } };
   });
-  return { projects, loose: open.filter(p => !used.has(p.url)).map(prView) };
+  // Phase D: the team's open PRs (not Alex's), by author, with their stacks. Read-only.
+  const team = others.map(prView).sort((a, b) => a.author.localeCompare(b.author) || a.number - b.number);
+  return { projects, loose: open.filter(p => !used.has(p.url)).map(prView), team };
 }
 
 // Phase C: the planning job (Alex 11-16). It runs on the stream that has project-planning, through a PR Alex merges.

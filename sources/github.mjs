@@ -102,3 +102,14 @@ export async function readOpenPrFiles(repos, owner, run = exec) {
   }
   return out;
 }
+
+/** Everyone's open PRs per repo (projects phase D, read-only): author, branch, base, draft, and the Teamwork tasks named by its branch (tw-<id>) or body. */
+export async function readTeamPrs(repos, owner, run = exec) {
+  const out = [];
+  for (const repo of repos) {
+    const { stdout } = await run('gh', ['pr', 'list', '-R', `${owner}/${repo}`, '--state', 'open', '--limit', '300', '--json', 'number,title,url,author,headRefName,baseRefName,isDraft,body'], { timeout: 60000, maxBuffer: 1 << 25 });
+    for (const p of JSON.parse(stdout)) out.push({ repo, url: p.url, number: p.number, title: p.title, author: p.author?.login || 'ghost', branch: p.headRefName, base: p.baseRefName, isDraft: !!p.isDraft,
+      tasks: [...new Set([...(p.headRefName || '').matchAll(/tw-(\d+)/g), ...(p.body || '').matchAll(/teamwork\.com\/app\/tasks\/(\d+)/g)].map(m => m[1]))] });
+  }
+  return out;
+}

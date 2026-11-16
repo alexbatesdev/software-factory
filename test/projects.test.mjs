@@ -128,3 +128,28 @@ test('the brief plans only tasks not built yet; built ones are context, and only
   assert.match(o, /Already built or done \(context only\): 111 Edit modal; 112 Bulk edit/);
   assert.match(o, /Draft the missing test plans .*: 102 Import column\./);
 });
+
+// Phase D (Alex 11-16: "all of mine for now, eventually whole team's"): the team's open PRs, read-only.
+const TEAM = [
+  { url: PR(20), number: 20, title: 'Report column', author: 'casey-c', branch: 'casey/reports', base: 'main', isDraft: false, tasks: ['111'] },
+  { url: PR(21), number: 21, title: 'Report filter', author: 'casey-c', branch: 'casey/report-filter', base: 'casey/reports', isDraft: true, tasks: [] },
+  { url: PR(9), number: 9, title: 'Import column', author: 'alexbatesdev', branch: 'alex/tw-102-import', base: 'alex/tw-112-bulk-edit', isDraft: true, tasks: ['102'] },
+];
+
+test("a project task with no PR of Alex's shows a teammate's open PR that names it, with its author", () => {
+  const p = buildProjects({ planning, trees: { 100: TREE.map(n => n.id === '111' ? { ...n, status: 'new' } : n) }, works, prs, teamPrs: TEAM, me: 'alexbatesdev' }).projects[0];
+  assert.deepEqual([leaf(p, '111').pr?.number, leaf(p, '111').pr?.author, leaf(p, '111').state], [20, 'casey-c', 'PR open']);
+  assert.equal(leaf(p, '102').pr.number, 9, "Alex's own PR still wins");
+});
+
+test("the team's other open PRs are listed by author with their stacks, Alex's own left out", () => {
+  const { team } = buildProjects({ planning, trees: { 100: TREE }, works, prs, teamPrs: TEAM, me: 'alexbatesdev' });
+  assert.deepEqual(team.map(p => [p.number, p.author, p.stackedOn]), [[20, 'casey-c', null], [21, 'casey-c', 20]]);
+});
+
+test("a team PR read keeps author, branch, base and the Teamwork tasks its branch or body names, not the body", async () => {
+  const { readTeamPrs } = await import('../sources/github.mjs');
+  const rows = [{ number: 20, title: 'Report column', url: PR(20), author: { login: 'casey-c' }, headRefName: 'casey/tw-111-reports', baseRefName: 'main', isDraft: false, body: 'Teamwork: https://acme.teamwork.com/app/tasks/112 and tasks/113' }];
+  const [p] = await readTeamPrs(['app'], 'acme-org', async () => ({ stdout: JSON.stringify(rows) }));
+  assert.deepEqual(p, { repo: 'app', url: PR(20), number: 20, title: 'Report column', author: 'casey-c', branch: 'casey/tw-111-reports', base: 'main', isDraft: false, tasks: ['111', '112'] });
+});
