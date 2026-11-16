@@ -420,14 +420,26 @@ async function fleetTick() {
   } catch (e) { log(`fleet: ${e.message}`); }
 }
 
+// A repo's local checkout with origin/main fetched (at most once a minute), for checks against main; null when none is here.
+const fetchedAt = {};
+async function mainGit(repo) {
+  const dir = repo === 'built-rails' ? join(homedir(), 'Code/repos/built-rails-a') : Object.values(config.routing.supervisors).map(s => s.repos?.[repo]).find(Boolean)?.replace(/^~/, homedir());
+  if (!dir) return null;
+  const git = (...a) => run('git', ['-C', dir, ...a], { timeout: 60000, maxBuffer: 1 << 24 });
+  if (Date.now() - (fetchedAt[dir] || 0) > 60000) { await git('fetch', '-q', 'origin', 'main').catch(() => {}); fetchedAt[dir] = Date.now(); }
+  return git;
+}
+
 http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, onMain: async (repo, m) => {
   // W-435: is this line of code in this file at this commit, and is that commit on origin/main?
-  const dir = repo === 'built-rails' ? join(homedir(), 'Code/repos/built-rails-a') : Object.values(config.routing.supervisors).map(s => s.repos?.[repo]).find(Boolean)?.replace(/^~/, homedir());
-  if (!dir) return true; // ponytail: a repo with no checkout here can't be checked; the fields are still required
-  const git = (...a) => run('git', ['-C', dir, ...a], { timeout: 60000, maxBuffer: 1 << 24 });
-  await git('fetch', '-q', 'origin', 'main').catch(() => {});
+  const git = await mainGit(repo);
+  if (!git) return true; // ponytail: a repo with no checkout here can't be checked; the fields are still required
   if (!(await git('merge-base', '--is-ancestor', m.sha, 'origin/main').then(() => true, () => false))) return false;
   return (await git('show', `${m.sha}:${m.path}`).then(r => r.stdout, () => '')).includes(String(m.code).trim());
+}, onMainFile: async (repo, path) => {
+  // W-509: does this file exist on origin/main? An unknown repo counts as yes, so nothing is refused unchecked.
+  const git = await mainGit(repo);
+  return !git || git('cat-file', '-e', `origin/main:${path}`).then(() => true, () => false);
 }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
   observed: () => ({ projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs }), readAt: projectsRead.readAt }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));

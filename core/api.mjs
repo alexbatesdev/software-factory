@@ -2,6 +2,7 @@
 // The caller's seat comes from the x-seat header, which the MCP server fills from its pane. ponytail: trusted because
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
 import { refusal, isTrustedReviewSeat, ROLES, onAlexWord } from './capabilities.mjs';
+import { pathsIn } from './duplicates.mjs';
 import { commandsFor } from './actions.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -25,7 +26,7 @@ export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config
  * @param readOnly the shadow runner serves the page and reads only; every write is refused
  * @param observed () => {units, prs} from the latest fleet and GitHub reads, for the views
  */
-export function createApi({ store, config, gh = null, tw = null, awsHost = null, onMain = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}), artifactRoot = null }) {
+export function createApi({ store, config, gh = null, tw = null, awsHost = null, onMain = null, onMainFile = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}), artifactRoot = null }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -49,6 +50,12 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       if (!m?.sha || !m?.path || !String(m?.code || '').trim()) return [409, { error: 'A discovery called pre-existing needs onMain: {sha (on origin/main), path, code (a line of the faulty code, verbatim)}. Check origin/main first; if the code only exists on the PR under review, fix it in that PR instead of splitting it out.' }];
       const repo = s.work[args.work]?.repo || DEFAULT_REPO;
       if (onMain && !(await onMain(repo, m).catch(() => false))) return [409, { error: `That code isn't on origin/main: "${m.code}" isn't in ${m.path} at ${m.sha}, or ${m.sha} isn't on origin/main. If the PR under review introduced it, fix it there.` }];
+    }
+    // A file the reporting record's PR added isn't on origin/main yet: a find in it is that PR's to fix (W-509).
+    if (action === 'progress' && args.discovery && !args.inScope && onMainFile && (s.work[args.work]?.links?.pr || s.work[args.work]?.links?.branch)) {
+      const repo = s.work[args.work]?.repo || DEFAULT_REPO;
+      for (const path of pathsIn(`${args.discovery} ${args.text || ''}`)) if (!(await onMainFile(repo, path).catch(() => true)))
+        return [409, { error: `${path} isn't on origin/main, so ${args.work}'s own PR added it: file this find with inScope: true on ${args.work} and fix it in that PR, not as separate work.` }];
     }
     // A message waits in an inbox until acked, so it goes only to a seat that can read and ack one (W-414).
     if (action === 'message' && !ROLES[roleOf(config, args.to)]?.includes('ack')) return [409, { error: `${args.to} can't read or ack factory messages (no board role with ack); reach it another way.` }];

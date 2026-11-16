@@ -7,9 +7,11 @@ const PATH = /(?:[\w.-]+\/)+[\w.-]+\.[A-Za-z]\w*/g;
 
 /** The repo files a record names in its objective and New-PR breakdown. */
 export function pathsOf(w) {
-  const text = [w.objective, ...Object.values(w.proposal || {})].filter(v => typeof v === 'string').join(' ').replace(/https?:\/\/\S+/g, '');
-  return [...new Set(text.match(PATH) || [])];
+  return pathsIn([w.objective, ...Object.values(w.proposal || {})].filter(v => typeof v === 'string').join(' '));
 }
+
+/** The repo file paths named in a text (URLs left out). */
+export const pathsIn = text => [...new Set(String(text || '').replace(/https?:\/\/\S+/g, '').match(PATH) || [])];
 
 /** New-PR records not yet built: a breakdown, no PR, nothing running. */
 export const unbuiltProposals = state => Object.values(state.work).filter(w => w.proposal && !w.links?.pr && ['build', 'pr-feedback'].includes(w.kind)

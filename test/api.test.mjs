@@ -446,3 +446,15 @@ test("local-head's tools offer every board action, each with a field for Alex's 
   assert.ok(tools.filter(t => !['inbox', 'read', 'questions'].includes(t.name)).every(t => t.inputSchema.properties.alexAsked), 'every action tool takes alexAsked');
   assert.ok(!toolsFor('board-lead').some(t => t.inputSchema.properties.alexAsked), 'only local-head speaks for Alex');
 });
+
+test("a discovery citing a file that isn't on origin/main is the PR's own code: it is filed inScope, not split out as new work (W-509: W-507, W-508)", async () => {
+  const f = await serveWith({ onMainFile: async (repo, path) => path === 'app/models/position.rb' });
+  try {
+    assert.equal((await f.act('local-head', 'create', { title: 'Mutation tester' }))[0], 200);
+    f.store.append({ kind: 'update', target: 'W-1', payload: { links: { pr: 'https://github.com/acme-org/app/pull/8283', branch: 'alex/mutation-tester' } } }, { now: '2026-11-16T20:00:00.000Z', by: 'test' });
+    const [code, body] = await f.act('triage board worker', 'progress', { work: 'W-1', discovery: 'diff_selector skips renamed files', text: 'lib/mutation_tester/diff_selector.rb:38-41 drops renames' });
+    assert.equal(code, 409); assert.match(body.error, /lib\/mutation_tester\/diff_selector\.rb isn't on origin\/main.*inScope: true/s);
+    assert.equal((await f.act('triage board worker', 'progress', { work: 'W-1', discovery: 'diff_selector skips renamed files', text: 'lib/mutation_tester/diff_selector.rb:38-41', inScope: true }))[0], 200);
+    assert.equal((await f.act('triage board worker', 'progress', { work: 'W-1', discovery: 'Position save is slow', text: 'app/models/position.rb:120 N+1' }))[0], 200, 'code on main is real separate work');
+  } finally { f.close(); }
+});
