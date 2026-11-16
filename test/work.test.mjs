@@ -844,3 +844,10 @@ test('an in-scope finding on a built PR nobody is working opens a fixes round, n
   assert.deepEqual([r.type, r.ack, r.head], ['fixes', null, 'aaa']);
   assert.equal(run(readyPr(), find('2026-11-16T19:51:41.000Z')).requests.filter(x => x.type === 'fixes').length, 0, 'replayed from before the change: as it was');
 });
+
+test('a merge settles every request still pending on the record, so none sits unacked on finished work (W-514: W-235 R10, W-463 R8)', () => {
+  const w = { ...readyPr(), phase: 'fixes', requests: [...readyPr().requests, { id: 'R10', type: 'fixes', at: 'x', by: 'github', delivery: 'pending', ack: null, head: 'aaa' }] };
+  const merged = now => applyEvent(w, { type: 'merged', prs: [{ url: PR, state: 'MERGED' }] }, ctx({ now, by: 'github' })).work;
+  assert.deepEqual(merged('2026-11-16T21:30:00.000Z').requests.find(r => r.id === 'R10').ack, { by: 'github', outcome: 'done', note: 'Settled: the PR merged.', at: '2026-11-16T21:30:00.000Z' });
+  assert.equal(merged('2026-11-16T20:34:00.000Z').requests.find(r => r.id === 'R10').ack, null, 'replayed from before the change: as it was');
+});

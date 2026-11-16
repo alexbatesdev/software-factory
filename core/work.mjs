@@ -146,6 +146,7 @@ const MERGE_CANCELS_JOBS_FROM = '2026-11-13T00:45:00.000Z';
 const REVIEW_SETTLES_REQUEST_FROM = '2026-11-16T19:30:00.000Z';
 const ALEX_LIFTS_DEFERRAL_FROM = '2026-11-16T19:45:00.000Z';
 const IN_SCOPE_OPENS_FIXES_FROM = '2026-11-16T20:30:00.000Z';
+const MERGE_SETTLES_REQUESTS_FROM = '2026-11-16T21:15:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
@@ -417,6 +418,8 @@ export function applyEvent(work, e, ctx) {
         for (const x of live) { x.history.push({ status: x.status, at: ctx.now, by: ctx.by }); x.status = 'cancelled'; x.version++; }
         if (live.length) note(w, ctx, `${live.map(x => x.id).join(', ')} cancelled: its PR merged while it ran. Stop the worker; nothing left to report on this record.`);
       }
+      // Nothing is left to pick up on merged work (W-514): its pending requests are settled, like a recorded review's (W-502).
+      if (ctx.now >= MERGE_SETTLES_REQUESTS_FROM) for (const r of w.requests.filter(r => !r.ack)) r.ack = { by: ctx.by, outcome: 'done', note: 'Settled: the PR merged.', at: ctx.now };
       break;
     }
     case 'alex_review_seen': {
