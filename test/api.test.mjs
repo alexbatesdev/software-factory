@@ -472,9 +472,9 @@ test("triage can mark a record as the one tracking a check red on main, so PRs f
   const f = await serveWith({});
   try {
     assert.equal((await f.act('local-head', 'create', { title: 'Brakeman SQLi in datasheet_query_support.rb' }))[0], 200);
-    f.store.append({ kind: 'update', target: 'W-1', payload: { aliases: ['built-rails-9000'] } }, { now: '2026-11-16T21:00:00.000Z', by: 'test' });
-    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'tracks main audit', reviewBy: '2026-11-20', reviewer: 'board lead', tracksCheck: 'Audit Ruby code and dependencies' });
+    f.store.append({ kind: 'update', target: 'W-1', payload: { aliases: ['app-9000'] } }, { now: '2026-11-16T21:00:00.000Z', by: 'test' });
+    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'tracks main audit', reviewBy: '2026-11-20', reviewer: 'board lead', repo: 'app', tracksCheck: 'Audit Ruby code and dependencies' });
     assert.equal(code, 200, JSON.stringify(body));
-    assert.deepEqual(f.store.state.work['W-1'].aliases, ['built-rails-9000', 'ci:built-rails:Audit Ruby code and dependencies'], 'added, not replaced');
+    assert.deepEqual(f.store.state.work['W-1'].aliases, ['app-9000', 'ci:app:Audit Ruby code and dependencies'], 'added, not replaced');
   } finally { f.close(); }
 });

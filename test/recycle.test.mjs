@@ -189,11 +189,11 @@ test("a finished record's leftover worktree doesn't block a recycle; it is dropp
   const found = [
     { path: '/tmp/claude-1000/x/scratchpad/w439-r5', problem: '1 uncommitted change(s)', blocking: true },
     { path: '/tmp/claude-1000/x/scratchpad/w440-r2', problem: '1 uncommitted change(s)', blocking: true },
-    { path: '/home/agent/built-rails-a', problem: '2 uncommitted change(s)', blocking: true },
+    { path: '/home/agent/app-checkout', problem: '2 uncommitted change(s)', blocking: true },
   ];
   assert.deepEqual(releaseFinished(found, works).map(p => [p.path.split('/').at(-1), p.blocking, p.problem]), [
     ['w439-r5', false, '1 uncommitted change(s), and W-439 is cancelled'],
     ['w440-r2', true, '1 uncommitted change(s)'],
-    ['built-rails-a', true, '2 uncommitted change(s)'],
+    ['app-checkout', true, '2 uncommitted change(s)'],
   ]);
 });

@@ -75,7 +75,7 @@ test("a leaf waits for the project's spec, its own test plan, and any open decis
   assert.match(leaf(gated({ reqs: 0 }), '112').gate.reasons.join(), /spec\.md has no requirements \(REQ IDs\)/);
   assert.match(leaf(gated(), '102').gate.reasons.join(), /no test plan for task 102/);
   const d = (id, text) => ({ id, title: `t ${id}`, text });
-  const p = gated({ decisions: [d('D-033', 'question: ... configured only for Yamaha (REQ-019).'), d('D-032', 'question: Is it in the public API?'), d('D-040', 'refs: tasks/111')] });
+  const p = gated({ decisions: [d('D-033', 'question: ... configured only for one customer (REQ-019).'), d('D-032', 'question: Is it in the public API?'), d('D-040', 'refs: tasks/111')] });
   assert.deepEqual(leaf(p, '112').gate, { ready: false, reasons: ['open decision D-033 (t D-033) covers REQ-019'] });
   assert.match(leaf(p, '111').gate.reasons.join(), /D-040 .* names task 111/);
   assert.ok(!leaf(p, '112').gate.reasons.some(r => r.includes('D-032')), 'a question tied to no task or REQ shows on the project but holds no task');
@@ -84,7 +84,7 @@ test("a leaf waits for the project's spec, its own test plan, and any open decis
 
 test("a decision keeps its full text, so a gate can see which REQ or task it mentions", async () => {
   const { parseDecisions } = await import('../core/spec.mjs');
-  const [d] = parseDecisions('### D-033 — Generous Brands\n- status: open\n- rationale: only Yamaha for now (REQ-019).\n');
+  const [d] = parseDecisions('### D-033 — Two more customers\n- status: open\n- rationale: only one customer for now (REQ-019).\n');
   assert.match(d.text, /REQ-019/);
 });
 

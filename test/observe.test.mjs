@@ -108,7 +108,7 @@ test('the health read counts conversation comments and review summaries from oth
     comments: { nodes: [c('IC0', 'reviewer-sam', '2026-11-06T09:00:00Z'), c('IC1', 'alexbatesdev', '2026-11-06T10:00:00Z'), c('IC2', 'chatgpt-codex-connector', '2026-11-06T11:00:00Z', '<!-- codex-pull-request-review-summary -->', true),
       c('IC3', 'chatgpt-codex-connector', '2026-11-06T11:01:00Z', '<!-- codex-code-review-finding:v1 --> P2', true), c('IC4', 'github-actions', '2026-11-06T11:02:00Z', 'audit', true), c('IC5', 'reviewer-sam', '2026-11-06T11:03:00Z'),
       c('IC6', 'built-engineering-bot', '2026-11-06T11:03:10Z', '🤖 *Not a human. This is Hermes* <!-- hermes-verdict COMMENT (report-rows=14 found=0 proven=0) -->'), c('IC7', 'built-engineering-bot', '2026-11-06T11:03:20Z', '🤖 Hermes <!-- hermes-verdict REQUEST_CHANGES (report-rows=3 found=2 proven=1) -->')] },
-    summaries: { nodes: [{ ...c('PRR_9', 'chelsieminor', null, 'one more thing'), submittedAt: '2026-11-06T11:04:00Z' }, { ...c('PRR_8', 'chelsieminor', null, ''), submittedAt: '2026-11-06T11:05:00Z' }] } } } };
+    summaries: { nodes: [{ ...c('PRR_9', 'reviewer-quinn', null, 'one more thing'), submittedAt: '2026-11-06T11:04:00Z' }, { ...c('PRR_8', 'reviewer-quinn', null, ''), submittedAt: '2026-11-06T11:05:00Z' }] } } } };
   const h = (await readPrHealth(['app:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-06T00:00:00Z')).get('app:1');
   assert.deepEqual(h.comments.map(t => t.id), ['IC3', 'IC5', 'IC7', 'PRR_9']); assert.deepEqual(h.threads, []);
   const old = (await readPrHealth(['app:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-06T11:03:30Z')).get('app:1');
@@ -117,20 +117,20 @@ test('the health read counts conversation comments and review summaries from oth
 
 test("QA's sub-issues on an issue that references the PR count as feedback, open ones only, after the cutoff (#8244: #8580 > #8581)", async () => {
   const { readPrHealth } = await import('../sources/github.mjs');
-  const iss = (id, n, createdAt, state = 'OPEN', login = 'chelsieminor', subs = []) => ({ id, number: n, url: `https://github.com/o/r/issues/${n}`, state, createdAt, author: { login }, subIssues: { nodes: subs } });
-  const parent = iss('I80', 8580, '2026-11-05T23:03:00Z', 'OPEN', 'chelsieminor', [iss('I81', 8581, '2026-11-05T23:03:53Z'), iss('I82', 8582, '2026-11-05T23:04:00Z', 'CLOSED'), iss('I79', 8579, '2026-11-01T00:00:00Z')]);
+  const iss = (id, n, createdAt, state = 'OPEN', login = 'reviewer-quinn', subs = []) => ({ id, number: n, url: `https://github.com/o/r/issues/${n}`, state, createdAt, author: { login }, subIssues: { nodes: subs } });
+  const parent = iss('I80', 8580, '2026-11-05T23:03:00Z', 'OPEN', 'reviewer-quinn', [iss('I81', 8581, '2026-11-05T23:03:53Z'), iss('I82', 8582, '2026-11-05T23:04:00Z', 'CLOSED'), iss('I79', 8579, '2026-11-01T00:00:00Z')]);
   const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'a1', commits: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, summaries: { nodes: [] },
     refs: { nodes: [{ source: parent }, { source: iss('I81', 8581, '2026-11-05T23:03:53Z') }, { source: {} }] } } } };
   const h = (await readPrHealth(['app:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-05T00:00:00Z')).get('app:1');
-  assert.deepEqual(h.comments.map(c => [c.id, c.by, c.url]), [['I81', 'chelsieminor', 'https://github.com/o/r/issues/8581']], 'once each; closed and pre-cutoff ones skipped');
+  assert.deepEqual(h.comments.map(c => [c.id, c.by, c.url]), [['I81', 'reviewer-quinn', 'https://github.com/o/r/issues/8581']], 'once each; closed and pre-cutoff ones skipped');
 });
 
 test("an issue whose last word is Alex's, or one a bot opened with nothing under it, isn't feedback (W-86 R3 #8581, W-192 R6 #8584)", async () => {
   const { readPrHealth } = await import('../sources/github.mjs');
-  const iss = (id, n, extra = {}) => ({ id, number: n, url: `u/${n}`, state: 'OPEN', createdAt: '2026-11-06T00:00:00Z', author: { login: 'chelsieminor', __typename: 'User' }, subIssues: { nodes: [] }, comments: { nodes: [] }, ...extra });
+  const iss = (id, n, extra = {}) => ({ id, number: n, url: `u/${n}`, state: 'OPEN', createdAt: '2026-11-06T00:00:00Z', author: { login: 'reviewer-quinn', __typename: 'User' }, subIssues: { nodes: [] }, comments: { nodes: [] }, ...extra });
   const answered = iss('I81', 8581, { comments: { nodes: [{ author: { login: 'alexbatesdev' } }] } });
   const auto = iss('I84', 8584, { author: { login: 'github-actions', __typename: 'Bot' } });
-  const fresh = iss('I85', 8585, { comments: { nodes: [{ author: { login: 'chelsieminor' } }] } });
+  const fresh = iss('I85', 8585, { comments: { nodes: [{ author: { login: 'reviewer-quinn' } }] } });
   const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'a1', commits: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, summaries: { nodes: [] },
     refs: { nodes: [{ source: iss('I80', 8580, { subIssues: { nodes: [answered, fresh] } }) }, { source: auto }] } } } };
   const h = (await readPrHealth(['app:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '2026-11-05T00:00:00Z')).get('app:1');
@@ -142,7 +142,7 @@ test("a Teamwork task's feedback: others' comments after Alex last spoke and aft
   const c = (id, by, at, body = 'Can we also hide it here?') => ({ id, postedByUserId: by, postedDateTime: at, body });
   const got = taskFeedback('41', [c(1, 7, '2026-11-05T09:00:00Z'), c(2, 99, '2026-11-05T10:00:00Z'), c(3, 7, '2026-11-05T11:00:00Z'),
     c(4, 645330, '2026-11-05T12:00:00Z', '\n**alexbatesdev** merged a PR: **x**\n[https://github.com/o/r/pull/1](https://github.com/o/r/pull/1)\n'), c(5, 7, '2026-11-04T00:00:00Z'),
-    c(6, 645330, '2026-11-05T13:00:00Z', ' **chelsieminor** submitted a review to the PR: **x** [https://github.com/o/r/pull/8265](https://github.com/o/r/pull/8265) --- '), c(7, 645330, '2026-11-05T13:01:00Z', '**chelsieminor** added label **QA In Progress** on [PR](https://github.com/o/r/pull/8244)')], { me: 99, since: '2026-11-05T00:00:00Z', site: 'acme.teamwork.com' });
+    c(6, 645330, '2026-11-05T13:00:00Z', ' **reviewer-quinn** submitted a review to the PR: **x** [https://github.com/o/r/pull/8265](https://github.com/o/r/pull/8265) --- '), c(7, 645330, '2026-11-05T13:01:00Z', '**reviewer-quinn** added label **QA In Progress** on [PR](https://github.com/o/r/pull/8244)')], { me: 99, since: '2026-11-05T00:00:00Z', site: 'acme.teamwork.com' });
   assert.deepEqual(got.map(x => [x.id, x.by]), [['tw-comment-3', 'teamwork user 7']]);
   assert.match(got[0].url, /^https:\/\/acme\.teamwork\.com\/app\/tasks\/41/);
 });
@@ -357,7 +357,7 @@ test("a check compared red on main counts as main's even when main's head doesn'
 test("the health read keeps the Teamwork tasks a PR body links, and hands them to the record (W-519)", async () => {
   const { readPrHealth } = await import('../sources/github.mjs');
   const { healthCommands } = await import('../core/observe.mjs');
-  const body = 'Teamwork: [41384303](https://builtforteams.teamwork.com/app/tasks/41384303)\nPart of https://builtforteams.teamwork.com/app/tasks/41384290 (parent). Also see task 41384301.';
+  const body = 'Teamwork: [41384303](https://acme.teamwork.com/app/tasks/41384303)\nPart of https://acme.teamwork.com/app/tasks/41384290 (parent). Also see task 41384301.';
   const data = { p0: { pullRequest: { baseRefName: 'main', mergeable: 'MERGEABLE', headRefOid: 'aaaaaaa1', body, commits: { nodes: [] }, reviews: { nodes: [] }, reviewThreads: { nodes: [] }, comments: { nodes: [] }, summaries: { nodes: [] } } } };
   const h = (await readPrHealth(['app:1'], 'o', async () => ({ stdout: JSON.stringify({ data }) }), 'alexbatesdev', '')).get('app:1');
   assert.deepEqual(h.bodyTasks, ['41384303', '41384290'], 'linked only: a bare number is a mention');
