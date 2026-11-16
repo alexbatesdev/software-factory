@@ -31,6 +31,7 @@ td.state { width: 140px; } td.pr { width: 260px; } td.tp { width: 70px; text-ali
 .s-done { color: var(--done); background: var(--done-bg); } .s-approval, .s-review { color: var(--wait); background: var(--wait-bg); }
 .s-building, .s-queued, .s-pr { color: var(--work); background: var(--work-bg); } .s-none { color: var(--idle); background: var(--idle-bg); }
 .stack { font-size: 12px; color: var(--mute); }
+.gate { font-size: 12px; color: var(--warn); margin-top: 2px; }
 details > summary { cursor: pointer; }
 </style>
 </head>
@@ -54,11 +55,11 @@ function project(p) {
   const planned = p.leaves.filter(l => l.testPlan).length;
   return `<section class="project"><div class="top"><h2>${esc(p.title || p.slug)}</h2><span class="tag">${esc(p.stage || 'no stage')}</span><span class="tag">${esc(p.status || 'no status')}</span>
     <span class="mute">${esc(p.owner || '')}</span><span class="mute" style="margin-left:auto"><b>${p.progress.done}/${p.progress.total}</b> tasks done</span></div>
-    <div class="facts"><span>${p.reqs} requirements</span><span>test plans for ${planned}/${p.leaves.length} tasks</span><span class="${p.openDecisions ? 'warn' : ''}">${p.openDecisions} open decision(s)</span>
+    <div class="facts"><span>${p.reqs} requirements</span><span>test plans for ${planned}/${p.leaves.length} tasks</span><span class="${p.openDecisions ? 'warn' : ''}" title="${esc((p.decisions || []).map(d => `${d.id} ${d.title}`).join('\n'))}">${p.openDecisions} open decision(s)</span>
     ${p.teamworkTask ? `<a href="https://builtforteams.teamwork.com/app/tasks/${esc(p.teamworkTask)}">Teamwork</a>` : ''}<span class="mute">${esc(p.slug)}</span></div>
     ${p.treeRead ? (p.leaves.length ? bar(p.leaves) : '') : '<div class="mute">Teamwork tree not read yet.</div>'}
     ${p.leaves.length ? `<details ${p.leaves.some(l => !['done', 'not started'].includes(l.state)) ? 'open' : ''}><summary class="mute">Tasks</summary><table>${p.leaves.map(l => `<tr>
-      <td><a href="https://builtforteams.teamwork.com/app/tasks/${esc(l.task)}">${esc(l.path)}</a></td>
+      <td><a href="https://builtforteams.teamwork.com/app/tasks/${esc(l.task)}">${esc(l.path)}</a>${l.gate && !l.gate.ready && !['done', 'cancelled'].includes(l.state) ? `<div class="gate">Can't start yet: ${esc(l.gate.reasons.join('; '))}</div>` : ''}</td>
       <td class="state"><span class="pill s-${KIND[l.state] || 'none'}">${esc(l.state)}</span></td>
       <td class="pr">${prCell(l.pr)} ${recordCell(l.work)}</td><td class="tp mute">${l.testPlan ? 'test plan' : ''}</td></tr>`).join('')}</table></details>` : ''}</section>`;
 }

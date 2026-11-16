@@ -31,5 +31,5 @@ test('a spec yields its Teamwork parent, its requirements with dev-to-verify not
 
 test('decisions yield their status and who they need', () => {
   const d = parseDecisions('# Decisions\n### D-010 — Can mapping express it?\n- status: open\n- needs: dev to verify\n\n### D-011 — Done one\n- status: decided\n');
-  assert.deepEqual(d, [{ id: 'D-010', title: 'Can mapping express it?', status: 'open', needs: 'dev to verify' }, { id: 'D-011', title: 'Done one', status: 'decided', needs: null }]);
+  assert.deepEqual(d.map(({ text, ...x }) => x), [{ id: 'D-010', title: 'Can mapping express it?', status: 'open', needs: 'dev to verify' }, { id: 'D-011', title: 'Done one', status: 'decided', needs: null }]);
 });

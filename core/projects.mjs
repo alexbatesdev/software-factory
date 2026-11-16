@@ -2,6 +2,22 @@
 // Teamwork tree. Each leaf task is one PR (D-013); progress is finished leaves over all leaves. Pure, read-only.
 import { BUILDING, REVIEWING } from './work.mjs';
 
+/**
+ * Whether a leaf may start (Alex 11-16, decision 5): the spec has REQ IDs, the leaf has a test plan, and no open decision
+ * names its task or a REQ its plan covers. A decision tied to no task or REQ shows on the project but holds no leaf.
+ */
+export function leafGate(pl, taskId) {
+  const reasons = [], reqs = pl.testPlanReqs?.[taskId] || [];
+  if (!pl.reqs) reasons.push(`the project's spec.md has no requirements (REQ IDs)`);
+  if (!(pl.testPlans || []).includes(taskId)) reasons.push(`no test plan for task ${taskId} in projects/${pl.slug}/test-plans/`);
+  for (const d of pl.decisions || []) {
+    const req = reqs.find(r => new RegExp(`\\b${r}\\b`).test(d.text || ''));
+    if (req) reasons.push(`open decision ${d.id} (${d.title}) covers ${req}`);
+    else if (new RegExp(`\\b${taskId}\\b`).test(d.text || '')) reasons.push(`open decision ${d.id} (${d.title}) names task ${taskId}`);
+  }
+  return { ready: !reasons.length, reasons };
+}
+
 const taskOf = w => w.source?.key?.match(/^tw-(\d+)$/)?.[1] || String(w.links?.teamwork || w.links?.source || '').match(/teamwork\.com\/app\/tasks\/(\d+)/)?.[1] || null;
 const stateOf = w => w.phase === 'done' ? 'done' : w.phase === 'cancelled' ? 'cancelled'
   : ['awaiting_human_approval', 'ready_for_human', 'awaiting_alex_review'].includes(w.phase) ? 'awaiting approval'
@@ -28,11 +44,11 @@ export function buildProjects({ planning, trees, works, prs }) {
       const w = byTask.get(n.id) || (pr && byPr.get(pr.url)) || null;
       if (pr) used.add(pr.url);
       leaves.push({ task: n.id, name: n.name, path: [...path, n.name].join(' / '), state: n.status === 'completed' ? 'done' : w ? stateOf(w) : pr ? 'PR open' : 'not started',
-        work: w?.id || null, pr: prView(pr), testPlan: (pl.testPlans || []).includes(n.id) });
+        work: w?.id || null, pr: prView(pr), testPlan: (pl.testPlans || []).includes(n.id), gate: leafGate(pl, n.id) });
     } };
     if (tree) walk(root, []);
     return { slug: pl.slug, title: pl.readme.title, stage: pl.readme.stage, status: pl.readme.status, owner: pl.readme.owner, teamworkTask: root,
-      reqs: pl.reqs, openDecisions: pl.openDecisions, treeRead: !!tree, leaves, progress: { done: leaves.filter(l => l.state === 'done').length, total: leaves.length } };
+      reqs: pl.reqs, openDecisions: pl.openDecisions, decisions: (pl.decisions || []).map(d => ({ id: d.id, title: d.title })), treeRead: !!tree, leaves, progress: { done: leaves.filter(l => l.state === 'done').length, total: leaves.length } };
   });
   return { projects, loose: open.filter(p => !used.has(p.url)).map(prView) };
 }

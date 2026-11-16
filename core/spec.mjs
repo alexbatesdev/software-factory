@@ -16,12 +16,12 @@ export function parseSpec(text) {
   return { teamworkTask: front(text).teamwork_task?.match(/tasks\/(\d+)/)?.[1] || null, reqs, acs };
 }
 
-/** @returns [{id: D-n, title, status, needs}] from a decisions.md */
+/** @returns [{id: D-n, title, status, needs, text}] from a decisions.md */
 export function parseDecisions(text) {
   return String(text).split(/^### /m).slice(1).map(block => {
     const [head] = block.split('\n'), field = k => block.match(new RegExp(`^- ${k}:\\s*(.*)$`, 'm'))?.[1].trim() || null;
     const m = head.match(/^(D-\d+)\s*[—-]\s*(.*)$/);
-    return m && { id: m[1], title: m[2].trim(), status: field('status'), needs: field('needs') };
+    return m && { id: m[1], title: m[2].trim(), status: field('status'), needs: field('needs'), text: block };
   }).filter(Boolean);
 }
 

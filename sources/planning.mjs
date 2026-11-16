@@ -17,7 +17,10 @@ export async function readPlanning(dir = PLANNING_DIR, run = exec) {
   return Promise.all(slugs.map(async slug => {
     const [readme, spec, decisions, plans] = await Promise.all(['README.md', 'spec.md', 'decisions.md'].map(f => show(`projects/${slug}/${f}`))
       .concat(git('ls-tree', '--name-only', 'origin/main', `projects/${slug}/test-plans/`).catch(() => '')));
-    return { slug, readme: parseReadme(readme), reqs: Object.keys(parseSpec(spec).reqs).length, openDecisions: parseDecisions(decisions).filter(d => d.status === 'open').length,
-      testPlans: plans.split('\n').map(f => f.split('/').pop().match(/^(\d+)-/)?.[1]).filter(Boolean) };
+    const open = parseDecisions(decisions).filter(d => d.status === 'open'), files = plans.split('\n').filter(f => /\/\d+-[^/]*\.md$/.test(f));
+    // Each test plan's REQs: what a decision must mention to hold that task (projects phase B).
+    const testPlanReqs = Object.fromEntries(await Promise.all(files.map(async f => [f.split('/').pop().match(/^(\d+)-/)[1], [...new Set((await show(f)).match(/REQ-\d+/g) || [])]])));
+    return { slug, readme: parseReadme(readme), reqs: Object.keys(parseSpec(spec).reqs).length, openDecisions: open.length, decisions: open.map(({ id, title, text }) => ({ id, title, text })),
+      testPlans: Object.keys(testPlanReqs), testPlanReqs };
   }));
 }

@@ -91,6 +91,8 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (track === 'trusted-review') { wait('a trusted review, not stream work'); return; }
     if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); return; }
     if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); return; }
+    // A project's task starts only once the project is ready for it (projects phase B, Alex 11-16).
+    if (!job && w.projectGate && !w.projectGate.ready) { wait(`project ${w.projectGate.slug} isn't ready for it: ${w.projectGate.reasons.join('; ')}`); return; }
     if (w.owner && terminals.includes(w.owner)) { wait(`owner ${w.owner} runs in Terminals`); return; }
     // A waiting round's derived wait names its stream picking it up, which is this queue, not a blocker.
     if (w.waitingOn && !(job && (labels.includes(w.waitingOn.who) || workers.has(w.waitingOn.who)))) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); return; }

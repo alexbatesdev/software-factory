@@ -292,3 +292,9 @@ test('a fixes round already told to its stream stays with it, so no supervisor h
   const p = Object.fromEntries(autoDispatchPlan([running, fixesWaiting('W-71')], { ...cfg, toldRequests: new Set(['W-71/R5']) }).map(x => [x.id, x]));
   assert.notEqual(p['W-71']?.action, 'route');
 });
+
+test("a project's task that isn't ready to start waits, naming what it needs (projects phase B)", () => {
+  const p = plan([loose('W-1', { projectGate: { slug: '2026-10-position-end-date', ready: false, reasons: ['no test plan for task 102'] } }), loose('W-2', { projectGate: { slug: 'x', ready: true, reasons: [] } })]);
+  assert.equal(p['W-1'].action, null); assert.match(p['W-1'].reason, /project 2026-10-position-end-date isn't ready for it: no test plan for task 102/);
+  assert.equal(p['W-2'].action, 'queue');
+});
