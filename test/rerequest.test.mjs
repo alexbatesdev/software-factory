@@ -58,3 +58,19 @@ test('only a recent round is re-requested: a review older than the window is lef
   const got = rerequestPlan(rec(), [p], { now: Date.parse('2026-11-11T23:00:00Z'), maxAgeMs: 7 * 86400000 });
   assert.deepEqual(got.map(r => r.reviewer), ['reviewer-cb']);
 });
+
+// W-521 (11-16): reviewer-bc's #8876 review was a body with no threads and nobody answered it; he was re-requested anyway
+// and said so publicly. A reviewer is re-requested only once everything they said has an answer from the author.
+test('never over an unanswered review body: the author must have commented on the PR after it', () => {
+  const r = [{ ...review('reviewer-bc', 'COMMENTED', '2026-11-16T20:00:00Z'), body: 'A couple of concerns about the sync order.' }];
+  assert.deepEqual(rerequestPlan(rec(), [pr({ author: 'alex', reviews: r, comments: [] })]), []);
+  assert.deepEqual(rerequestPlan(rec(), [pr({ author: 'alex', reviews: r, comments: [{ by: 'alex', at: '2026-11-16T19:00:00Z' }] })]), [], 'a comment from before the review is no answer');
+  assert.equal(rerequestPlan(rec(), [pr({ author: 'alex', reviews: r, comments: [{ by: 'alex', at: '2026-11-16T21:00:00Z' }] })]).length, 1);
+});
+
+test("never while the reviewer has a PR comment newer than the author's last one, or a thread whose last word is theirs, resolved or not", () => {
+  const r = [review('reviewer-bc', 'COMMENTED', '2026-11-16T20:00:00Z')];
+  assert.deepEqual(rerequestPlan(rec(), [pr({ author: 'alex', reviews: r, comments: [{ by: 'alex', at: '2026-11-16T21:00:00Z' }, { by: 'reviewer-bc', at: '2026-11-16T22:00:00Z' }] })]), []);
+  assert.deepEqual(rerequestPlan(rec(), [pr({ author: 'alex', reviews: r, threads: [{ by: 'reviewer-bc', resolved: true, lastBy: 'reviewer-bc' }] })]), [], 'resolved without a reply is not answered');
+  assert.equal(rerequestPlan(rec(), [pr({ author: 'alex', reviews: r, threads: [{ by: 'reviewer-bc', resolved: true, lastBy: 'alex' }] })]).length, 1);
+});

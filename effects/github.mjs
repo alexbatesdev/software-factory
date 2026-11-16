@@ -36,12 +36,13 @@ export const gh = {
 const BOT = /\[bot\]$|-bot$|^chatgpt-codex-connector$/;
 export async function reviewState(url) {
   const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
-  const q = `query{repository(owner:"${m[1]}",name:"${m[2]}"){pullRequest(number:${m[3]}){author{login} state headRefOid isDraft reviews(last:50){nodes{author{login __typename} state submittedAt commit{oid}}} reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{author{login}}}}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}}}`;
+  const q = `query{repository(owner:"${m[1]}",name:"${m[2]}"){pullRequest(number:${m[3]}){author{login} state headRefOid isDraft reviews(last:50){nodes{author{login __typename} state submittedAt body commit{oid}}} reviewThreads(first:100){nodes{isResolved comments(first:1){nodes{author{login}}} last: comments(last:1){nodes{author{login}}}}} comments(last:100){nodes{author{login} createdAt}} reviewRequests(first:20){nodes{requestedReviewer{... on User{login}}}}}}}`;
   const p = JSON.parse((await exec('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000 })).stdout).data?.repository?.pullRequest;
   if (!p) return null;
   return { url, author: p.author?.login, open: p.state === 'OPEN', head: p.headRefOid, isDraft: p.isDraft,
-    reviews: p.reviews.nodes.filter(r => r.submittedAt && r.author).map(r => ({ by: r.author.login, state: r.state, at: r.submittedAt, commit: r.commit?.oid, bot: r.author.__typename === 'Bot' || BOT.test(r.author.login) })),
-    threads: p.reviewThreads.nodes.map(t => ({ by: t.comments.nodes[0]?.author?.login, resolved: t.isResolved })),
+    reviews: p.reviews.nodes.filter(r => r.submittedAt && r.author).map(r => ({ by: r.author.login, state: r.state, at: r.submittedAt, body: r.body || '', commit: r.commit?.oid, bot: r.author.__typename === 'Bot' || BOT.test(r.author.login) })),
+    threads: p.reviewThreads.nodes.map(t => ({ by: t.comments.nodes[0]?.author?.login, resolved: t.isResolved, lastBy: t.last?.nodes?.[0]?.author?.login || null })),
+    comments: (p.comments?.nodes || []).filter(c => c.author).map(c => ({ by: c.author.login, at: c.createdAt })),
     requested: p.reviewRequests.nodes.map(r => r.requestedReviewer?.login).filter(Boolean) };
 }
 export async function requestReview(url, login) {

@@ -205,7 +205,7 @@
   },
   "rerequest": {
     "_doc": "W-426 (Alex, 11-11): re-request a non-approving human reviewer once their threads are resolved and the head moved, once per round; approvers, bots and the author never. Only rounds from the last maxAgeDays (Alex, 11-11: recent reviews only). With enabled false it only logs \"re-request (off): would re-request\".",
-    "enabled": true,
+    "enabled": false,
     "maxAgeDays": 7
   },
   "seatRecycle": {
