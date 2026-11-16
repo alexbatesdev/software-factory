@@ -63,3 +63,43 @@ test('an 8-digit task id in a note is not a fix commit', () => {
   const w = { work: { 'W-1': { ...state.work['W-1'], findings: [{ ...state.work['W-1'].findings[0], note: 'Answered on Teamwork 41073672.' }] } } };
   assert.equal(corpusCandidates(w).miss.length, 0);
 });
+
+// The baseline runs (Alex, 11-16): eval cases only, each case several times per reviewer, scored by hand.
+const CORPUS = { cases: [
+  { id: 'B-miss-W-1-aaaaaaa', kind: 'miss', split: 'eval', work: 'W-1', repo: 'acme-org/app', pr: `${PR}1`, head: H('a'), base: H('0'), title: 'Fix the export', criteria: ['AC1: exports all rows'],
+    expected: [{ text: 'SECRET-ANSWER: nil crash when the sheet is empty', note: 'e8f4468: fixed', confirmedBy: 'e8f4468' }] },
+  { id: 'B-clean-W-2-bbbbbbb', kind: 'clean', split: 'tune', work: 'W-2', repo: 'acme-org/app', pr: `${PR}2`, head: H('b'), base: H('1'), title: 't', criteria: [], expected: [] },
+  { id: 'B-clean-W-3-ccccccc', kind: 'clean', split: 'eval', work: 'W-3', repo: 'acme-org/app', pr: `${PR}3`, head: H('c'), base: null, title: 't', criteria: [], expected: [] },
+] };
+
+test('the run plan holds eval cases with a pinned base only, each repeated per reviewer; tune cases never run', async () => {
+  const { benchPlan } = await import('../core/bench.mjs');
+  const plan = benchPlan(CORPUS, { repeats: 3, agents: ['claude', 'codex'] });
+  assert.deepEqual(plan.map(j => `${j.case.id}/${j.agent}/${j.n}`), ['claude', 'codex'].flatMap(a => [1, 2, 3].map(n => `B-miss-W-1-aaaaaaa/${a}/${n}`)));
+  assert.ok(plan.every(j => !/^w\d/i.test(j.dir)), "a worktree folder named like a record would be read as that record's (W-493)");
+});
+
+test("the review prompt pins base and head, forbids fixes and GitHub, and never carries the case's answer", async () => {
+  const { reviewPrompt } = await import('../core/bench.mjs');
+  for (const agent of ['claude', 'codex']) {
+    const p = reviewPrompt(CORPUS.cases[0], agent, { goal: 'Exports must include every row.' });
+    assert.ok(p.includes(H('a')) && p.includes(H('0')), agent);
+    assert.match(p, /AC1: exports all rows/);
+    assert.match(p, /Exports must include every row/);
+    assert.match(p, /no edits/i); assert.match(p, /GitHub/);
+    assert.doesNotMatch(p, /SECRET-ANSWER|e8f4468/, `${agent}: the expected findings leaked into the prompt`);
+  }
+  assert.match(reviewPrompt(CORPUS.cases[0], 'claude', {}), /internal-review/);
+  assert.match(reviewPrompt(CORPUS.cases[0], 'codex', {}), /internal-review-codex\.md/);
+});
+
+test('the score sheet puts each case\'s expected findings beside every run\'s output, with blanks to fill by hand', async () => {
+  const { scoreSheet } = await import('../core/bench.mjs');
+  const runs = [{ case: 'B-miss-W-1-aaaaaaa', agent: 'claude', n: 1, status: 'ok', durationMs: 60000, output: 'reviewed aaaa: 1 findings\n- app/x.rb:3 nil crash' },
+    { case: 'B-miss-W-1-aaaaaaa', agent: 'codex', n: 1, status: 'timeout', durationMs: 1800000, output: '' }];
+  const md = scoreSheet(CORPUS, runs);
+  assert.match(md, /B-miss-W-1-aaaaaaa/); assert.match(md, /SECRET-ANSWER/);
+  assert.match(md, /claude #1.*ok.*1m/); assert.match(md, /codex #1.*timeout/);
+  assert.match(md, /Expected found: ___/);
+  assert.match(md, /history/i, 'the sheet says a reviewer could have read the fix commit on main');
+});

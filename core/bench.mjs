@@ -65,3 +65,40 @@ export function qualityReport(state, since) {
     escapesUnadjudicated: ws.flatMap(w => escapes(w).filter(e => e.at >= since)).length,
   };
 }
+
+/** The baseline's runs: eval cases with a pinned base, `repeats` times per reviewer, rounds interleaved so a cut-short night still covers every case. */
+export function benchPlan(corpus, { repeats = 3, agents = ['claude', 'codex'] } = {}) {
+  const cases = corpus.cases.filter(c => c.split === 'eval' && c.base);
+  return agents.flatMap(agent => Array.from({ length: repeats }, (_, i) => i + 1).flatMap(n => cases.map(c => ({ case: c, agent, n, dir: `bench-${c.id}-${agent}-${n}` }))));
+}
+
+/** What the reviewer is told: the case's goal and pinned range, never its expected findings. */
+export function reviewPrompt(c, agent, { goal = '' } = {}) {
+  const head = [
+    'Benchmark run (the software factory\'s review baseline). You are the reviewer only: no edits, no commits, no pushes, no fetches, and no GitHub reads or writes of any kind (no gh, no PR page, no comments).',
+    `Judge only the change ${c.base}..${c.head} in this worktree. Don't read other branches, later commits or main's history.`,
+    `Repo: ${c.repo}   PR: #${c.pr.split('/').pop()} (for reference only; don't open it)`,
+    `Reviewed head: ${c.head}   Base: ${c.base} (pinned: use it wherever the review instructions say origin/main)`,
+    `Goal: ${[c.title, goal].filter(Boolean).join('. ')}`,
+    `Acceptance criteria (verbatim): ${c.criteria.length ? `\n${c.criteria.join('\n')}` : 'none recorded'}`,
+  ].join('\n');
+  return agent === 'codex'
+    ? `${head}\n\nFollow /home/agent/standards/internal-review-codex.md (above) as the reviewer: sections 1 to 4 only. Its "After the review" steps are not yours.`
+    : `${head}\n\nRun the internal-review skill's steps 1 to 3: pin the target, pick the effort and lenses, and spawn one fresh Opus reviewer subagent with its instruction. Stop when it returns: don't triage or fix. Your final message is the subagent's findings verbatim, starting \`reviewed <sha>: N findings\`.`;
+}
+
+const mins = ms => `${Math.round((ms || 0) / 60000)}m`;
+/** A markdown sheet for scoring by hand: each case's expected findings, then every run's output with blanks. */
+export function scoreSheet(corpus, runs) {
+  const out = ['# Review benchmark baseline: score sheet', '',
+    'Score each run by hand: how many expected findings it found, and how many extra findings it raised (say which are real). Never auto-scored.',
+    'Caveat: a miss case\'s fix commit is in the checkout\'s history (main). The prompt forbids reading history but can\'t prevent it; note any run that cites a later commit.', ''];
+  for (const c of corpus.cases.filter(x => runs.some(r => r.case === x.id))) {
+    out.push(`## ${c.id} (${c.kind}, ${c.repo} #${c.pr.split('/').pop()}, head ${c.head.slice(0, 7)})`, '', 'Expected:');
+    out.push(...(c.expected.length ? c.expected.map(e => `- ${e.text}${e.confirmedBy ? ` (confirmed by ${e.confirmedBy})` : ''}`) : ['- none: a clean merge, so every finding is extra']), '');
+    for (const r of runs.filter(x => x.case === c.id).sort((a, b) => a.agent.localeCompare(b.agent) || a.n - b.n))
+      out.push(`### ${r.agent} #${r.n} · ${r.status} · ${mins(r.durationMs)}${r.usage ? ` · ${r.usage}` : ''}`, '', '~~~~', r.output || '(no output)', '~~~~', '',
+        `Expected found: ___ / ${c.expected.length}   Extra findings: ___   Notes:`, '');
+  }
+  return out.join('\n');
+}
