@@ -333,3 +333,14 @@ test("a CircleCI check red on main by name stays the PR's when its failing tests
   assert.match(w.findings.at(-1).text, /unit-tests: failed before any test ran: rerun it/);
   assert.match(w.updates.map(u => u.text).join('\n'), /ci\/circleci: test: all 1 failing test\(s\) also fail on main/);
 });
+
+test("a check an open record tracks as red on main stays main's when main's newest commit doesn't run it (W-510: Audit Ruby after main moved, 19:44Z)", async () => {
+  const { healthCommands } = await import('../core/observe.mjs');
+  const pr = { ...createWork({ id: 'W-478', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
+  const holder = { ...createWork({ id: 'W-463', title: 'Brakeman on main', kind: 'build', aliases: ['ci:app:Audit Ruby code and dependencies'] }, ctx), phase: 'ready' };
+  const health = new Map([['app:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['Audit Ruby code and dependencies', 'ci/circleci: test'], changesRequested: [], threads: [], comments: [] }]]);
+  const [c] = healthCommands({ work: { 'W-478': pr, 'W-463': holder } }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['app', []]]) });
+  assert.deepEqual(c.payload.inherited, ['Audit Ruby code and dependencies']);
+  assert.deepEqual(c.payload.failing, ['ci/circleci: test'], 'an untracked check main does not show stays the PR\'s');
+  assert.deepEqual(c.payload.trackedOn, { 'Audit Ruby code and dependencies': 'W-463' });
+});

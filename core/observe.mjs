@@ -121,7 +121,8 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
     // A check also red on the base isn't this PR's (W-375, W-459): main's go to Alex as a proposal, a base PR's stay with it.
     // A tracked base PR not read this tick claims nothing; a base with no tracked PR is handled like main.
     const baseId = !onMain && [...branches].find(([id, b]) => b === h.base && id.startsWith(`${repo}-`))?.[0];
-    const baseFailing = onMain ? mainFailing.get(repo) || [] : baseId ? health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing : [];
+    // Main's newest commit may not run a check at all (Audit, W-510): one an open record tracks as red on main still is.
+    const baseFailing = onMain ? [...new Set([...(mainFailing.get(repo) || []), ...h.failing.filter(f => tracked.has(`ci:${repo}:${f}`))])] : baseId ? health.get(baseId.replace(/-(\d+)$/, ':$1'))?.failing : [];
     // A check compared test by test (W-501) is main's only when its failing tests are; otherwise the name match stands.
     const cmp = ciCompare.get(key) || {}, compared = Object.fromEntries(Object.entries(cmp).filter(([f, c]) => h.failing.includes(f) && c.verdict !== 'unknown'));
     const inherited = h.failing.filter(f => (baseFailing || []).includes(f) && (!compared[f] || compared[f].verdict === 'red on main')), failing = baseFailing ? h.failing.filter(f => !inherited.includes(f)) : [];
