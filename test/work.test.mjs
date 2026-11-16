@@ -835,3 +835,12 @@ test("work Alex asks for, queued on a record held \"deferred to alex\", lifts th
   const product = run(build(), { type: 'hold', deferred: 'product', ctx: { now: '2026-11-16T20:00:00.000Z' } });
   assert.deepEqual(run(product, assign('local-head')).externalDeps.map(d => d.text), ['deferred to product'], 'only a hold deferred to Alex');
 });
+
+test('an in-scope finding on a built PR nobody is working opens a fixes round, never an idle rereview (W-511: W-80, W-162)', () => {
+  const find = now => ({ type: 'discovery', inScope: true, text: 'CI unit-tests: intersection_spec.rb:166 fails only on this PR', ctx: { now } });
+  const w = run(readyPr(), find('2026-11-16T21:00:00.000Z'));
+  assert.equal(w.phase, 'fixes');
+  const r = w.requests.at(-1);
+  assert.deepEqual([r.type, r.ack, r.head], ['fixes', null, 'aaa']);
+  assert.equal(run(readyPr(), find('2026-11-16T19:51:41.000Z')).requests.filter(x => x.type === 'fixes').length, 0, 'replayed from before the change: as it was');
+});

@@ -145,6 +145,7 @@ const PARKED_FIXES_HEAR_FROM = '2026-11-12T20:30:00.000Z';
 const MERGE_CANCELS_JOBS_FROM = '2026-11-13T00:45:00.000Z';
 const REVIEW_SETTLES_REQUEST_FROM = '2026-11-16T19:30:00.000Z';
 const ALEX_LIFTS_DEFERRAL_FROM = '2026-11-16T19:45:00.000Z';
+const IN_SCOPE_OPENS_FIXES_FROM = '2026-11-16T20:30:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
@@ -496,6 +497,13 @@ export function applyEvent(work, e, ctx) {
       if (e.inScope) {
         w.findings.push({ id: nextId(w.findings, 'F'), text: e.text, severity: e.severity || null, status: 'open', reviewHead: null, note: null });
         note(w, ctx, `In-scope discovery recorded as a finding: ${e.text}`);
+        // A built PR nobody is working gets its fixes round now; otherwise the failed gate leaves it idle in rereview (W-511).
+        if (ctx.now >= IN_SCOPE_OPENS_FIXES_FROM && prLinked(w) && ['ready_for_human', 'awaiting_human_approval', ...REVIEWING].includes(w.phase) && !liveAssignment(w)
+          && !w.requests.some(r => r.type === 'fixes' && !r.ack)) {
+          w.phase = 'fixes'; w.approvalWait = null;
+          w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
+          note(w, ctx, 'The finding needs a fixes round: requested.');
+        }
       } else {
         spawn = { title: e.text, objective: e.objective || '', kind: e.kind || (w.kind === 'scout' ? 'build' : w.kind), repo: w.repo, phase: 'proposed', proposedFrom: w.id };
         note(w, ctx, `Out-of-scope discovery proposed as separate work: ${e.text}`);
