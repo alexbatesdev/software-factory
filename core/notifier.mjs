@@ -38,6 +38,8 @@ export function resolveTarget(agents, label, kind = 'claude') {
   return { ok: true, agent: a };
 }
 
+/** The request still matches the record's phase and head (unacked, not stale). */
+export function currentRequest(w, r) { return current(w, r); }
 function current(w, r) {
   if (r.ack || TERMINAL.includes(w.phase)) return false;
   switch (r.type) {

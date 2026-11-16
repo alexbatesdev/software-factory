@@ -51,12 +51,13 @@ test('a never-started record leaves a busy stream for a free one', () => {
   assert.deepEqual([p['W-2'].action, p['W-2'].to, p['W-2'].owner], ['request', S2, S2]);
 });
 
-test('pinned, already-worked and same-branch records go to their own stream, not the free one', () => {
-  const worked = { assignments: [{ kind: 'implementation', status: 'done' }] };
+test('pinned records and records sharing a branch with a live job go to their own stream; one only worked there before goes to the free one (W-505)', () => {
+  const worked = { assignments: [{ kind: 'implementation', status: 'done' }] }, live = { assignments: [{ kind: 'implementation', status: 'started' }] };
   const p = plan([w('W-1', { phase: 'implementation' }), w('W-2'), loose('W-3', worked),
-    loose('W-9', { phase: 'ready_for_human', ...worked }), loose('W-4', { owner: null, deps: ['W-9'] }), loose('W-5', { owner: null, related: [{ to: 'W-9', kind: 'same-work' }] })]);
-  for (const [id, why] of [['W-2', /pinned/], ['W-3', /already worked/], ['W-4', /W-9 shares/], ['W-5', /W-9 shares/]])
+    loose('W-9', { phase: 'implementation', ...live }), loose('W-4', { owner: null, deps: ['W-9'] }), loose('W-5', { owner: null, related: [{ to: 'W-9', kind: 'same-work' }] })]);
+  for (const [id, why] of [['W-2', /pinned/], ['W-4', /W-9 shares/], ['W-5', /W-9 shares/]])
     assert.deepEqual([p[id].action, /busy with W-1/.test(p[id].reason), why.test(p[id].reason)], [null, true, true], `${id}: ${p[id].reason}`);
+  assert.deepEqual([p['W-3'].action, p['W-3'].to], ['queue', S2], 'Alex 11-16: one queue; having worked on it once no longer binds it');
 });
 
 test('when every stream is busy, unbound work waits', () => {
@@ -263,4 +264,31 @@ test('an assignment recorded as queued, with no dispatch request, gets one when 
   assert.equal(plan([queued])['W-481']?.action, 'request', 'it does not wait on itself');
   const behind = plan([queued, w('W-376', { phase: 'implementation', owner: S2, assignments: [{ id: 'R1', kind: 'implementation', status: 'started' }] })]);
   assert.match(behind['W-481'].reason, /busy with W-376/, 'a busy stream still makes it wait its turn');
+});
+
+// W-505 (Alex 11-16: "1 queue balanced among streams"): 19:00Z, stream-1 ran W-235 with three fixes rounds waiting behind it
+// while stream-2 sat free. A fixes or review request no worker has started joins one factory queue.
+const fixesWaiting = (id, over = {}) => loose(id, { phase: 'fixes', stream: S1, owner: S1, head: 'h1', links: { pr: `https://github.com/acme-org/app/pull/${id.slice(2)}` },
+  assignments: [{ id: 'R1', kind: 'implementation', status: 'done' }], requests: [{ id: 'R5', type: 'fixes', ack: null, head: 'h1', delivery: 'pending' }], ...over });
+
+test('a fixes round waiting on a busy stream goes to the next free stream; the rest wait their turn in one queue (W-505)', () => {
+  const running = loose('W-235', { phase: 'implementation', stream: S1, owner: S1, assignments: [{ id: 'R9', kind: 'implementation', status: 'started' }] });
+  const p = plan([running, fixesWaiting('W-71'), fixesWaiting('W-76'), fixesWaiting('W-478')]);
+  assert.deepEqual([p['W-71'].action, p['W-71'].to], ['route', S2], 'the built stream is busy, so the free one takes it');
+  assert.equal(p['W-71'].request, 'W-71/R5');
+  assert.equal(p['W-76'].action, null); assert.match(p['W-76'].reason, /every stream is busy/);
+  assert.equal(p['W-478'].action, null);
+});
+
+test('a fixes round whose own stream is free stays there, and one Alex pinned waits for its stream (W-505)', () => {
+  assert.deepEqual([plan([fixesWaiting('W-71')])['W-71'].action, plan([fixesWaiting('W-71')])['W-71'].to], ['deliver', S1]);
+  const running = loose('W-235', { phase: 'implementation', stream: S1, owner: S1, assignments: [{ id: 'R9', kind: 'implementation', status: 'started' }] });
+  const pinned = plan([running, fixesWaiting('W-71', { streamPin: { by: 'Alex' } })]);
+  assert.equal(pinned['W-71'].action, null); assert.match(pinned['W-71'].reason, /busy with W-235.*pinned/);
+});
+
+test('a fixes round already told to its stream stays with it, so no supervisor holds a stale notice (W-505)', () => {
+  const running = loose('W-235', { phase: 'implementation', stream: S1, owner: S1, assignments: [{ id: 'R9', kind: 'implementation', status: 'started' }] });
+  const p = Object.fromEntries(autoDispatchPlan([running, fixesWaiting('W-71')], { ...cfg, toldRequests: new Set(['W-71/R5']) }).map(x => [x.id, x]));
+  assert.notEqual(p['W-71']?.action, 'route');
 });

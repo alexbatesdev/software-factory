@@ -309,3 +309,13 @@ test('an assignment restarted after it was blocked gets the same five minutes fr
   assert.equal(ghosts(restart + 4758), 0, 'M-3057 fired 4.8s after the restart');
   assert.equal(ghosts(restart + 5 * 60000), 1, 'a later progress note keeps the restart time');
 });
+
+test('a fixes round the dispatch plan holds in the factory queue is not told to any stream until one is free for it (W-505)', async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const work = { id: 'W-71', title: 'x', phase: 'fixes', head: 'h1', stream: 'sup: stream-1', requests: [{ id: 'R5', type: 'fixes', ack: null, head: 'h1', at: '2026-11-16T20:00:00.000Z' }], assignments: [] };
+  const state = { work: { 'W-71': work }, questions: {}, messages: {}, notifications: {} };
+  const cfg = { supervisors: ['sup: stream-1', 'sup: stream-2'], seats: [] };
+  const told = c => inboxCommands(state, c, null).cmds.filter(x => x.payload.about?.requests === 'W-71/R5').length;
+  assert.equal(told({ ...cfg, heldRequests: new Set(['W-71/R5']) }), 0);
+  assert.equal(told(cfg), 1);
+});

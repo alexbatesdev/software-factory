@@ -85,7 +85,7 @@ if (CONFIG_PROBLEMS.length && !DRY) { const key = createHash('sha256').update(CO
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
-let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map();
+let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map(), heldRequests = new Set();
 // Projects (Alex, 11-16): the planning repo and each active project's Teamwork tree, read every 30 min and kept for a restart.
 const PROJECTS_CACHE = join(ROOT, 'data/projects-cache.json');
 let projectsRead = (() => { try { return JSON.parse(readFileSync(PROJECTS_CACHE, 'utf8')); } catch { return { planning: [], trees: {}, readAt: null }; } })();
@@ -125,7 +125,16 @@ function autoDispatchTick() {
   const prs = { owner: config.githubOwner, prState: u => openPrs.get(u)?.state || null };
   const views = Object.values(s.work).map(w => ({ ...prGateView(s, w), ...derivedCtx(s, w.id, prs) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
-  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, ...skipped(), drain, prApproval: config.prApproval, running: tuned }, { terminals });
+  const toldRequests = new Set(Object.values(s.messages).flatMap(m => [m.about?.requests].flat().filter(Boolean)));
+  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, ...skipped(), drain, prApproval: config.prApproval, running: tuned, toldRequests }, { terminals });
+  heldRequests = new Set(plan.filter(p => !p.action && p.request).map(p => p.request));
+  // One factory queue (W-505): a waiting round moves to the free stream; its owner follows when it was the old stream's.
+  for (const p of plan.filter(p => p.action === 'route')) {
+    const w = s.work[p.id], old = config.routing.supervisors[w.stream];
+    const owner = [w.stream, old?.worker].includes(w.owner) ? { owner: p.to } : {};
+    try { store.appendAll([{ kind: 'update', target: p.id, payload: { stream: p.to, ...owner } }, { kind: 'event', target: p.id, payload: { type: 'note', text: `Factory queue: ${p.request} goes to ${p.to}: ${p.reason}.` } }], by('board (auto-dispatch)')); log(`route ${p.request} -> ${p.to}`); }
+    catch (e) { log(`route ${p.request} refused: ${e.message}`); }
+  }
   lastPlan = plan;
   for (const p of plan.filter(p => p.action === 'retune')) if (!retune.has(p.to)) { retune.set(p.to, p); log(`retune ${p.to} for ${p.id}: ${p.reason}`); }
   for (const p of plan.filter(p => p.action === 'resume')) {
@@ -135,7 +144,7 @@ function autoDispatchTick() {
       { kind: 'event', target: p.id, payload: { type: 'note', text: `Resume sent to ${p.to}: ${p.reason}.` } }], 'board (auto-dispatch)');
     log(`resume ${p.id} ${p.assignmentId} -> ${p.to}`);
   }
-  for (const p of plan.filter(p => p.action && p.action !== 'resume')) {
+  for (const p of plan.filter(p => p.action && !['resume', 'route', 'deliver'].includes(p.action))) {
     const w = s.work[p.id], who = 'board (auto-dispatch)';
     const cmds = [
       ...(p.owner ? [{ kind: 'update', target: p.id, payload: { stream: p.owner, ...(w.owner ? {} : { owner: p.owner }) } }] : []),
@@ -160,7 +169,7 @@ async function inboxTick() {
   const workers = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.worker).map(([sup, s]) => [s.worker, sup]));
   const developer = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
   const hostHowTo = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.howTo).map(([l, s]) => [l, s.howTo]));
-  const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs },
+  const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs, heldRequests },
     fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }

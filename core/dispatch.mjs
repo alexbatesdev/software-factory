@@ -1,6 +1,6 @@
 // Auto-dispatch (Alex, 2026-10-28): which ready or queued records start themselves this tick, and why the rest wait.
 // Pure: the server applies the plan through ordinary events and logs each one on its record.
-import { routeOf } from './notifier.mjs';
+import { routeOf, currentRequest } from './notifier.mjs';
 import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder, needsPrApproval, DEFAULT_REPO } from './work.mjs';
 
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
@@ -9,8 +9,13 @@ const takenUp = w => (w.requests || []).some(r => r.type === 'dispatch' && ['rec
 const runs = w => (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked'].includes(a.status));
 // Queued by assign alone (local-head, the board lead): nobody has been told yet, so it still needs its dispatch request (W-482).
 const unrequested = w => w.phase === 'queued' && !pendingDispatch(w) && !takenUp(w) && !runs(w);
+// One factory queue (Alex 11-16, W-505): a fixes or review request no worker has started and no stream has been told of
+// waits for the next free stream, not for the stream that built the record.
+const liveJob = w => (w.assignments || []).some(a => ['started', 'blocked'].includes(a.status) && !parked(a));
+export const waitingRequest = (w, told = new Set()) => !liveJob(w) && !(w.assignments || []).some(a => a.status === 'queued')
+  && (w.requests || []).find(r => ['fixes', 'review'].includes(r.type) && currentRequest(w, r) && !told.has(`${w.id}/${r.id}`)) || null;
 // A stream is busy while its worker has a job: building or fixing, a live work assignment, or a dispatch not yet acked.
-const active = w => (BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && pendingDispatch(w))) && !unrequested(w);
+const active = told => w => (BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && pendingDispatch(w))) && !unrequested(w) && !waitingRequest(w, told);
 
 /** A stream with `repos` {name: checkout} (a host stream, TB-159) works only those repos; the sbx streams work everything else. */
 export function canTake(w, label, supervisors) {
@@ -26,13 +31,14 @@ const parkedOnly = w => (w.assignments || []).some(parked) && !(w.assignments ||
 // A Sentry scout never holds a stream either: real work always wins (Alex, 11-09); the scout just finishes.
 const holdsNone = w => w.kind === 'scout' || onAlex(w) || parkedOnly(w);
 // An internal review runs on the stream's own worker (Alex, 10-28), so it holds the stream; a reviewer pane's doesn't.
-const running = workers => w => BUILDING.includes(w.phase) || (w.assignments || []).some(a => (a.kind !== 'review' || workers.has(a.owner)) && ['started', 'blocked'].includes(a.status));
+const running = (workers, told) => w => (BUILDING.includes(w.phase) && !waitingRequest(w, told)) || (w.assignments || []).some(a => (a.kind !== 'review' || workers.has(a.owner)) && ['started', 'blocked'].includes(a.status));
 const workersOf = cfg => new Set(Object.values(cfg.supervisors || {}).map(s => s?.worker).filter(Boolean));
 
 /** Busy streams and what holds each: running work first, then queued assignments and unacked dispatches, then draining. */
 export function busyStreams(works, cfg) {
   const labels = Object.keys(cfg.supervisors || {}), busy = new Map();
-  for (const pass of [running(workersOf(cfg)), active]) for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
+  const told = cfg.toldRequests || new Set();
+  for (const pass of [running(workersOf(cfg), told), active(told)]) for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && pass(w) && !busy.has(to)) busy.set(to, w.id); }
   // A draining stream (its worker is due a recycle) takes nothing new, priority work included.
   for (const [to, why] of cfg.drain || []) busy.set(to, why);
   return busy;
@@ -47,9 +53,9 @@ const STREAM_LOAD = ['queued', ...BUILDING, ...REVIEWING];
  */
 export function boundStream(w, byId, labels) {
   if (w.streamPin && routeOf(w, labels)) return { to: w.stream, why: `pinned by ${w.streamPin.by}` };
-  if (worked(w) && routeOf(w, labels)) return { to: w.stream, why: 'its stream already worked on it' };
+  if (liveJob(w) && routeOf(w, labels)) return { to: w.stream, why: 'its worker is mid-job on it' };
   const near = [w.parent, ...(w.related || []).filter(r => r.kind === 'same-work').map(r => r.to), ...(w.deps || [])]
-    .map(id => byId.get(id)).filter(o => o && !TERMINAL.includes(o.phase) && worked(o) && routeOf(o, labels));
+    .map(id => byId.get(id)).filter(o => o && !TERMINAL.includes(o.phase) && liveJob(o) && routeOf(o, labels));
   return near.length ? { to: near[0].stream, why: `${near[0].id} shares its branch` } : null;
 }
 
@@ -68,16 +74,17 @@ export function streamLoad(works, labels) {
  */
 export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   const labels = Object.keys(cfg.supervisors || {});
-  const busy = busyStreams(works, cfg), workers = workersOf(cfg), isRunning = running(workers);
+  const busy = busyStreams(works, cfg), workers = workersOf(cfg), told = cfg.toldRequests || new Set(), isRunning = running(workers, told);
   // Priority work (priority 1) cuts in behind whatever a stream is running, ahead of anything queued there.
   const runningOn = new Map();
   for (const w of works) { const to = routeOf(w, labels); if (to && !holdsNone(w) && isRunning(w) && !runningOn.has(to)) runningOn.set(to, w.id); }
   for (const [to, why] of cfg.drain || []) runningOn.set(to, why);
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
-  const order = works.filter(w => ['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && !unrequested(w)))
+  const order = works.filter(w => (['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && !unrequested(w))) || waitingRequest(w, told))
     .sort(queueOrder);
   const place = w => {
-    const wait = reason => out.push({ id: w.id, action: null, reason });
+    const job = waitingRequest(w, told);
+    const wait = reason => out.push({ id: w.id, action: null, reason, ...(job ? { request: `${w.id}/${job.id}` } : {}) });
     const holds = w.priority === 1 ? runningOn : busy;
     const track = trackOf(w, cfg);
     if (track === 'excluded') { wait('Excluded in config.autoDispatch.exclude'); return; }
@@ -85,7 +92,8 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); return; }
     if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); return; }
     if (w.owner && terminals.includes(w.owner)) { wait(`owner ${w.owner} runs in Terminals`); return; }
-    if (w.waitingOn) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); return; }
+    // A waiting round's derived wait names its stream picking it up, which is this queue, not a blocker.
+    if (w.waitingOn && !(job && (labels.includes(w.waitingOn.who) || workers.has(w.waitingOn.who)))) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); return; }
     if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner)) { wait(`owned by ${w.owner}, not a stream`); return; }
     if (w.openQuestions > 0) { wait(`${w.openQuestions} open question(s)`); return; }
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); return; }
@@ -110,6 +118,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors) && runsModel(l)).sort((a, b) => cost(a) - cost(b))[0];
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     busy.set(to, w.id); runningOn.set(to, w.id);
+    if (job) { out.push({ id: w.id, action: to === w.stream ? 'deliver' : 'route', to, request: `${w.id}/${job.id}`, reason: `its ${job.type} round: ${to} is free${bound ? ` (${bound.why})` : to === w.stream ? '' : `, ${w.stream} is busy with ${busy.get(w.stream) || holds.get(w.stream)}`}` }); return; }
     // An sbx worker restarts with the record's model and effort before it's dispatched; a host worker is started with them.
     const want = { model: w.model || null, effort: w.effort || null }, have = { model: null, effort: null, ...cfg.running?.[to] };
     if (cfg.supervisors[to]?.worker && (want.model !== have.model || want.effort !== have.effort)) {

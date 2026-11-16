@@ -48,7 +48,8 @@ function dupeNote(w, works) {
 export function inboxCommands(state, cfg, fleet = null) {
   const told = toldKeys(state, cfg.v1Before), cmds = [];
   for (const e of eligibleRequests(state.work, cfg.cutoff, cfg.supervisors)) {
-    if (!e.to || told.has(`requests:${e.key}`)) continue;
+    // A round the dispatch plan holds in the factory queue (W-505) is told to a stream only once one is free for it.
+    if (!e.to || told.has(`requests:${e.key}`) || cfg.heldRequests?.has(e.key)) continue;
     cmds.push(msg(e.to, e.work, { requests: e.key }, `${e.key} ${e.type}${e.synthetic ? ' [SYNTHETIC]' : ''} ${quote(e.title)}: read the record and handle it per your role; ack the request when you have.${cfg.hostHowTo?.[e.to] ? ` Host stream: spawn this job's worker per ${cfg.hostHowTo[e.to]}.` : ''}`));
   }
   for (const [id, q] of Object.entries(state.questions)) {
