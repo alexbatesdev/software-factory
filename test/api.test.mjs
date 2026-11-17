@@ -478,3 +478,19 @@ test("triage can mark a record as the one tracking a check red on main, so PRs f
     assert.deepEqual(f.store.state.work['W-1'].aliases, ['app-9000', 'ci:app:Audit Ruby code and dependencies'], 'added, not replaced');
   } finally { f.close(); }
 });
+
+test("a worker's discovery with no text is refused even when it names its assignment, so no proposed record is born empty (W-530: W-529 'R2:')", async () => {
+  const store = openStore(':memory:', { supervisors: [S1] });
+  const server = http.createServer(createApi({ store, config: { ...config, routing: { supervisors: { [S1]: { worker: 'sbx: stream-1' } } } }, now: () => '2026-11-17T19:33:00.000Z' }));
+  await new Promise(ok => server.listen(0, '127.0.0.1', ok));
+  const act = async args => { const r = await fetch(`http://127.0.0.1:${server.address().port}/api/actions`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-seat': 'sbx: stream-1', 'x-factory': '1' }, body: JSON.stringify({ action: 'progress', args: { work: 'W-1', ...args } }) }); return [r.status, await r.json()]; };
+  try {
+    started({ store });
+    const [code, body] = await act({ assignmentId: 'R2', discovery: 'Projection stores system_identifier unstripped' });
+    assert.equal(code, 400, JSON.stringify(body)); assert.match(body.error, /text/);
+    assert.equal(Object.keys(store.state.work).length, 1, 'no record proposed');
+    const [ok] = await act({ assignmentId: 'R2', discovery: 'Projection stores system_identifier unstripped', text: 'app/x.rb:12 keeps it' });
+    assert.equal(ok, 200);
+    assert.match(Object.values(store.state.work).at(-1).objective, /^app\/x\.rb:12 keeps it$/, "the worker's own text, no assignment prefix");
+  } finally { server.close(); }
+});

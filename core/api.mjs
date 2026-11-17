@@ -39,7 +39,8 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     // Briefs name the assignment, so workers pass it (W-477); its stage stays the supervisor's to record.
     if (role === 'sbx-worker' && action === 'progress' && args.assignmentId) {
       const { assignmentId, expectedVersion, stage, waitingOn, ...rest } = args;
-      args = { ...rest, text: `${[assignmentId, stage, waitingOn && `waiting on ${waitingOn}`].filter(Boolean).join(', ')}: ${args.text || ''}`.trim() };
+      // A discovery's text becomes the new record's objective: kept as sent, so an empty one is refused (W-530).
+      args = rest.discovery ? rest : { ...rest, text: `${[assignmentId, stage, waitingOn && `waiting on ${waitingOn}`].filter(Boolean).join(', ')}: ${args.text || ''}`.trim() };
     }
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
