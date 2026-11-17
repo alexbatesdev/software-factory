@@ -5,8 +5,8 @@
 //        → each eval case reviewed headless in its stream's sandbox, in a scratch worktree at the case's head; results and
 //          score.md in data/bench/runs-<date>/. Re-running skips finished runs. Writes nothing to the board or GitHub.
 //        --judge: judge the runs when they finish
-//   node bin/bench.mjs judge [runs dir] → each run graded by a Claude and a Codex judge: results.md, and check.md for the calls
-//        they don't agree on. Re-run after answering check.md: answers win, finished judgements are kept.
+//   node bin/bench.mjs judge [runs dir] → each run graded by a Claude and a Codex judge: results.md. Calls they split are settled by
+//        location (Alex 11-17) and listed in check.md; --no-settle leaves them for a person. A person's answers in check.md win.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
@@ -17,7 +17,7 @@ import { openStore } from '../core/store.mjs';
 import { benchPlan, corpusCandidates, qualityReport, reviewPrompt, scoreSheet, selectCorpus } from '../core/bench.mjs';
 import { streamBusy } from '../core/recycle.mjs';
 import { sandboxOf } from '../hosts/sbx.mjs';
-import { checkSheet, combine, judgePrompt, keyRefs, parseAnswers, parseJudge, resultsReport } from '../core/judge.mjs';
+import { checkSheet, combine, judgePrompt, keyRefs, parseAnswers, parseHunks, parseJudge, resultsReport } from '../core/judge.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const run = promisify(execFile);
@@ -121,15 +121,23 @@ if (process.argv[2] === 'judge') {
 
 /** Each answer-key item with what GitHub says about it: the people's comments it links and the files its fix changed (gh reads only). */
 async function answerKey(corpus, file) {
-  if (existsSync(file)) return JSON.parse(readFileSync(file, 'utf8'));
   const gh = async path => JSON.parse((await run('gh', ['api', path], { timeout: 30000, maxBuffer: 1 << 24 })).stdout);
+  // The line ranges each fix changed (Alex 11-17: split calls settle by location); filled into an older cached key too.
+  const fixHunks = async (repo, sha) => sha ? gh(`repos/${repo}/commits/${sha}`).then(r => (r.files || []).flatMap(f => parseHunks(f.filename, f.patch))).catch(() => []) : [];
+  if (existsSync(file)) {
+    const keys = JSON.parse(readFileSync(file, 'utf8'));
+    let added = false;
+    for (const c of corpus.cases) for (const e of keys[c.id] || []) if (!e.hunks) { e.hunks = await fixHunks(c.repo, keyRefs(e).fix); added = true; }
+    if (added) writeFileSync(file, `${JSON.stringify(keys, null, 2)}\n`);
+    return keys;
+  }
   const keys = {};
   for (const c of corpus.cases) keys[c.id] = await Promise.all(c.expected.map(async e => {
     const { comments, fix } = keyRefs(e);
     const read = await Promise.all(comments.map(x => gh(x.kind === 'discussion_r' ? `repos/${x.repo}/pulls/comments/${x.id}` : x.kind === 'issuecomment-' ? `repos/${x.repo}/issues/comments/${x.id}` : `repos/${x.repo}/pulls/${x.pr}/reviews/${x.id}`)
       .then(r => ({ body: String(r.body || '').slice(0, 3000), path: r.path || null, line: r.line || r.original_line || null })).catch(() => null)));
     const files = fix ? await gh(`repos/${c.repo}/commits/${fix}`).then(r => (r.files || []).map(f => f.filename)).catch(() => []) : [];
-    return { ...e, comments: read.filter(Boolean), files };
+    return { ...e, comments: read.filter(Boolean), files, hunks: await fixHunks(c.repo, fix) };
   }));
   writeFileSync(file, `${JSON.stringify(keys, null, 2)}\n`);
   return keys;
@@ -158,7 +166,7 @@ async function judgeAll(corpusFile, dir, log) {
       writeFileSync(jf, `${JSON.stringify(judges, null, 2)}\n`);
       log(`judged ${r.dir}: ${Object.entries(judges).map(([a, v]) => `${a} ${v ? v.expected.map(x => x.verdict).join(',') || 'no key' : 'no usable answer'}`).join('; ')}`);
     }
-    scored.push({ ...combine(keys[c.id], r, judges, answers), run: r });
+    scored.push({ ...combine(keys[c.id], r, judges, answers, { settle: !process.argv.includes('--no-settle') }), run: r });
   }
   writeFileSync(join(dir, 'results.md'), resultsReport(corpus, scored));
   writeFileSync(join(dir, 'check.md'), checkSheet(corpus, keys, scored));

@@ -60,3 +60,38 @@ test("the check sheet shows each unsettled call side by side, and a person's yes
   const answered = [{ ...combine(KEY, s[0].run, { claude: said('found'), codex: said('missed') }, { 'bench-B-miss-W-1-aaaaaaa-claude-1#0': 'yes' }), run: s[0].run }];
   assert.match(checkSheet({ cases: [CASE] }, { [CASE.id]: KEY }, answered), /Same problem\? yes/, 'a rewritten sheet keeps the answer');
 });
+
+// Alex 11-17: the judges' split calls are settled by location, mechanically, not by hand.
+test("a fix commit's patch gives the line ranges it changed, on the code as reviewed", async () => {
+  const { parseHunks } = await import('../core/judge.mjs');
+  assert.deepEqual(parseHunks('app/x.rb', '@@ -10,4 +10,6 @@ def a\n-x\n+y\n@@ -40 +42,2 @@\n'), [{ file: 'app/x.rb', start: 10, end: 13 }, { file: 'app/x.rb', start: 40, end: 40 }]);
+});
+
+test('a split call is found when the review cites a line within 10 of what the fix changed or the person pointed at, else missed', async () => {
+  const { locationCall, combine } = await import('../core/judge.mjs');
+  const k = { ...KEY[0], hunks: [{ file: 'app/exports/sheet.rb', start: 30, end: 34 }] };
+  assert.equal(locationCall(k, 'app/exports/sheet.rb:41 returns nil when the sheet is empty'), 'found', 'within 10 of the hunk');
+  assert.equal(locationCall(k, '`sheet.rb:15` nil crash'), 'found', 'near the comment at line 12, by file name');
+  assert.equal(locationCall(k, 'app/exports/sheet.rb:200 naming nit'), 'missed', 'same file, far away');
+  assert.equal(locationCall(k, 'no line cited, but the empty sheet crashes'), 'missed', 'no citation: nothing to place');
+  const c = combine([k], run('app/exports/sheet.rb:33 crash'), { claude: said('found'), codex: said('missed') }, {}, { settle: true }).items[0];
+  assert.deepEqual([c.verdict, c.settledBy], ['found', 'location']);
+  const agreed = combine([k], run('nothing here'), { claude: said('found'), codex: said('found') }, {}, { settle: true }).items[0];
+  assert.deepEqual([agreed.verdict, agreed.settledBy], ['found', undefined], 'agreeing judges still decide');
+});
+
+test('the results say how many calls location settled', async () => {
+  const { combine, resultsReport } = await import('../core/judge.mjs');
+  const k = { ...KEY[0], hunks: [{ file: 'app/exports/sheet.rb', start: 30, end: 34 }] };
+  const s = [{ ...combine([k], run('sheet.rb:31'), { claude: said('found'), codex: said('missed') }, {}, { settle: true }), run: run('sheet.rb:31') }];
+  assert.match(resultsReport({ cases: [CASE] }, s), /1 call\(s\) the judges split were settled by location/);
+});
+
+test('a bare file name places a citation only when the fix changed one file of that name; a path must agree with it (W-408 READMEs)', async () => {
+  const { locationCall } = await import('../core/judge.mjs');
+  const k = { text: 'x', hunks: [{ file: 'kai/a/README.md', start: 8, end: 16 }, { file: 'kai/b/README.md', start: 23, end: 28 }] };
+  assert.equal(locationCall(k, 'README.md:3 typo'), 'missed', 'two READMEs changed: a bare name could be either');
+  assert.equal(locationCall(k, 'kai/a/README.md:12 wrong date'), 'found');
+  assert.equal(locationCall(k, 'other/README.md:12 wrong date'), 'missed', 'a different README');
+  assert.equal(locationCall({ text: 'x', hunks: [{ file: 'app/models/position.rb', start: 40, end: 44 }] }, 'position.rb:45 nil'), 'found', 'one file of that name');
+});

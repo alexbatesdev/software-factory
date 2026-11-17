@@ -42,13 +42,33 @@ export function parseJudge(text) {
  * anything else, or a judge that gave no usable answer, goes to a person. A person's answer wins.
  * @param judges {name: parsed reply | null}  @param answers {"<run dir>#<i>": "yes"|"no"}
  */
-export function combine(key, run, judges, answers = {}) {
+/** The line ranges a fix's patch changed, on the old side (the code as it stood before the fix). */
+export function parseHunks(file, patch) {
+  return [...String(patch || '').matchAll(/^@@ -(\d+)(?:,(\d+))? \+/gm)].map(([, a, b]) => ({ file, start: Number(a), end: Number(a) + Math.max(Number(b ?? 1), 1) - 1 }));
+}
+
+const base = p => String(p).split('/').at(-1);
+/**
+ * Alex 11-17: a split call settled mechanically. Found when the review cites file:line within 10 lines of
+ * a range the fix changed or of the line the person's comment sat on; missed otherwise, a review citing no line included.
+ */
+export function locationCall(k, output) {
+  const cited = [...String(output || '').matchAll(/([\w./-]+\.[a-z]{1,5}):(\d+)/gi)].map(([, path, line]) => ({ path, line: Number(line) }));
+  const anchors = [...(k.hunks || []), ...(k.comments || []).filter(c => c.path && c.line).map(c => ({ file: c.path, start: c.line, end: c.line }))];
+  // A path must agree as a suffix; a bare name only places a citation when the fix changed one file of that name.
+  const named = n => new Set(anchors.filter(a => base(a.file) === n).map(a => a.file)).size;
+  const same = (a, c) => c.path.includes('/') ? a.file.endsWith(c.path) || c.path.endsWith(a.file) : base(a.file) === c.path && named(c.path) === 1;
+  return cited.some(c => anchors.some(a => same(a, c) && c.line >= a.start - 10 && c.line <= a.end + 10)) ? 'found' : 'missed';
+}
+
+export function combine(key, run, judges, answers = {}, { settle = false } = {}) {
   const names = Object.keys(judges), ok = names.every(n => judges[n]);
   const items = key.map((k, i) => {
     const by = Object.fromEntries(names.map(n => [n, judges[n]?.expected.find(x => x.i === i) || null]));
     const votes = names.map(n => by[n]?.verdict), loc = pathHit(run.output || '', [...(k.files || []), ...(k.comments || []).map(x => x.path)]);
     const answer = answers[`${run.dir}#${i}`];
     const verdict = answer ? (answer === 'yes' ? 'found' : 'missed') : ok && votes.every(v => v === 'found') ? 'found' : ok && votes.every(v => v === 'missed') && !loc ? 'missed' : 'check';
+    if (verdict === 'check' && settle) return { i, verdict: locationCall(k, run.output), settledBy: 'location', loc, by, answered: false };
     return { i, verdict, loc, by, answered: !!answer };
   });
   const extraVotes = names.map(n => judges[n]?.extras || []), tally = v => Math.min(...extraVotes.map(xs => xs.filter(x => x.verdict === v).length));
@@ -61,7 +81,8 @@ const median = xs => { const s = [...xs].sort((a, b) => a - b); return s.length 
 /** The one-page result: recall, misses caught, estimated precision, noise on clean changes, time and cost, per reviewer. */
 export function resultsReport(corpus, scored) {
   const byId = Object.fromEntries(corpus.cases.map(c => [c.id, c])), agents = [...new Set(scored.map(s => s.run.agent))].sort();
-  const out = ['# Review benchmark: results', '', `${scored.length} runs judged. Recall counts only settled calls; "to check" calls wait on a person (check.md) and can move it either way.`, '',
+  const byLocation = scored.flatMap(s => s.items).filter(x => x.settledBy === 'location').length;
+  const out = ['# Review benchmark: results', '', `${scored.length} runs judged. Recall counts only settled calls; "to check" calls wait on a person (check.md) and can move it either way.${byLocation ? ` ${byLocation} call(s) the judges split were settled by location (the review cites a line within 10 of what the fix changed or the person pointed at), not by a person.` : ''}`, '',
     '| | ' + agents.join(' | ') + ' |', '|---|' + agents.map(() => '---|').join('')];
   const row = (label, f) => out.push(`| ${label} | ${agents.map(a => f(scored.filter(s => s.run.agent === a))).join(' | ')} |`);
   const items = (ss, kind) => ss.filter(s => !kind || byId[s.run.case]?.kind === kind).flatMap(s => s.items);
