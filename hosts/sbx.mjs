@@ -62,9 +62,9 @@ export function parseHealth(out, nowMs = Date.now()) {
 /** Disk use, then the elapsed seconds of the sandbox's oldest `agent` process (its interactive session). */
 export const healthCmd = (agent = 'claude') => `df -P /; echo --; p=$(pgrep -o -x ${agent}) && ps -o etimes= -p "$p"; true`;
 
-/** A report a review linked by a checkout-relative path: the first worktree in the sandbox that has it. */
+/** A report a review linked by a checkout-relative path, or one starting with a sibling worktree's folder (W-513): the first match. */
 export const reportCmd = rel => `cd "$WORKSPACE_DIR" 2>/dev/null || cd ${BUILT_RAILS_SBX}
-for d in $(git worktree list --porcelain | sed -n 's/^worktree //p'); do [ -f "$d/${rel}" ] && { echo "$d/${rel}"; base64 < "$d/${rel}" | tr -d '\\n'; exit 0; }; done; exit 3`;
+for d in $(git worktree list --porcelain | sed -n 's/^worktree //p'); do for f in "$d/${rel}" "$(dirname "$d")/${rel}"; do [ -f "$f" ] && { echo "$f"; base64 < "$f" | tr -d '\\n'; exit 0; }; done; done; exit 3`;
 export async function readReport(sandbox, rel) {
   if (!/^[\w./-]+$/.test(rel) || rel.includes('..')) throw new Error(`${rel} is not a checkout path`);
   const { stdout } = await run('sbx', ['exec', sandbox, 'bash', '-lc', reportCmd(rel)], { timeout: 60000, maxBuffer: 16 << 20 })

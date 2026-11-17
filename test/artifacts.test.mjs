@@ -117,3 +117,26 @@ test('backups come from config: off when disabled, otherwise its folder, interva
   assert.deepEqual(backupPlan({}, '/h'), { root: '/h/Code/factory-backups', everyMs: 6 * 3600000, keep: 14 });
   assert.deepEqual(backupPlan({ backup: { root: '~/b', everyHours: 24, keep: 3 } }, '/h'), { root: '/h/b', everyMs: 24 * 3600000, keep: 3 });
 });
+
+test("a review link that starts with the worktree's own folder name is found in that sibling worktree (W-430, W-513: wt-w513-r1/tmp/...)", async () => {
+  const { reportCmd } = await import('../hosts/sbx.mjs');
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(`${tmpdir()}/spamton-wt-`), repo = `${root}/repo`, sh = (...a) => execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a]);
+  mkdirSync(repo); sh('init', '-q'); sh('commit', '-q', '--allow-empty', '-m', 'x'); sh('worktree', 'add', '-q', `${root}/wt-w513-r1`);
+  mkdirSync(`${root}/wt-w513-r1/tmp`); writeFileSync(`${root}/wt-w513-r1/tmp/internal-review-8869.md`, 'report');
+  const out = execFileSync('bash', ['-c', reportCmd('wt-w513-r1/tmp/internal-review-8869.md')], { env: { ...process.env, WORKSPACE_DIR: repo } }).toString();
+  const [found, b64] = out.split('\n');
+  assert.ok(found.endsWith('/wt-w513-r1/tmp/internal-review-8869.md'), found);
+  assert.equal(Buffer.from(b64, 'base64').toString(), 'report');
+});
+
+test('a report not found in any worktree gets a second round of tries, then stops (W-430, W-513: the lookup now covers sibling worktrees)', async () => {
+  const { pendingArtifacts } = await import('../core/artifacts.mjs');
+  const r = { head: 'h1', link: 'sbx: stream-1 VM wt-w513-r1/tmp/x.md', at: '2026-11-16T22:00:00.000Z', result: 'clean', by: 'w' };
+  const state = (attempts, detail) => ({ work: { 'W-513': { id: 'W-513', reviews: [r] } }, artifacts: { 'W-513@h1:sbx: stream-1 VM wt-w513-r1/tmp/x.md': { status: 'failed', attempts, detail, at: 'x' } } });
+  assert.equal(pendingArtifacts(state(3, 'wt-w513-r1/tmp/x.md is in no worktree of box')).length, 1);
+  assert.equal(pendingArtifacts(state(6, 'wt-w513-r1/tmp/x.md is in no worktree of box')).length, 0, 'then stops');
+  assert.equal(pendingArtifacts(state(3, 'over the byte limit')).length, 0, 'other failures keep the first limit');
+});

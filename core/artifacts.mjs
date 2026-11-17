@@ -47,7 +47,9 @@ export function pendingArtifacts(state) {
     for (const r of w.reviews || []) {
       if (!r.link || r.at < ARTIFACTS_FROM) continue;
       const a = state.artifacts?.[keyOf(w, r)];
-      if (!a || (a.status === 'failed' && a.attempts < MAX_ATTEMPTS)) out.push({ w, r, key: keyOf(w, r) });
+      // A report not found in any worktree gets a second round of tries: the lookup now also covers sibling worktrees (W-513).
+      const limit = /is in no worktree/.test(a?.detail || '') ? 2 * MAX_ATTEMPTS : MAX_ATTEMPTS;
+      if (!a || (a.status === 'failed' && a.attempts < limit)) out.push({ w, r, key: keyOf(w, r) });
     }
   return out;
 }
