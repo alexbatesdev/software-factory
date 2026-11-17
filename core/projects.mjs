@@ -71,7 +71,7 @@ export function triageCreates(projects, works, cfg = {}) {
   return projects.filter(p => !p.factoryPlan && !['Archived', 'Complete'].includes(p.status) && !open.has(keyOf(p))
     && p.leaves.some(l => l.work && NOT_BUILT.includes(works[l.work]?.phase) && !works[l.work]?.links?.pr))
     .map(p => ({ title: `Plan project: ${p.title || p.slug}`, objective: triageObjective(p, cfg), kind: 'build', repo: PLANNING_REPO, phase: 'ready', priority: 2,
-      source: { type: 'agent', by: 'board (projects)', key: keyOf(p) } }));
+      source: { type: 'agent', by: 'factory (projects)', key: keyOf(p) } }));
 }
 
 /** The planning job's brief: the record's objective, so the supervisor briefs from it and nothing Built-specific lives in this repo. */

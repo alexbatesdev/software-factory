@@ -80,7 +80,7 @@ test('a backup restores to an isolated folder: the db replays and every retained
   const dir = mkdtempSync(join(tmpdir(), 'spamton-bk-'));
   const root = join(dir, 'artifacts'), db = join(dir, 'factory.db');
   const live = openStore(db, { supervisors: [SUP] });
-  live.append({ kind: 'artifact', payload: { work: 'W-1', head: HEAD, link: 'x', key: 'k', status: 'retained', sha256: sha('hi'), bytes: 2 } }, { now: T, by: 'board (artifacts)' });
+  live.append({ kind: 'artifact', payload: { work: 'W-1', head: HEAD, link: 'x', key: 'k', status: 'retained', sha256: sha('hi'), bytes: 2 } }, { now: T, by: 'factory (artifacts)' });
   writeFileSync(join(dir, 'spamton-hi'), 'hi');
   const { mkdirSync, copyFileSync } = await import('node:fs');
   mkdirSync(join(root, sha('hi').slice(0, 2)), { recursive: true }); copyFileSync(join(dir, 'spamton-hi'), join(root, sha('hi').slice(0, 2), sha('hi')));

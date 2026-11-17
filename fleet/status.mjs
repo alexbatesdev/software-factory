@@ -30,7 +30,7 @@ export function agentState(a, { activeWork }) {
 }
 
 // The agreed herdr layout, also in ~/Code/CLAUDE.md ("The herdr layout").
-export const BOARD_ACTIONS = 'Board Actions';
+export const BOARD_ACTIONS = 'Factory Actions';
 export const SERVICES = 'Services';
 export const RESERVED = ['Main', BOARD_ACTIONS, 'Terminals', SERVICES];
 export const REVIEWS = 'Trusted reviews';
@@ -45,7 +45,7 @@ export function layoutIssues({ workspaces, tabs, agents, units }) {
   // The 3-pane limit keeps agent-built layouts readable; Alex arranges Terminals himself.
   for (const t of tabs.filter(t => t.pane_count > 3 && wsLabel.get(t.workspace_id) !== 'Terminals')) out.push(`${wsLabel.get(t.workspace_id) || t.workspace_id} tab "${t.label}" has ${t.pane_count} panes; the limit is 3.`);
   if (workspaces.some(w => w.label === 'Assistants')) out.push('An "Assistants" workspace exists; its sessions belong in Main.');
-  for (const a of agents.filter(a => BOARD_SPAWNED.test(a.label) && a.workspace !== BOARD_ACTIONS)) out.push(`"${a.label}" was spawned by the board but is in ${a.workspace || 'no workspace'}, not ${BOARD_ACTIONS}.`);
+  for (const a of agents.filter(a => BOARD_SPAWNED.test(a.label) && a.workspace !== BOARD_ACTIONS)) out.push(`"${a.label}" was spawned by the factory but is in ${a.workspace || 'no workspace'}, not ${BOARD_ACTIONS}.`);
   for (const u of units.filter(u => u.paired !== 'layout' && u.supervisor?.workspace !== HOST)) out.push(`${u.name} isn't in its own workspace with Orchestrator and Worker tabs.`);
   for (const a of agents.filter(a => a.workspace === 'Terminals')) out.push(`Agent "${a.label}" is running in Terminals, which is Alex's space.`);
   return out;

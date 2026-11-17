@@ -7,7 +7,7 @@ import { syncResolvedThreads } from '../effects/threads.mjs';
 import { readFileSync } from 'node:fs';
 
 const S1 = 'triage board worker', PR = 'https://github.com/acme-org/app/pull/8635', T = '2026-11-09T18:00:00.000Z';
-const config = { roles: { 'triage board worker': 'board-developer' }, routing: { supervisors: {} } };
+const config = { roles: { 'triage board worker': 'factory-developer' }, routing: { supervisors: {} } };
 const request = { work: 'W-1', threadId: 'PRRT_abc', url: `${PR}#discussion_r1`, reviewer: 'reviewer-jm', ask: 'Guard the deleted pay type', resolution: 'Fixed at 6377559 with a spec pinning the deleted pay type' };
 
 async function serve(gh) {
@@ -125,7 +125,7 @@ test("a codex review thread we replied to resolves itself; a person's thread, or
     first = 'chatgpt-codex-connector';
     await syncResolvedThreads(f.store, gh, () => T, { me: 'alexbatesdev' });
     const t = f.store.state.threads['RT-1'];
-    assert.deepEqual([t.status, t.approvedBy, resolved], ['resolved', 'board (auto: codex thread we replied to)', true]);
+    assert.deepEqual([t.status, t.approvedBy, resolved], ['resolved', 'factory (auto: codex thread we replied to)', true]);
   } finally { f.close(); }
 });
 

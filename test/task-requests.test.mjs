@@ -8,7 +8,7 @@ import { createApi } from '../core/api.mjs';
 // Alex, 11-10 (W-382): a new Teamwork task is something he is told about first, like thread resolves and new PRs.
 const SUP = 'sup: stream-1', T = '2026-11-10T23:30:00.000Z';
 const DEV = 'triage board worker';
-const config = { roles: { [DEV]: 'board-developer' }, routing: { supervisors: { [SUP]: {} } } };
+const config = { roles: { [DEV]: 'factory-developer' }, routing: { supervisors: { [SUP]: {} } } };
 const proposal = { work: 'W-1', name: 'Follow-up: guard the export modal', description: 'Found while fixing #8640.', tasklistId: 123, assigneeUserId: 9, why: 'Out of scope for W-1; needs its own task' };
 
 async function serve(tw) {

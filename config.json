@@ -24,11 +24,12 @@
       }
     },
     "renamed": {
-      "_doc": "old seat label -> new (Alex, 11-05). `factory.mjs rename` moves the board's records; up/down find panes still under the old label.",
+      "_doc": "old seat label -> new (Alex, 11-05). `factory.mjs rename` moves the factory's records; up/down find panes still under the old label.",
       "sup: stream-1 (support+sec)": "sup: stream-1",
       "sup: stream-conf-stack": "sup: stream-2",
       "sbx: stream-conf-stack": "sbx: stream-2",
-      "triage board worker": "factory-developer"
+      "triage board worker": "factory-developer",
+      "board lead": "factory lead"
     },
     "questionsRouter": "questions router"
   },
@@ -141,7 +142,7 @@
         "label": "software factory",
         "kind": "shell",
         "workspace": "Services",
-        "tab": "Board",
+        "tab": "Dashboard",
         "cwd": "~/Code/repos/software-factory",
         "run": "FACTORY_MODE=live node --env-file=\"$HOME/Code/repos/teamwork mini mcp/.env\" --env-file-if-exists=.env bin/live.mjs",
         "expect": "live.mjs"
@@ -156,14 +157,14 @@
       {
         "label": "factory-developer", "stays": true,
         "kind": "claude",
-        "role": "board-developer",
+        "role": "factory-developer",
         "workspace": "Main",
         "tab": "Assistants"
       },
       {
-        "label": "board lead",
+        "label": "factory lead",
         "kind": "claude",
-        "role": "board-lead",
+        "role": "factory-lead",
         "workspace": "Services",
         "tab": "Factory"
       },
@@ -195,8 +196,8 @@
   "roles": {
     "local-head": "local-head",
     "questions router": "questions-router",
-    "board lead": "board-lead",
-    "factory-developer": "board-developer",
+    "factory lead": "factory-lead",
+    "factory-developer": "factory-developer",
     "agent-unblocker": "agent-unblocker"
   },
   "_comment": "V2 owns its config (V1 is frozen, 10-30). Streams have no topic words (decision 8). roles maps a seat label to its role; every routing.supervisors label is a stream-supervisor.",

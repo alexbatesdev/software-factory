@@ -1,12 +1,15 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
 export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws', 'approve_pr'];
 
+/** The two factory roles other code names (Alex 11-17: the factory, not a board). */
+export const LEAD_ROLE = 'factory-lead', DEVELOPER_ROLE = 'factory-developer';
+
 export const ROLES = {
   'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner', 'progress', 'approve_pr'],
   'questions-router': ['read', 'ack', 'route', 'create', 'set_owner'],
   'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread', 'settle_finding', 'propose_task', 'request_aws'],
-  'board-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify', 'cancel', 'propose_task'],
-  'board-developer': ACTIONS,
+  'factory-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify', 'cancel', 'propose_task'],
+  'factory-developer': ACTIONS,
   'trusted-reviewer': [], // PR review carve-out (Alex, 11-06): trusted reviews run off the board
   // A stream's sbx worker, on the sandbox port only. Its instructions come in its brief, not a role file.
   'sbx-worker': ['read', 'ack', 'progress'],
@@ -24,9 +27,9 @@ const LIMITS = {
   'local-head': { ask: ownAsk, set_owner: a => !!a.pin || 'local-head only sets an owner to pin a stream on Alex\'s word',
     approve_pr: a => !!String(a.quote || '').trim() || 'local-head approves only on Alex\'s words: put them in quote',
     progress: a => !['assignmentId', 'stage', 'waitingOn', 'discovery', 'branch'].some(k => a[k]) || 'local-head adds plain notes for Alex; reports, stages, waits and discoveries are other seats\''},
-  'board-lead': { ask: (a, c) => !!a.amend && !a.withdraw || ownAsk(a, c), assign: a => a.status === 'queued' && !a.supersedes || 'the board lead only queues work', set_owner: noPin,
-    progress: a => !a.assignmentId || 'the board lead adds notes; worker reports are the supervisor\'s',
-    ack: (a, c) => /^M-\d+$/.test(a.ref || '') || (!!c.seat && c.questions?.[a.ref]?.from === c.seat) || 'the board lead acks only messages addressed to it, and answers to its own questions' },
+  'factory-lead': { ask: (a, c) => !!a.amend && !a.withdraw || ownAsk(a, c), assign: a => a.status === 'queued' && !a.supersedes || 'the factory lead only queues work', set_owner: noPin,
+    progress: a => !a.assignmentId || 'the factory lead adds notes; worker reports are the supervisor\'s',
+    ack: (a, c) => /^M-\d+$/.test(a.ref || '') || (!!c.seat && c.questions?.[a.ref]?.from === c.seat) || 'the factory lead acks only messages addressed to it, and answers to its own questions' },
   'stream-supervisor': { ask: ownAsk },
   'sbx-worker': { progress: a => !a.assignmentId || 'a worker adds notes (and its branch); its supervisor records the assignment\'s stages',
     ack: a => /^M-\d+$/.test(a.ref || '') || 'a worker acks only messages addressed to it' },
@@ -39,7 +42,7 @@ export const onAlexWord = a => String(a?.alexAsked || '').trim() || null;
 /** Why `role` may not take `action` with these arguments; null when it may. */
 /** @param ctx {seat, questions} for checks that depend on who is asking. */
 export function refusal(role, action, args = {}, ctx = {}) {
-  if (!ACTIONS.includes(action)) return `"${action}" is not a board action.`;
+  if (!ACTIONS.includes(action)) return `"${action}" is not a factory action.`;
   if (!ROLES[role]) return `"${role}" is not a factory role.`;
   // Alex 11-16 (W-503): local-head acts on his word, never on its own. With his verbatim words, any action; without, its limits.
   if (role === 'local-head' && onAlexWord(args)) return null;

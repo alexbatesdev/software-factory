@@ -103,7 +103,7 @@ test('a worker whose pane is gone but whose sandbox is known is adopted into a n
 });
 
 test('once a day at the quiet hour, idle Claude seats with nothing waiting restart fresh; busy, stays, codex and sbx seats never', () => {
-  const cfg = { ...config, factory: { seats: [...config.factory.seats, { label: 'lead', kind: 'claude', role: 'board-lead', workspace: 'Services', tab: 'Factory' }, { label: 'router2', kind: 'claude', role: 'questions-router', workspace: 'Services', tab: 'Factory' }] } };
+  const cfg = { ...config, factory: { seats: [...config.factory.seats, { label: 'lead', kind: 'claude', role: 'factory-lead', workspace: 'Services', tab: 'Factory' }, { label: 'router2', kind: 'claude', role: 'questions-router', workspace: 'Services', tab: 'Factory' }] } };
   const seats = seatsOf(cfg);
   const agents = [['local-head', 'idle'], ['unblocker', 'idle'], ['lead', 'done'], ['router2', 'idle'], ['sup: s1', 'idle'], ['sbx: s1', 'idle']].map(([label, status]) => ({ label, status, ref: `p-${label}` }));
   const state = { messages: {}, work: {} };
@@ -134,10 +134,10 @@ test("a fixed seat that runs Codex is woken as Codex (W-413: the agent unblocker
 });
 
 test("a seat whose role's board tools changed restarts at its next idle gap, outside the daily hour, once (W-431: request_aws never reached the supervisors)", () => {
-  const seats = [{ label: 'board lead', kind: 'claude', role: 'board-lead' }, { label: 'sup: s1', kind: 'claude', role: 'stream-supervisor' }, { label: 'local-head', kind: 'claude', stays: true }];
+  const seats = [{ label: 'board lead', kind: 'claude', role: 'factory-lead' }, { label: 'sup: s1', kind: 'claude', role: 'stream-supervisor' }, { label: 'local-head', kind: 'claude', stays: true }];
   const agents = [{ label: 'board lead', ref: 'p1', status: 'idle' }, { label: 'sup: s1', ref: 'p2', status: 'idle' }, { label: 'local-head', ref: 'p3', status: 'idle' }];
   const state = { messages: {}, work: { 'W-1': { id: 'W-1', stream: 'sup: s1', assignments: [{ id: 'R1', status: 'started' }] } } };
-  const toolsOf = s => ({ 'board-lead': 'a', 'stream-supervisor': 'b2' })[s.role] || 'x';
+  const toolsOf = s => ({ 'factory-lead': 'a', 'stream-supervisor': 'b2' })[s.role] || 'x';
   const plan = (st, toolsDone) => planSeatRestarts(seats, agents, st, { now: '2026-11-11T23:00:00.000Z', hourUtc: 10, enabled: true, toolsOf, toolsDone }).map(r => r.seat.label);
   assert.deepEqual(plan(state, { 'board lead': 'a', 'sup: s1': 'b1' }), [], 'the supervisor is mid-job, so it waits');
   assert.deepEqual(plan({ ...state, work: {} }, { 'board lead': 'a', 'sup: s1': 'b1' }), ['sup: s1'], 'free: restarts for its new tools');

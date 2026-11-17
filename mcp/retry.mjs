@@ -8,7 +8,7 @@ export async function boardFetch(url, opts = {}, { fetch: f = fetch, waits = WAI
     try { return await f(url, opts); } catch (e) {
       const code = e.cause?.code;
       if (!(code === 'ECONNREFUSED' || (read && /ECONNRESET|UND_ERR_SOCKET|ETIMEDOUT/.test(code || '')))) throw e;
-      if (i >= waits.length) throw new Error(`The board at ${url} is not answering (${code}); it may be mid-restart. Try again in a minute, or ask the board lead if it stays down.`);
+      if (i >= waits.length) throw new Error(`The factory at ${url} is not answering (${code}); it may be mid-restart. Try again in a minute, or ask the factory lead if it stays down.`);
       await sleep(waits[i]);
     }
   }

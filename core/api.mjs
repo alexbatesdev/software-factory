@@ -60,7 +60,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
         return [409, { error: `${path} isn't on origin/main, so ${args.work}'s own PR added it: file this find with inScope: true on ${args.work} and fix it in that PR, not as separate work.` }];
     }
     // A message waits in an inbox until acked, so it goes only to a seat that can read and ack one (W-414).
-    if (action === 'message' && !ROLES[roleOf(config, args.to)]?.includes('ack')) return [409, { error: `${args.to} can't read or ack factory messages (no board role with ack); reach it another way.` }];
+    if (action === 'message' && !ROLES[roleOf(config, args.to)]?.includes('ack')) return [409, { error: `${args.to} can't read or ack factory messages (no factory role with ack); reach it another way.` }];
     // A thread to resolve is a resolve_thread request on the dashboard, never a TB question (Alex, 11-09).
     if (asking && /\bresolve\b[^?]*\bthreads?\b/i.test(args.title || '')) return [409, { error: 'Resolving a review thread is not a question: file it with resolve_thread (work, threadId, url, reviewer, ask, resolution) and Alex resolves it from the dashboard.' }];
     // Factual PR-description fixes go through without asking (Alex, 11-09, W-212); a scope change is still a question.
@@ -83,7 +83,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       && Object.entries(s.questions).find(([, q]) => q.status === 'open' && q.work === args.work);
     if (asked) return [409, { error: `${args.work} already waits on Alex's ${asked[0]} ("${asked[1].title}"). Block the assignment on ${asked[0]} instead (progress stage blocked, waitingOn ${asked[0]}): it resumes when he answers.` }];
     const parking = action === 'triage' && args.bucket === 'intake' && s.work[args.work];
-    const seats = [...Object.keys(config.routing?.supervisors || {}), ...Object.keys(config.roles || {}), config.boardLead?.seat || 'board lead'];
+    const seats = [...Object.keys(config.routing?.supervisors || {}), ...Object.keys(config.roles || {}), config.boardLead?.seat || 'factory lead'];
     if (action === 'triage' && args.reviewBy && !seats.includes(args.reviewer)) return [409, { error: `reviewer must be a seat that reads its inbox: ${seats.join(', ')}.` }];
     const kept = parking && (parking.externalDeps || []).filter(d => (d.text || d.ref) !== args.releaseHold);
     if (parking && !kept.length && !parking.waitingOn && !['untilMerged', 'untilAnswered', 'reviewBy', 'deferredTo'].some(k => args[k]))

@@ -18,4 +18,4 @@ export function wakePlan(state, woken, nowMs, remindMs = 20 * 60000, sessions = 
 }
 
 export const wakeText = ({ seat, ids, reminder }) =>
-  `${PREFIX} ${seat}: ${ids.length} unread message(s) in your factory inbox${reminder ? ' (reminder)' : ''}. Read them with the board inbox tool and ack each.`;
+  `${PREFIX} ${seat}: ${ids.length} unread message(s) in your factory inbox${reminder ? ' (reminder)' : ''}. Read them with the factory inbox tool and ack each.`;

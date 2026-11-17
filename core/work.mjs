@@ -845,7 +845,7 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Carries out Alex's answer to ${e.question}.`);
       break;
     case 'hold_released':
-      // A settled free-text hold, cleared by whoever triages it (W-3: the board lead had no way to).
+      // A settled free-text hold, cleared by whoever triages it (W-3: the factory lead had no way to).
       if (e.text) { if (!w.externalDeps.some(d => (d.text || d.ref) === e.text)) fail(`${w.id} has no hold "${e.text}".`); w.externalDeps = w.externalDeps.filter(d => (d.text || d.ref) !== e.text); note(w, ctx, `Hold released: ${e.text}.`); break; }
       if (e.question) { w.externalDeps = w.externalDeps.filter(d => d.question !== e.question); note(w, ctx, `Alex answered ${e.question}, so its hold is released.`); break; }
       w.externalDeps = w.externalDeps.filter(d => d.pr !== e.pr);

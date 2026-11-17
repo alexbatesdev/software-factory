@@ -6,7 +6,7 @@ import { openStore } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 
 const S1 = 'sup: stream-1', T = '2026-11-09T20:00:00.000Z';
-const config = { roles: { 'board lead': 'board-lead' }, routing: { supervisors: { [S1]: {} } } };
+const config = { roles: { 'board lead': 'factory-lead' }, routing: { supervisors: { [S1]: {} } } };
 
 async function serve(T2 = T) {
   const store = openStore(':memory:', { supervisors: [S1] });
@@ -60,7 +60,7 @@ test('support work glows everywhere it shows: its card, questions, threads and n
 test("a record can't be marked ready into New PRs without its breakdown, and the panel shows it", async () => {
   const store = openStore(':memory:', { supervisors: [S1] }), c = { now: T, by: 'test' };
   store.append({ kind: 'create', payload: { title: 'Unasked fix', kind: 'build', source: { type: 'manual' } } }, c);
-  const cfg = { ...config, roles: { 'board lead': 'board-lead' } };
+  const cfg = { ...config, roles: { 'board lead': 'factory-lead' } };
   const server = http.createServer(createApi({ store, config: cfg, now: () => T }));
   await new Promise(ok => server.listen(0, '127.0.0.1', ok));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -143,7 +143,7 @@ test("Alex's note on a New PR decision is saved verbatim on the record and reach
     assert.match(f.store.state.work['W-2'].completion.withdrawn, /covered by W-9/);
     const { inboxCommands } = await import('../core/inbox.mjs');
     const sent = inboxCommands(f.store.state, { supervisors: [S1], seats: [] }, null).cmds.filter(c => c.payload.about?.localHeadNote);
-    assert.ok(sent.some(c => c.payload.to === 'board lead' && c.payload.work === 'W-1' && c.payload.text.includes(note)), 'with no owner yet, the board lead (who triages it) hears the instruction');
+    assert.ok(sent.some(c => c.payload.to === 'factory lead' && c.payload.work === 'W-1' && c.payload.text.includes(note)), 'with no owner yet, the board lead (who triages it) hears the instruction');
   } finally { f.close(); }
 });
 
@@ -182,7 +182,7 @@ test("local-head approves a New PR only on Alex's quoted word, and the record sa
     const { refusal } = await import('../core/capabilities.mjs');
     assert.equal(refusal('local-head', 'approve_pr', { work: 'W-1', decision: 'approve', quote: 'Approve all of the bugs from sentry' }), null);
     assert.match(refusal('local-head', 'approve_pr', { work: 'W-1', decision: 'approve' }) || '', /quote/);
-    for (const role of ['board-lead', 'stream-supervisor', 'questions-router']) assert.ok(refusal(role, 'approve_pr', { work: 'W-1', decision: 'approve', quote: 'x' }), role);
+    for (const role of ['factory-lead', 'stream-supervisor', 'questions-router']) assert.ok(refusal(role, 'approve_pr', { work: 'W-1', decision: 'approve', quote: 'x' }), role);
     const { commandsFor } = await import('../core/actions.mjs');
     f.store.appendAll(commandsFor('approve_pr', { work: 'W-1', decision: 'approve', quote: 'Approve all of the bugs from sentry', note: 'one PR each' }), { now: T, by: 'local-head' });
     const w = f.store.state.work['W-1'];

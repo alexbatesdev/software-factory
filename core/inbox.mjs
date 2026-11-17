@@ -94,7 +94,7 @@ export function inboxCommands(state, cfg, fleet = null) {
     // A started assignment whose owner has no pane will never report (W-178). Stream workers have their own stop check.
     // ponytail: "sbx: " prefix stands in for "a stream's worker"; pass the worker labels if another worker naming appears.
     const live = new Set([...(fleet.others || []), ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => a.label));
-    const lead = cfg.triage?.seat || 'board lead';
+    const lead = cfg.triage?.seat || 'factory lead';
     for (const w of Object.values(state.work).filter(x => !['done', 'cancelled'].includes(x.phase))) for (const a of w.assignments || []) {
       const key = `${w.id}/${a.id}/v${a.version ?? 1}`;
       // A supervisor may record the worker before spawning its pane (host streams, W-417): give the pane time to appear.
@@ -102,7 +102,7 @@ export function inboxCommands(state, cfg, fleet = null) {
       const h = a.history || [], k = h.findLastIndex((x, i) => x.status === 'started' && h[i - 1]?.status !== 'started');
       if (fleet.now - Date.parse(h[k]?.at || a.at) < GHOST_GRACE_MS) continue;
       if (a.status !== 'started' || !a.owner || live.has(a.owner) || (cfg.seats || []).includes(a.owner) || /^sbx: /.test(a.owner) || told.has(`ghost:${key}`)) continue;
-      cmds.push(msg(lead, w.id, { ghost: key }, `${w.id} ${a.id} (${a.kind}) is started by ${a.owner}, but no pane has that label, so it will never report. Re-dispatch it or have it cancelled (board developer: cancel).`));
+      cmds.push(msg(lead, w.id, { ghost: key }, `${w.id} ${a.id} (${a.kind}) is started by ${a.owner}, but no pane has that label, so it will never report. Re-dispatch it or have it cancelled (factory developer: cancel).`));
     }
     // herdr can report a finished worker as working (a spinner left on screen); an unchanged pane is the tell.
     for (const u of fleet.units) {
@@ -143,11 +143,11 @@ export function inboxCommands(state, cfg, fleet = null) {
       || (w.assignments || []).some(a => LIVE_ASSIGNMENT.includes(a.status))) continue;
     cmds.push(msg(to, w.id, { heldIdle: key }, `${w.id} ${quote(w.title)} is in ${w.phase} with ${r.id} acked "received" and nothing assigned, so it holds your stream. Assign it, or if it waits on someone, park it (assign, then progress --stage blocked --waitingOn) so the stream takes other work.`));
   }
-  // Board bugs reach the board developer's pane like stream work reaches a supervisor (W-211): once per new record it
+  // Board bugs reach the factory developer's pane like stream work reaches a supervisor (W-211): once per new record it
   // owns, and once per note someone else adds after developerSince. Parked records wait quietly.
   if (cfg.developer) for (const w of Object.values(state.work)) {
     if (![w.stream, w.owner].includes(cfg.developer) || ['done', 'cancelled'].includes(w.phase) || w.waitingOn) continue;
-    if (!told.has(`devRecord:${w.id}`)) cmds.push(msg(cfg.developer, w.id, { devRecord: w.id }, `${w.id} ${quote(w.title)} is yours (board developer): read it and work it, or park it with progress waitingOn.`));
+    if (!told.has(`devRecord:${w.id}`)) cmds.push(msg(cfg.developer, w.id, { devRecord: w.id }, `${w.id} ${quote(w.title)} is yours (factory developer): read it and work it, or park it with progress waitingOn.`));
     else {
       // Notes from before the record's own notice are its setup (created, owner set), which the notice already covers.
       const since = [cfg.developerSince || '', Object.values(state.messages).find(m => m.about?.devRecord === w.id)?.at || ''].sort().at(-1);
@@ -158,9 +158,9 @@ export function inboxCommands(state, cfg, fleet = null) {
     }
   }
   // local-head's notes and Alex's dashboard notes carry his words (W-416, W-423): each reaches the record's supervisor,
-  // never its worker (W-453), else its owner (with none: whoever proposed it, else the board lead), open or done, once.
+  // never its worker (W-453), else its owner (with none: whoever proposed it, else the factory lead), open or done, once.
   for (const w of Object.values(state.work)) {
-    const to = routeOf(w, cfg.supervisors) || w.owner || w.stream || (w.source?.type === 'agent' ? w.source.by : null) || cfg.triage?.seat || 'board lead';
+    const to = routeOf(w, cfg.supervisors) || w.owner || w.stream || (w.source?.type === 'agent' ? w.source.by : null) || cfg.triage?.seat || 'factory lead';
     if (!to || to === 'local-head' || to === cfg.developer) continue;
     (w.updates || []).forEach((u, i) => {
       if (!['local-head', 'Alex (dashboard)'].includes(u.by) || u.at < LOCAL_HEAD_NOTES_FROM || told.has(`localHeadNote:${w.id}/${i}`)) return;
@@ -171,7 +171,7 @@ export function inboxCommands(state, cfg, fleet = null) {
   if (cfg.triage?.since) for (const w of Object.values(state.work))
     if (['intake', 'proposed'].includes(w.phase) && !w.reconciled && w.createdAt >= cfg.triage.since && !told.has(`intake:${w.id}`) && !(cfg.exclude || []).includes(w.id))
       cmds.push(msg(cfg.triage.seat, w.id, { intake: w.id }, `${w.id} ${quote(w.title)} is in intake: triage it (ready, clarify with a question for Alex, or leave in intake with a note).${dupeNote(w, state.work)}`));
-  // The board lead's hourly check-in (Alex, 2026-11-04): at most one message per hour, delivered like any other.
+  // The factory lead's hourly check-in (Alex, 2026-11-04): at most one message per hour, delivered like any other.
   const hour = cfg.checkIn?.now?.slice(0, 13);
   // Only when the board changed since the last one, plus a daily one at 09Z (11-09: 53 of 65 weekend check-ins found nothing).
   const last = Object.values(state.messages).filter(m => m.about?.checkIn).map(m => m.at).sort().at(-1);

@@ -7,7 +7,7 @@ import { statusOf, awaitingReview, PHASE_LABEL } from './status.mjs';
 import { supportOf, prGateView } from '../core/store.mjs';
 
 // Who a card waits on decides its section. Agents (seats, triage, reviewer panes) are the factory.
-const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^local-head$|^factory$|^triage board worker$|^factory-developer$|^agent-unblocker$|^board$/;
+const AGENT = /^(sup|sbx): |^triage$|^trusted-review|^questions router$|^board lead$|^factory lead$|^local-head$|^factory$|^triage board worker$|^factory-developer$|^agent-unblocker$|^board$|^board \(|^factory \(/;
 // The one place a card's section is decided (W-317): support on top, then Alex's action, another person, Parked only when nobody is named.
 export const sectionOf = c => c.support && c.category !== 'history' ? 'support'
   : c.category === 'history' ? 'done'

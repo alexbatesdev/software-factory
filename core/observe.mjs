@@ -141,7 +141,7 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
   for (const [k, prs] of fromMain) {
     const [repo, check] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
     if (held.has(`ci:${k}`)) continue;
-    cmds.push({ kind: 'create', payload: { title: `"${check}" is red on ${repo} main`, kind: 'build', repo, source: { type: 'agent', by: 'board (ci)', key: `ci:${k}` },
+    cmds.push({ kind: 'create', payload: { title: `"${check}" is red on ${repo} main`, kind: 'build', repo, source: { type: 'agent', by: 'factory (ci)', key: `ci:${k}` },
       objective: `The "${check}" check fails on ${repo} main, so every PR based on main inherits it (${prs.map(p => `#${p.split(':')[1]}`).join(', ')}). It isn't caused by those PRs' diffs, so the board doesn't queue fixes on them. Fix it at its source in its own PR, or decline this.` } });
   }
   return cmds;

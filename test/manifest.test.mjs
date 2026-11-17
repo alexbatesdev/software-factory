@@ -54,9 +54,9 @@ test('a run started before manifests existed is left alone', async () => {
 });
 
 test('config preflight names what the runtime would trip on: unknown roles, harnesses, worker labels, files and record ids', () => {
-  const ROLES = { 'stream-supervisor': [], 'board-developer': [] }, exists = p => !p.includes('missing');
-  const ok = { roles: { 'triage board worker': 'board-developer' }, routing: { supervisors: { 'sup: s1': { worker: 'sbx: s1' }, 'sup: s2': { worker: 'sbx: s2', agent: 'codex' }, 'sup: host': { howTo: '~/x.md' } } },
-    recycle: { host: 'sbx' }, factory: { seats: [{ label: 'board lead', role: 'board-developer' }] }, autoDispatch: { exclude: ['W-1'] } };
+  const ROLES = { 'stream-supervisor': [], 'factory-developer': [] }, exists = p => !p.includes('missing');
+  const ok = { roles: { 'triage board worker': 'factory-developer' }, routing: { supervisors: { 'sup: s1': { worker: 'sbx: s1' }, 'sup: s2': { worker: 'sbx: s2', agent: 'codex' }, 'sup: host': { howTo: '~/x.md' } } },
+    recycle: { host: 'sbx' }, factory: { seats: [{ label: 'board lead', role: 'factory-developer' }] }, autoDispatch: { exclude: ['W-1'] } };
   assert.deepEqual(checkConfig(ok, { roles: ROLES, exists }), []);
   const bad = { roles: { x: 'no-such-role' }, routing: { supervisors: { 'sup: s1': { worker: 'stream-1' }, 'sup: s2': { worker: 'sbx: s2', agent: 'gemini' }, 'sup: host': { howTo: '~/missing.md' } } },
     recycle: { host: 'missing-host' }, factory: { seats: [{ label: 'y', role: 'nobody' }] }, autoDispatch: { exclude: ['nope'] } };

@@ -7,7 +7,7 @@ const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_AS
 const pendingDispatch = w => (w.requests || []).some(r => r.type === 'dispatch' && !r.ack);
 const takenUp = w => (w.requests || []).some(r => r.type === 'dispatch' && ['received', 'done'].includes(r.ack?.outcome));
 const runs = w => (w.assignments || []).some(a => a.kind !== 'review' && ['started', 'blocked'].includes(a.status));
-// Queued by assign alone (local-head, the board lead): nobody has been told yet, so it still needs its dispatch request (W-482).
+// Queued by assign alone (local-head, the factory lead): nobody has been told yet, so it still needs its dispatch request (W-482).
 const unrequested = w => w.phase === 'queued' && !pendingDispatch(w) && !takenUp(w) && !runs(w);
 // One factory queue (Alex 11-16, W-505): a fixes or review request no worker has started and no stream has been told of
 // waits for the next free stream, not for the stream that built the record.
@@ -89,7 +89,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const track = trackOf(w, cfg);
     if (track === 'excluded') { wait('Excluded in config.autoDispatch.exclude'); return; }
     if (track === 'trusted-review') { wait('a trusted review, not stream work'); return; }
-    if (w.kind === 'factory') { wait('a factory record: the board developer builds it'); return; }
+    if (w.kind === 'factory') { wait('a factory record: the factory developer builds it'); return; }
     if (w.intakeHold) { wait(`intake hold by ${w.intakeHold.by}`); return; }
     // A project's task starts only once the project is ready for it (projects phase B, Alex 11-16).
     if (!job && w.projectGate && !w.projectGate.ready) { wait(`project ${w.projectGate.slug} isn't ready for it: ${w.projectGate.reasons.join('; ')}`); return; }

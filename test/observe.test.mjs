@@ -235,7 +235,7 @@ test("red CI on any PR: what also fails on its base is proposed once as separate
   assert.deepEqual([of('W-2').failing, of('W-2').inherited], [[], ['Audit Ruby']]);
   assert.deepEqual(of('W-3').failing, ['Audit Ruby'], 'a base with no tracked PR: handled like main, the PR\'s own');
   const creates = cmds.filter(c => c.kind === 'create');
-  assert.deepEqual(creates.map(c => [c.payload.source.key, c.payload.source.by, c.payload.kind]), [['ci:app:Audit Ruby', 'board (ci)', 'build']], 'one proposal per check, not per PR');
+  assert.deepEqual(creates.map(c => [c.payload.source.key, c.payload.source.by, c.payload.kind]), [['ci:app:Audit Ruby', 'factory (ci)', 'build']], 'one proposal per check, not per PR');
   const held = { ...work, 'W-9': { ...createWork({ id: 'W-9', title: 'Audit', kind: 'build', source: { type: 'manual', key: 'ci:app:Audit Ruby' } }, ctx) } };
   const aliased = { ...work, 'W-379': { ...createWork({ id: 'W-379', title: 'Bundler Audit', kind: 'build', aliases: ['ci:app:Audit Ruby'] }, ctx) } };
   assert.equal(healthCommands({ work: aliased }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['app', ['Audit Ruby']]]) }).filter(c => c.kind === 'create').length, 0, 'a record that took the check as an alias holds it too');
@@ -249,7 +249,7 @@ test("red CI on any PR: what also fails on its base is proposed once as separate
 
 test('a CI proposal waits in New PRs for Alex, like any new PR nobody asked for (W-459)', async () => {
   const { needsPrApproval, DEFAULT_REPO } = await import('../core/work.mjs');
-  const w = createWork({ id: 'W-9', title: 'Audit Ruby fails on main', kind: 'build', source: { type: 'agent', by: 'board (ci)', key: 'ci:app:Audit Ruby' } }, ctx);
+  const w = createWork({ id: 'W-9', title: 'Audit Ruby fails on main', kind: 'build', source: { type: 'agent', by: 'factory (ci)', key: 'ci:app:Audit Ruby' } }, ctx);
   assert.equal(needsPrApproval(w, { trusted: ['teamwork', 'agent:local-head'], repos: [DEFAULT_REPO] }), true);
 });
 
@@ -278,7 +278,7 @@ test('declining a watcher record that names the record covering it moves every c
   const { healthCommands } = await import('../core/observe.mjs');
   const store = openStore(':memory:'), c = { now: '2026-11-13T17:20:00.000Z', by: 'local-head' };
   store.append({ kind: 'create', payload: { title: 'Brakeman', kind: 'build' } }, c);
-  store.append({ kind: 'create', payload: { title: 'unit-tests red on main', kind: 'build', source: { type: 'agent', by: 'board (ci)', key: 'ci:app:ci/circleci: unit-tests' } } }, c);
+  store.append({ kind: 'create', payload: { title: 'unit-tests red on main', kind: 'build', source: { type: 'agent', by: 'factory (ci)', key: 'ci:app:ci/circleci: unit-tests' } } }, c);
   store.state.work['W-2'].aliases = ['ci:app:ci/circleci: test'];
   store.append({ kind: 'event', target: 'W-2', payload: { type: 'withdraw', note: 'Alex declined (via local-head): "decline W-2 and approve the others". Note: Covered by W-1 R4, which ports the fix.' } }, c);
   assert.deepEqual(store.state.work['W-1'].aliases.sort(), ['ci:app:ci/circleci: test', 'ci:app:ci/circleci: unit-tests']);
@@ -290,7 +290,7 @@ test('declining a watcher record that names the record covering it moves every c
 
 test('a watcher record declined without naming a covering record still holds its check for a week', async () => {
   const { healthCommands } = await import('../core/observe.mjs');
-  const declined = { ...createWork({ id: 'W-5', title: 'red', kind: 'build', source: { type: 'agent', by: 'board (ci)', key: 'ci:app:Audit Ruby' } }, ctx), phase: 'cancelled', completion: { withdrawn: 'Alex declined: not now', at: '2026-11-13T17:00:00.000Z' } };
+  const declined = { ...createWork({ id: 'W-5', title: 'red', kind: 'build', source: { type: 'agent', by: 'factory (ci)', key: 'ci:app:Audit Ruby' } }, ctx), phase: 'cancelled', completion: { withdrawn: 'Alex declined: not now', at: '2026-11-13T17:00:00.000Z' } };
   const pr = { ...createWork({ id: 'W-9', title: 'x', kind: 'build', links: { pr: PR(1), branch: 'a/1' } }, ctx), phase: 'awaiting_human_approval', head: 'aaaaaaa1' };
   const health = new Map([['app:1', { head: 'aaaaaaa1', base: 'main', conflict: false, failing: ['Audit Ruby'], changesRequested: [], threads: [], comments: [] }]]);
   const run = now => healthCommands({ work: { 'W-5': declined, 'W-9': pr } }, health, { owner: OWNER, now, mainFailing: new Map([['app', ['Audit Ruby']]]) }).filter(x => x.kind === 'create').length;

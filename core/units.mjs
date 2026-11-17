@@ -93,7 +93,7 @@ export function reviewsDue(works, now) {
 }
 
 const HOUR = 3600000, ago = (now, t) => Date.parse(now) - Date.parse(t || 0);
-/** Contradictions the hourly audit routes to the board lead (W-317): {id, kind, evidence, next}. Detects only; mergeTick repairs merges. */
+/** Contradictions the hourly audit routes to the factory lead (W-317): {id, kind, evidence, next}. Detects only; mergeTick repairs merges. */
 export function contradictions(state, { prState = () => null, now }) {
   const out = [], add = (id, kind, evidence, next) => out.some(c => c.id === id && c.kind === kind) || out.push({ id, kind, evidence, next });
   const resumedAt = Object.fromEntries(Object.values(state.messages || {}).filter(m => m.about?.resume).map(m => [m.about.resume, m.at]));

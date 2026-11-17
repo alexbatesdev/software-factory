@@ -20,5 +20,5 @@ test('an action whose connection broke after it was sent is not resent (it may h
 });
 
 test('a board that stays down still fails, after the waits, saying so', async () => {
-  await assert.rejects(boardFetch('u', {}, { ...noWait, fetch: fake([refused, refused, refused, refused]) }), /board at u is not answering .*restart/i);
+  await assert.rejects(boardFetch('u', {}, { ...noWait, fetch: fake([refused, refused, refused, refused]) }), /factory at u is not answering .*restart/i);
 });

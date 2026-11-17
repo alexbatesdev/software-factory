@@ -99,7 +99,7 @@ test("an internal review the stream's own worker is running holds the stream", (
 test('a factory record is the board developer\'s, never stream work', () => {
   const p = plan([loose('W-1', { kind: 'factory', owner: 'triage board worker' })]);
   assert.equal(p['W-1'].action, null);
-  assert.match(p['W-1'].reason, /board developer/);
+  assert.match(p['W-1'].reason, /factory developer/);
 });
 
 test('a record waiting on Alex holds no stream, so queued work can start there', () => {

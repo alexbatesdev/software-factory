@@ -62,7 +62,7 @@ export async function retainArtifacts(store, io) {
   for (const { w, r, key } of pendingArtifacts(store.state)) {
     if (io.only && !io.only(w)) continue;
     const at = parseLink(r.link), base = { key, work: w.id, head: r.head, link: r.link, from: at.from };
-    const record = p => store.append({ kind: 'artifact', payload: { ...base, ...p } }, { now: io.now(), by: 'board (artifacts)' });
+    const record = p => store.append({ kind: 'artifact', payload: { ...base, ...p } }, { now: io.now(), by: 'factory (artifacts)' });
     if (at.from === 'none') { record({ status: 'no_file' }); continue; }
     try {
       const got = at.from === 'host' ? { bytes: await io.readHost(at.path), found: at.path } : await io.readSandbox(w.stream, at.path);

@@ -116,7 +116,7 @@ export async function deliver(unit, brief, { dryRun = true } = {}) {
   if (!dryRun) fs.writeFileSync(file, brief.text);
   const worker = unit.worker ? `your worker ${unit.worker.label}` : 'a worker you choose';
   const steps = [`write ${file}`, ...await type(unit.supervisor,
-    { path: file, text: `Brief from Alex's triage board: read {path}, verify what it references, then brief ${worker} with it and supervise it as usual.` }, dryRun)];
+    { path: file, text: `Brief from Alex's software factory: read {path}, verify what it references, then brief ${worker} with it and supervise it as usual.` }, dryRun)];
   return { steps, location: file };
 }
 

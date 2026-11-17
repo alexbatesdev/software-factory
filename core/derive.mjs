@@ -92,7 +92,7 @@ export function waitingOn(w, { questions = [] } = {}) {
     case 'ready_for_human': {
       // The board marks it ready under Alex's standing authorization; only a failed or uncertain attempt needs a person.
       const op = (w.prReadyOps || []).filter(o => o.head === w.head).at(-1);
-      return ['failed', 'uncertain'].includes(op?.status) ? { who: 'you', text: `Waiting on you: marking ${pr} ready was ${op.status} (${op.id}); check GitHub` } : { who: 'board', text: `Waiting on the board: marking ${pr} ready` };
+      return ['failed', 'uncertain'].includes(op?.status) ? { who: 'you', text: `Waiting on you: marking ${pr} ready was ${op.status} (${op.id}); check GitHub` } : { who: 'factory', text: `Waiting on the board: marking ${pr} ready` };
     }
     case 'review': case 'rereview': {
       const a = live(w, 'review');

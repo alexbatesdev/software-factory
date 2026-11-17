@@ -17,7 +17,7 @@ test('no board action can mint a gate event, even when asked to by name', () => 
 });
 
 test('merge and raw event writes are not actions for any role', () => {
-  for (const a of ['merge', 'merged', 'event', 'mark_ready']) assert.match(refusal('board-developer', a), /not a board action/);
+  for (const a of ['merge', 'merged', 'event', 'mark_ready']) assert.match(refusal('factory-developer', a), /not a factory action/);
 });
 
 test('a blocked report carries what it waits on to the board', () => {

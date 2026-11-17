@@ -22,7 +22,7 @@ export function scoutBrief({ projects, maxProposals }, skip) {
   return [
     `Sentry scout: find up to ${maxProposals} production errors worth a small, safe fix in built-rails. No code, no branch, no PR.`,
     `1. List unresolved issues seen in the last 14 days in the Sentry projects ${projects.join(', ')} (no other project), ranked by users affected, then event count.`,
-    `2. Skip issues the board already tracks: ${skip.length ? skip.join(', ') : 'none yet'}.`,
+    `2. Skip issues the factory already tracks: ${skip.length ? skip.join(', ') : 'none yet'}.`,
     `3. WWBD: "Before building, confirm the thing is actually broken and actually matters." For at most ${maxProposals} candidates, trace the stack to the failing frame (file:line), try to reproduce it, and decide whether a small, safe fix exists. Skip noise (bots, third-party, already fixed on main) and anything too big to be small.`,
     `Read and reproduce in a fresh worktree off origin/main, never the clone's base checkout (it may be on production, with different gems); run any spec there, after bundle install if Bundler asks.`,
     `4. File each as a progress discovery on this record. discovery: one line naming the error and its file:line. text: the Sentry link, events and users affected, first and last seen, the failing frame file:line, the root cause labelled "reproduced" or "not reproduced", and the proposed fix scope.`,
@@ -50,5 +50,5 @@ export function scoutPlan(works, plan, cfg, now) {
   const busy = busyStreams(works, cfg), to = Object.keys(cfg.supervisors).find(l => !busy.has(l) && canTake({}, l, cfg.supervisors));
   if (!to) return { reason: 'no free sbx stream' };
   return { to, create: { title: `Sentry scout ${now.slice(0, 10)} ${now.slice(11, 16)}Z`, objective: scoutBrief(sc, sentryCited(works, sc.projects)),
-    kind: 'scout', repo: DEFAULT_REPO, owner: to, phase: 'ready', priority: 4, source: { type: 'agent', by: 'board (scout)' } } };
+    kind: 'scout', repo: DEFAULT_REPO, owner: to, phase: 'ready', priority: 4, source: { type: 'agent', by: 'factory (scout)' } } };
 }

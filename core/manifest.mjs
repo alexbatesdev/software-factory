@@ -48,6 +48,6 @@ export async function captureManifests(store, io) {
       config: createHash('sha256').update(io.config).digest('hex'),
       harness: { agent: h.agent || UNAVAILABLE, sandbox: h.sandbox || null,
         model: { requested: h.model ?? null, observed: UNAVAILABLE }, effort: { requested: h.effort ?? null, observed: UNAVAILABLE } },
-      instructions } }, { now: io.now(), by: 'board (manifest)' });
+      instructions } }, { now: io.now(), by: 'factory (manifest)' });
   }
 }

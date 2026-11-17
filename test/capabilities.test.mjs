@@ -10,12 +10,12 @@ test('each role may take only its own actions', () => {
   assert.match(refusal('questions-router', 'done'), /may not done/);
   assert.match(refusal('local-head', 'route'), /may not route/);
   assert.match(refusal('nobody', 'read'), /not a factory role/);
-  assert.match(refusal('board-developer', 'merge'), /not a board action/);
+  assert.match(refusal('factory-developer', 'merge'), /not a factory action/);
 });
 
 test('the board lead may queue work but not start it', () => {
-  assert.equal(refusal('board-lead', 'assign', { status: 'queued' }), null);
-  assert.match(refusal('board-lead', 'assign', { status: 'started' }), /only queues/);
+  assert.equal(refusal('factory-lead', 'assign', { status: 'queued' }), null);
+  assert.match(refusal('factory-lead', 'assign', { status: 'started' }), /only queues/);
 });
 
 // The role files name their actions in prose; a file that drifts from this table is a second source of truth.
@@ -31,12 +31,12 @@ test('every role file lists exactly the actions this table grants it', () => {
 });
 
 test('only local-head pins a stream', () => {
-  assert.match(refusal('board-lead', 'set_owner', { pin: 'Alex' }), /only local-head pins/);
-  assert.equal(refusal('board-lead', 'set_owner', {}), null);
+  assert.match(refusal('factory-lead', 'set_owner', { pin: 'Alex' }), /only local-head pins/);
+  assert.equal(refusal('factory-lead', 'set_owner', {}), null);
 });
 
 test('the board lead cannot supersede a running assignment by queueing over it', () => {
-  assert.match(refusal('board-lead', 'assign', { status: 'queued', supersedes: 'R1' }), /only queues/);
+  assert.match(refusal('factory-lead', 'assign', { status: 'queued', supersedes: 'R1' }), /only queues/);
 });
 
 test('local-head sets an owner only to pin one', () => {
@@ -45,13 +45,13 @@ test('local-head sets an owner only to pin one', () => {
 });
 
 test('the board lead adds notes but never relays a worker report', () => {
-  assert.equal(refusal('board-lead', 'progress', { work: 'W-1', text: 'seen again' }), null);
-  assert.match(refusal('board-lead', 'progress', { work: 'W-1', assignmentId: 'R1', stage: 'working' }), /adds notes/);
+  assert.equal(refusal('factory-lead', 'progress', { work: 'W-1', text: 'seen again' }), null);
+  assert.match(refusal('factory-lead', 'progress', { work: 'W-1', assignmentId: 'R1', stage: 'working' }), /adds notes/);
 });
 
 test('the board lead acks the messages addressed to it', () => {
-  assert.equal(refusal('board-lead', 'ack', { ref: 'M-1' }), null);
-  assert.match(refusal('board-lead', 'ack', { ref: 'W-1/R1' }), /only messages/);
+  assert.equal(refusal('factory-lead', 'ack', { ref: 'M-1' }), null);
+  assert.match(refusal('factory-lead', 'ack', { ref: 'W-1/R1' }), /only messages/);
 });
 
 test('every seat can ack the messages in its own inbox', () => {
@@ -73,8 +73,8 @@ test('a trusted-review pane, under either label form, is a trusted reviewer with
 
 test('the board lead acks the answer to a question it asked, not anyone else\'s (W-260: TB-156, TB-163)', () => {
   const ctx = { seat: 'board lead', questions: { 'TB-156': { from: 'board lead' }, 'TB-9': { from: 'sup: stream-1' } } };
-  assert.equal(refusal('board-lead', 'ack', { ref: 'TB-156' }, ctx), null);
-  assert.match(refusal('board-lead', 'ack', { ref: 'TB-9' }, ctx), /only messages/);
+  assert.equal(refusal('factory-lead', 'ack', { ref: 'TB-156' }, ctx), null);
+  assert.match(refusal('factory-lead', 'ack', { ref: 'TB-9' }, ctx), /only messages/);
 });
 
 test('local-head adds notes on Alex\'s behalf but never a worker report, a stage or a wait (W-416)', () => {

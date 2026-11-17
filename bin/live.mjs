@@ -34,6 +34,7 @@ import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat, seatRenames } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
 import { roleOf } from '../core/api.mjs';
+import { LEAD_ROLE, DEVELOPER_ROLE } from '../core/capabilities.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
@@ -74,15 +75,17 @@ const by = name => ({ now: now(), by: name });
 const apply = (cmds, who) => { for (const c of cmds) try { store.append(c, by(who)); } catch (e) { log(`refused ${c.kind} ${c.target || ''}: ${e.message}`); } };
 
 mkdirSync(dirname(DB), { recursive: true });
-// Config preflight: problems are said at start, and to the board lead; the factory still starts.
+// Config preflight: problems are said at start, and to the factory lead; the factory still starts.
 const CONFIG_PROBLEMS = checkConfig(config, { roles: ROLES, exists: existsSync, home: homedir() });
 const store = openStore(DB, { supervisors });
 // What the factory leaves alone this tick: the exclude list, plus support records while Alex has support paused.
+// The factory lead's seat: config.boardLead.seat, else the seat config.roles gives the lead role.
+const LEAD = config.boardLead?.seat || Object.entries(config.roles || {}).find(([, r]) => r === LEAD_ROLE)?.[0] || 'factory lead';
 const skipped = () => ({ exclude: skippedIds(store.state, config) });
 log(`${DRY ? 'DRY RUN' : 'live'}: ${DB} at seq ${store.state.seq}`);
 for (const p of CONFIG_PROBLEMS) log(`config preflight: ${p}`);
 if (CONFIG_PROBLEMS.length && !DRY) { const key = createHash('sha256').update(CONFIG_PROBLEMS.join('\n')).digest('hex').slice(0, 12);
-  if (!Object.values(store.state.messages).some(m => m.about?.configPreflight === key)) store.append({ kind: 'message', payload: { to: config.boardLead?.seat || 'board lead', about: { configPreflight: key }, text: `[software factory] config.json preflight found ${CONFIG_PROBLEMS.length} problem(s): ${CONFIG_PROBLEMS.join('; ')}. File a factory record for the board developer.` } }, by('board')); }
+  if (!Object.values(store.state.messages).some(m => m.about?.configPreflight === key)) store.append({ kind: 'message', payload: { to: LEAD, about: { configPreflight: key }, text: `[software factory] config.json preflight found ${CONFIG_PROBLEMS.length} problem(s): ${CONFIG_PROBLEMS.join('; ')}. File a factory record for the factory developer.` } }, by('factory')); }
 // Intake triage covers records created since the final import, the moment V2 became the system of record.
 const LIVE_SINCE = store.rows()[0]?.at || now();
 
@@ -139,7 +142,7 @@ function autoDispatchTick() {
   for (const p of plan.filter(p => p.action === 'route')) {
     const w = s.work[p.id], old = config.routing.supervisors[w.stream];
     const owner = [w.stream, old?.worker].includes(w.owner) ? { owner: p.to } : {};
-    try { store.appendAll([{ kind: 'update', target: p.id, payload: { stream: p.to, ...owner } }, { kind: 'event', target: p.id, payload: { type: 'note', text: `Factory queue: ${p.request} goes to ${p.to}: ${p.reason}.` } }], by('board (auto-dispatch)')); log(`route ${p.request} -> ${p.to}`); }
+    try { store.appendAll([{ kind: 'update', target: p.id, payload: { stream: p.to, ...owner } }, { kind: 'event', target: p.id, payload: { type: 'note', text: `Factory queue: ${p.request} goes to ${p.to}: ${p.reason}.` } }], by('factory (auto-dispatch)')); log(`route ${p.request} -> ${p.to}`); }
     catch (e) { log(`route ${p.request} refused: ${e.message}`); }
   }
   lastPlan = plan;
@@ -149,11 +152,11 @@ function autoDispatchTick() {
     const key = `${p.id}/${p.assignmentId}/v${p.version}`;
     if (Object.values(store.state.messages).some(m => m.about?.resume === key)) continue;
     apply([{ kind: 'message', payload: { to: p.to, work: p.id, about: { resume: key }, text: `[software factory] Resume ${p.id} ${p.assignmentId}: ${p.reason}. Brief a fresh worker from its handoff, then progress ${p.assignmentId} --stage started.` } },
-      { kind: 'event', target: p.id, payload: { type: 'note', text: `Resume sent to ${p.to}: ${p.reason}.` } }], 'board (auto-dispatch)');
+      { kind: 'event', target: p.id, payload: { type: 'note', text: `Resume sent to ${p.to}: ${p.reason}.` } }], 'factory (auto-dispatch)');
     log(`resume ${p.id} ${p.assignmentId} -> ${p.to}`);
   }
   for (const p of plan.filter(p => p.action && !['resume', 'route', 'deliver'].includes(p.action))) {
-    const w = s.work[p.id], who = 'board (auto-dispatch)';
+    const w = s.work[p.id], who = 'factory (auto-dispatch)';
     const cmds = [
       ...(p.owner ? [{ kind: 'update', target: p.id, payload: { stream: p.owner, ...(w.owner ? {} : { owner: p.owner }) } }] : []),
       { kind: 'event', target: p.id, payload: p.action === 'queue' ? { type: 'transition', to: 'queued' } : { type: 'request', request: 'dispatch' } },
@@ -164,7 +167,7 @@ function autoDispatchTick() {
   // Nothing to dispatch and a stream free: send it scouting Sentry (Alex, 11-09). Next tick dispatches the record.
   const scout = scoutPlan(views, plan, { supervisors: config.routing.supervisors, drain, scout: config.scout }, now());
   if (!scout.create) once(`scout: ${scout.reason}`);
-  else try { const { id } = store.append({ kind: 'create', payload: scout.create }, by('board (scout)')); log(`scout ${id} for ${scout.to}`); } catch (e) { log(`scout refused: ${e.message}`); }
+  else try { const { id } = store.append({ kind: 'create', payload: scout.create }, by('factory (scout)')); log(`scout ${id} for ${scout.to}`); } catch (e) { log(`scout refused: ${e.message}`); }
 }
 
 async function inboxTick() {
@@ -172,15 +175,15 @@ async function inboxTick() {
   autoDispatchTick();
   const seats = [...supervisors, config.routing.questionsRouter, ...Object.keys(config.roles || {}), ...(config.factory?.seats || []).map(s => s.label)];
   const since = store.state.legacy.notifier?.activatedAt;
-  const checkIn = config.boardLead?.checkIn !== false ? { seat: config.boardLead?.seat || 'board lead', now: now() } : null;
-  const triage = { seat: config.boardLead?.seat || 'board lead', since: LIVE_SINCE };
+  const checkIn = config.boardLead?.checkIn !== false ? { seat: LEAD, now: now() } : null;
+  const triage = { seat: LEAD, since: LIVE_SINCE };
   const workers = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.worker).map(([sup, s]) => [s.worker, sup]));
-  const developer = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
+  const developer = Object.entries(config.roles || {}).find(([, r]) => r === DEVELOPER_ROLE)?.[0];
   const hostHowTo = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.howTo).map(([l, s]) => [l, s.howTo]));
   const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs, heldRequests, projectNotes },
     fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
   watches = plan.watches;
-  for (const c of plan.cmds) { store.append(c, by('board')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
+  for (const c of plan.cmds) { store.append(c, by('factory')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
   const sessions = Object.fromEntries([...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => [a.label, a.session]));
   for (const w of wakePlan(store.state, woken, Date.now(), config.notify?.reminderMs, sessions)) {
     const r = await wake({ ...w, agent: agentOf(config, w.seat) }).catch(e => ({ ok: false, reason: e.message }));
@@ -202,7 +205,7 @@ function healTick() {
       || derivedCtx(store.state, w.id).openQuestions) { delete strandedSince[w.id]; continue; } // an open question: it waits on the answer
     strandedSince[w.id] ??= Math.min(t, Date.parse(w.updatedAt) || t); // its last change, so a server restart doesn't restart the grace (W-511)
     if (t - strandedSince[w.id] < (config.notify?.strandedGraceMs ?? 600000)) continue;
-    apply([{ kind: 'event', target: w.id, payload: { type: 'heal', isDraft: openPrs.get(w.links?.pr)?.isDraft ?? null } }], 'board (heal)');
+    apply([{ kind: 'event', target: w.id, payload: { type: 'heal', isDraft: openPrs.get(w.links?.pr)?.isDraft ?? null } }], 'factory (heal)');
     log(`healed ${w.id} (${w.phase})`); delete strandedSince[w.id];
   }
 }
@@ -224,7 +227,7 @@ async function projectsTick() {
   projectsRead = { planning, trees, teamPrs, readAt: now() };
   // Phase C: a planning job for each project the factory is about to work that has no plan on main yet.
   if (config.projects?.planningJobs) for (const c of triageCreates(buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin }).projects, store.state.work, config.projects))
-    try { const { id } = store.append({ kind: 'create', payload: c }, by('board (projects)')); log(`planning job ${id}: ${c.title}`); } catch (e) { log(`planning job refused: ${e.message}`); }
+    try { const { id } = store.append({ kind: 'create', payload: c }, by('factory (projects)')); log(`planning job ${id}: ${c.title}`); } catch (e) { log(`planning job refused: ${e.message}`); }
   writeFileSync(PROJECTS_CACHE, JSON.stringify(projectsRead));
   log(`projects: ${planning.length} read, ${Object.keys(trees).length} trees`);
 }
@@ -312,15 +315,15 @@ async function githubTick() {
     if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
     apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, ciCompare, subtasks: subtasksOf(projectsRead.trees), branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, skipped()), 'poller');
-    // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the board developer hears of it.
+    // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the factory developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {
       lastAudit = Date.now();
       contradictionsDue = true;
-      const dev = Object.entries(config.roles || {}).find(([, r]) => r === 'board-developer')?.[0];
+      const dev = Object.entries(config.roles || {}).find(([, r]) => r === DEVELOPER_ROLE)?.[0];
       const told = new Set(Object.values(store.state.messages).map(m => m.about?.missed).filter(Boolean));
       const missed = auditMissed(store.state, own, health, { owner, ...skipped(), prs, now: now() }).filter(m => !told.has(`${m.key}/${m.id}`));
       log(`audit: ${missed.length} missed`);
-      for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'board (audit)');
+      for (const m of missed) if (dev) apply([{ kind: 'message', payload: { to: dev, about: { missed: `${m.key}/${m.id}` }, text: `[software factory, automated, not Alex] Audit: ${m.id === 'pr' ? `own PR ${m.key} has no live record` : `${m.key} feedback from ${m.by} was read but no record holds it: ${m.url}`}. Find why the factory missed it, fix that red-first, then make sure the item reaches its owner.` } }], 'factory (audit)');
     }
     // PR states for the page and merge close: every PR a live record links.
     // Open thread requests' PRs too: a merge closes their record, and the request must still see it (dismissal).
@@ -331,16 +334,16 @@ async function githubTick() {
     reviewTick();
     healTick();
     try { const n = syncStandards(); if (n.length) log(`standards mirrored: ${n.join(', ')}`); } catch (e) { log(`standards: ${e.message}`); }
-    apply(skipNotes(store.state.work, skipped()), 'board (skip)');
+    apply(skipNotes(store.state.work, skipped()), 'factory (skip)');
     await mergeTick();
     holdTick();
-    // After merge-close, so a merge it just closed is not reported. Once per (kind, record), to the board lead (W-317).
+    // After merge-close, so a merge it just closed is not reported. Once per (kind, record), to the factory lead (W-317).
     if (contradictionsDue) {
       contradictionsDue = false;
-      const lead = config.boardLead?.seat || 'board lead', told = new Set(Object.values(store.state.messages).map(m => m.about?.contradiction).filter(Boolean));
+      const lead = LEAD, told = new Set(Object.values(store.state.messages).map(m => m.about?.contradiction).filter(Boolean));
       const found = contradictions(store.state, { prState: u => openPrs.get(u)?.state || null, now: now() }).filter(c => !told.has(`${c.kind}/${c.id}`));
       log(`audit: ${found.length} contradictions`);
-      for (const c of found) apply([{ kind: 'message', payload: { to: lead, work: c.id, about: { contradiction: `${c.kind}/${c.id}` }, text: `[software factory, automated, not Alex] Contradiction on ${c.id} (${c.kind}): ${c.evidence}. Next: ${c.next}.` } }], 'board (audit)');
+      for (const c of found) apply([{ kind: 'message', payload: { to: lead, work: c.id, about: { contradiction: `${c.kind}/${c.id}` }, text: `[software factory, automated, not Alex] Contradiction on ${c.id} (${c.kind}): ${c.evidence}. Next: ${c.next}.` } }], 'factory (audit)');
     }
     await syncResolvedThreads(store, gh, now, { me: config.githubLogin, prState: u => openPrs.get(u)?.state || null });
     await alexReviewTick();
@@ -360,7 +363,7 @@ async function rerequestTick() {
   for (const r of rerequestPlan(s.work, prs, { maxAgeMs: (config.rerequest?.maxAgeDays ?? 7) * 86400000 })) {
     if (!config.rerequest?.enabled || DRY) { once(`re-request (off): would re-request ${r.reviewer} on ${r.pr} (${r.work}, ${r.state} at ${r.reviewAt})`); continue; }
     const ok = await requestReview(r.pr, r.reviewer).catch(e => { log(`re-request ${r.reviewer} on ${r.pr}: ${e.message}`); return false; });
-    if (ok) apply([{ kind: 'event', target: r.work, payload: { type: 'reviewer_rerequested', reviewer: r.reviewer, reviewAt: r.reviewAt, head: r.head, state: r.state } }], 'board (re-request)');
+    if (ok) apply([{ kind: 'event', target: r.work, payload: { type: 'reviewer_rerequested', reviewer: r.reviewer, reviewAt: r.reviewAt, head: r.head, state: r.state } }], 'factory (re-request)');
     else once(`re-request ${r.reviewer} on ${r.pr}: GitHub doesn't show the request after the call`);
   }
 }
@@ -372,7 +375,7 @@ async function mergeTick() {
   for (const c of mergeCloses(s.work, bySource, { prState: u => openPrs.get(u)?.state || null, openQuestions: id => derivedCtx(s, id).openQuestions, track: w => trackOf(w, skipped()) })) {
     if (c.raise) {
       if (!Object.values(s.messages).some(m => m.about?.mergedPartial === c.id))
-        apply([{ kind: 'message', payload: { to: 'local-head', work: c.id, about: { mergedPartial: c.id }, text: `[software factory] ${c.id}'s PR ${c.prs.join(', ')} merged, but the record covers work beyond it (coverage ${s.work[c.id].coverage?.state}), so it stays open. Ask Alex whether it's done.` } }], 'board');
+        apply([{ kind: 'message', payload: { to: 'local-head', work: c.id, about: { mergedPartial: c.id }, text: `[software factory] ${c.id}'s PR ${c.prs.join(', ')} merged, but the record covers work beyond it (coverage ${s.work[c.id].coverage?.state}), so it stays open. Ask Alex whether it's done.` } }], 'factory');
       continue;
     }
     const prs = await readPrs(c.prs);
@@ -388,13 +391,13 @@ function reviewTick() {
   for (const d of reviewsDue(store.state.work, now())) {
     const key = `${d.id}/${d.by}`;
     if (Object.values(store.state.messages).some(m => m.about?.reviewDue === key)) continue;
-    apply([{ kind: 'message', payload: { to: d.reviewer, work: d.id, about: { reviewDue: key }, text: `[software factory, automated, not Alex] ${d.id}'s hold was due for review on ${d.by}. Look again: re-triage it (ready, a new reviewBy, untilMerged/untilAnswered, deferredTo, or close). The board has not released it.` } }], 'board (hold review)');
+    apply([{ kind: 'message', payload: { to: d.reviewer, work: d.id, about: { reviewDue: key }, text: `[software factory, automated, not Alex] ${d.id}'s hold was due for review on ${d.by}. Look again: re-triage it (ready, a new reviewBy, untilMerged/untilAnswered, deferredTo, or close). The board has not released it.` } }], 'factory (hold review)');
   }
 }
 
-// A record held until a PR merges (W-292) is released on the merge, and the board lead re-triages it.
+// A record held until a PR merges (W-292) is released on the merge, and the factory lead re-triages it.
 function holdTick() {
-  const lead = Object.entries(config.roles || {}).find(([, r]) => r === 'board-lead')?.[0];
+  const lead = Object.entries(config.roles || {}).find(([, r]) => r === LEAD_ROLE)?.[0];
   const { released, closed, waitsMerged, waitsClosed } = holdReleases(store.state.work, config.githubOwner, u => openPrs.get(u)?.state || null);
   // W-436: a record-level wait on a PR clears when it merges; its parker hears either way.
   for (const { id, pr, to } of waitsMerged)
@@ -415,18 +418,18 @@ function holdTick() {
       ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: ${pr} merged, so its hold is released. Re-triage it.` } }] : [])], 'poller (hold)');
 }
 
-// A record held on a question is released when Alex answers it; one closed unanswered goes back to the board lead.
+// A record held on a question is released when Alex answers it; one closed unanswered goes back to the factory lead.
 function questionHoldTick() {
-  const lead = Object.entries(config.roles || {}).find(([, r]) => r === 'board-lead')?.[0];
+  const lead = Object.entries(config.roles || {}).find(([, r]) => r === LEAD_ROLE)?.[0];
   const { released, closed } = questionHolds(store.state.work, store.state.questions);
   for (const { id, question } of closed) {
     const key = `${id}/${question}`;
     if (lead && !Object.values(store.state.messages).some(m => m.about?.holdClosed === key))
-      apply([{ kind: 'message', payload: { to: lead, work: id, about: { holdClosed: key }, text: `[software factory, automated, not Alex] ${id}: ${question} was closed without an answer, so its hold will never release. Re-point it (triage untilAnswered: the question that replaced it) or re-triage.` } }], 'board (hold)');
+      apply([{ kind: 'message', payload: { to: lead, work: id, about: { holdClosed: key }, text: `[software factory, automated, not Alex] ${id}: ${question} was closed without an answer, so its hold will never release. Re-point it (triage untilAnswered: the question that replaced it) or re-triage.` } }], 'factory (hold)');
   }
   for (const { id, question } of released)
     apply([{ kind: 'event', target: id, payload: { type: 'hold_released', question } },
-      ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: Alex answered ${question}, so its hold is released. Re-triage it.` } }] : [])], 'board (hold)');
+      ...(lead ? [{ kind: 'message', payload: { to: lead, work: id, text: `[software factory, automated, not Alex] ${id}: Alex answered ${question}, so its hold is released. Re-triage it.` } }] : [])], 'factory (hold)');
 }
 
 // A trusted review of someone else's PR finishes on Alex's own submitted review, or the PR closing first.
@@ -530,7 +533,7 @@ async function duplicateTick() {
   if (DRY) return;
   const repos = [...new Set(unbuiltProposals(store.state).map(repoOf))];
   if (!repos.length) return;
-  apply(duplicateCommands(store.state, await readOpenPrFiles(repos, config.githubOwner), { me: config.githubLogin }), 'board (duplicate check)');
+  apply(duplicateCommands(store.state, await readOpenPrFiles(repos, config.githubOwner), { me: config.githubLogin }), 'factory (duplicate check)');
 }
 
 // Evolution phase 1 step 2: each review's linked report is copied into data/artifacts by its hash.
@@ -580,10 +583,10 @@ async function recycleTick() {
     const r = await host.restart(u.worker, p.want).catch(e => ({ ok: false, detail: e.message }));
     log(`retune ${u.worker.label} for ${p.id}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
     if (r.ok) { tuned[to] = p.want; writeFileSync(TUNED, JSON.stringify(tuned, null, 2)); delete health[u.id]; }
-    else if (!Object.values(store.state.messages).some(m => m.about?.retuneFailed === `${to}/${p.id}`)) apply([{ kind: 'message', payload: { to: config.boardLead?.seat || 'board lead', work: p.id, about: { retuneFailed: `${to}/${p.id}` }, text: `[software factory] Restarting ${u.worker.label} with model ${p.want.model || 'default'}, effort ${p.want.effort || 'default'} for ${p.id} failed: ${r.detail}. ${p.id} waits; file a factory record if it repeats.` } }], 'board');
+    else if (!Object.values(store.state.messages).some(m => m.about?.retuneFailed === `${to}/${p.id}`)) apply([{ kind: 'message', payload: { to: LEAD, work: p.id, about: { retuneFailed: `${to}/${p.id}` }, text: `[software factory] Restarting ${u.worker.label} with model ${p.want.model || 'default'}, effort ${p.want.effort || 'default'} for ${p.id} failed: ${r.detail}. ${p.id} waits; file a factory record if it repeats.` } }], 'factory');
   }
   for (const d of plan.due) {
-    const tell = (to, about, text) => apply([{ kind: 'message', payload: { to, about, text: `[software factory] ${text}` } }], 'board');
+    const tell = (to, about, text) => apply([{ kind: 'message', payload: { to, about, text: `[software factory] ${text}` } }], 'factory');
     if (d.restart) {
       if (DRY) { once(`dry run: would restart ${d.worker.label}`); continue; }
       // A failed restart waits 10 min before the next try, so a broken agent start doesn't loop (11-11, stream-2).
@@ -591,7 +594,7 @@ async function recycleTick() {
       const r = await host.restart(d.worker).catch(e => ({ ok: false, detail: e.message }));
       log(`restart ${d.worker.label}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
       if (r.ok) { delete health[d.unit]; tell(d.to, { restarted: `${d.worker.label}/${now()}`, fyi: true }, `${d.worker.label} was restarted between jobs (a fresh session in the same sandbox: repo and disk kept, context gone). Brief it cold. If its pane parks on a startup dialog, send it to local-head.`); }
-      else restartFailedAt[d.unit] = Date.now(), tell(config.boardLead?.seat || 'board lead', { restartFailed: `${d.worker.label}/${now()}` }, `Restarting ${d.worker.label} between jobs failed: ${r.detail}. File it as a factory record if it repeats.`);
+      else restartFailedAt[d.unit] = Date.now(), tell(LEAD, { restartFailed: `${d.worker.label}/${now()}` }, `Restarting ${d.worker.label} between jobs failed: ${r.detail}. File it as a factory record if it repeats.`);
       continue;
     }
     // Its reviews' reports are copied out first; a sandbox that still holds one isn't removed.
@@ -602,7 +605,7 @@ async function recycleTick() {
     if (problems.length) {
       const key = `${d.worker.sandbox}/${problems.length}`, list = problems.map(p => `${p.path}: ${p.problem}`).join('; ');
       if (!Object.values(store.state.messages).some(m => m.about?.recycleBlocked === key))
-        for (const to of [d.to, config.boardLead?.seat || 'board lead']) tell(to, { recycleBlocked: key }, `${d.worker.label} is due a recycle (disk ${Math.round(d.diskPct * 100)}%), but this work would be lost with it: ${list}. Push or discard it; the factory retries on its next disk check.`);
+        for (const to of [d.to, LEAD]) tell(to, { recycleBlocked: key }, `${d.worker.label} is due a recycle (disk ${Math.round(d.diskPct * 100)}%), but this work would be lost with it: ${list}. Push or discard it; the factory retries on its next disk check.`);
       continue;
     }
     if (DRY) { once(`dry run: would recycle ${d.worker.label} (${d.worker.sandbox})`); continue; }
@@ -612,7 +615,7 @@ async function recycleTick() {
     const r = await host.recycle(d.worker, log).catch(e => ({ ok: false, detail: e.message }));
     log(`recycle ${d.worker.label}: ${r.ok ? 'done' : 'FAILED'}: ${r.detail}`);
     if (r.ok) { delete recycling[d.unit]; delete health[d.unit]; tell(d.to, { recycled: `${d.worker.sandbox}/${now()}` }, `${d.worker.label} was recycled (fresh sandbox, clean disk). It has none of its earlier context; brief it cold. If its pane shows Claude's bypass-permissions prompt, that one is Alex's to accept: ask local-head to tell him.${dropped ? ` Discarded with the old sandbox (replaced or stale): ${dropped}.` : ''}`); }
-    else { recycling[d.unit] = { step: 'failed', failed: r.detail }; tell(config.boardLead?.seat || 'board lead', { recycleFailed: `${d.worker.sandbox}/${now()}` }, `Recycling ${d.worker.label} failed: ${r.detail}. Its stream takes no new work until this is fixed; file it as a factory record.`); }
+    else { recycling[d.unit] = { step: 'failed', failed: r.detail }; tell(LEAD, { recycleFailed: `${d.worker.sandbox}/${now()}` }, `Recycling ${d.worker.label} failed: ${r.detail}. Its stream takes no new work until this is fixed; file it as a factory record.`); }
   }
 }
 
@@ -629,7 +632,7 @@ async function seatRestartTick() {
   if (!fleet) return;
   const agents = [...fleet.others, ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))];
   for (const { seat, pane } of planSeatRestarts(seatsOf(config), agents, store.state, { now: now(), ...config.seatRecycle, done: restartedOn, toolsOf, toolsDone })) {
-    const why = toolsDone[seat.label] !== toolsOf(seat) ? 'its board tools changed' : 'daily fresh start';
+    const why = toolsDone[seat.label] !== toolsOf(seat) ? 'its factory tools changed' : 'daily fresh start';
     restartedOn[seat.label] = now().slice(0, 10); toolsDone[seat.label] = toolsOf(seat);
     writeFileSync(RESTARTED, JSON.stringify(restartedOn)); writeFileSync(SEAT_TOOLS, JSON.stringify(toolsDone));
     if (DRY) { once(`dry run: would restart ${seat.label}`); continue; }

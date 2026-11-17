@@ -4,7 +4,7 @@ const BY = 'Alex (dashboard)';
 export async function resolveThreads(store, ids, gh, now, by = BY) {
   const out = [];
   for (const id of ids) {
-    const append = (kind, payload = {}) => store.append({ kind, target: id, payload }, { now: now(), by: kind === 'thread_approve' ? by : 'board (thread resolve)' });
+    const append = (kind, payload = {}) => store.append({ kind, target: id, payload }, { now: now(), by: kind === 'thread_approve' ? by : 'factory (thread resolve)' });
     const result = status => { out.push({ id, status, detail: store.state.threads[id]?.detail || null }); };
     try {
       append('thread_approve');
@@ -25,19 +25,19 @@ export async function resolveThreads(store, ids, gh, now, by = BY) {
 }
 
 // Codex's own review threads resolve once we've replied (Alex, 11-11); a person's thread stays his click.
-const CODEX = 'chatgpt-codex-connector', AUTO = 'board (auto: codex thread we replied to)';
+const CODEX = 'chatgpt-codex-connector', AUTO = 'factory (auto: codex thread we replied to)';
 
 /** Requests whose thread Alex resolved on GitHub himself close as resolved, and replied codex threads resolve (at most `limit` reads per call). */
 export async function syncResolvedThreads(store, gh, now, { me, limit = 20, prState = () => null } = {}) {
   // A request on a PR that merged or closed is dismissed, with no GitHub read or write (Alex, 11-11).
   for (const t of Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status))) {
     const st = prState(t.pr);
-    if (['MERGED', 'CLOSED'].includes(st)) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'dismissed', detail: `Dismissed: ${t.pr} was ${st.toLowerCase()} before it was resolved.` } }, { now: now(), by: 'board (thread sync)' });
+    if (['MERGED', 'CLOSED'].includes(st)) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'dismissed', detail: `Dismissed: ${t.pr} was ${st.toLowerCase()} before it was resolved.` } }, { now: now(), by: 'factory (thread sync)' });
   }
   const open = Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status)).slice(0, limit);
   for (const t of open) {
     const th = await gh.thread(t.threadId).catch(() => null);
-    if (th?.isResolved) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'resolved', detail: 'Resolved on GitHub directly.' } }, { now: now(), by: 'board (thread sync)' });
+    if (th?.isResolved) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'resolved', detail: 'Resolved on GitHub directly.' } }, { now: now(), by: 'factory (thread sync)' });
     else if (t.status === 'requested' && th && me && th.first === CODEX && th.last === me) await resolveThreads(store, [t.id], gh, now, AUTO);
   }
 }

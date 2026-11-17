@@ -4,7 +4,7 @@ import { prReadyPreflight, gate } from '../core/work.mjs';
 import { derivedCtx } from '../core/store.mjs';
 
 const busy = new Set();
-const BY = 'board (PR ready)';
+const BY = 'factory (PR ready)';
 
 /**
  * @param gh {view(url) → {head, isDraft} | null, ready(url)}

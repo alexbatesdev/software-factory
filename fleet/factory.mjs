@@ -62,7 +62,7 @@ export function planFactory(seats, panes) {
  * Tear-down order: sbx workers, supervisors, the other seats, the board server, then local-head if asked.
  * @returns [{seat, pane, action}] action: stop | skip-stopped | skip-missing
  */
-// Seats marked `stays` (local-head, the board developer, the agent unblocker and its alert script) outlive `down` (Alex, 11-09).
+// Seats marked `stays` (local-head, the factory developer, the agent unblocker and its alert script) outlive `down` (Alex, 11-09).
 export function planStop(seats, panes, { serverLabel, all = false } = {}) {
   const rank = s => s.kind === 'sbx' ? 0 : s.role === 'stream-supervisor' ? 1 : s.label === serverLabel ? 3 : s.label === 'local-head' ? 4 : 2;
   return seats.filter(s => all || !s.stays)

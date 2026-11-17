@@ -8,7 +8,7 @@ import { obsHosts } from '../core/aws-access.mjs';
 
 // Alex, 11-11 (W-420): AWS credentials reach a sandbox only when he runs bin/sbx-obs-creds, or the factory does after his approval.
 const SUP = 'sup: stream-1', T = '2026-11-11T22:00:00.000Z', SB = 'herdr-claude-code-ad7960e5d7f2';
-const config = { roles: { 'triage board worker': 'board-developer' }, routing: { supervisors: { [SUP]: {} } } };
+const config = { roles: { 'triage board worker': 'factory-developer' }, routing: { supervisors: { [SUP]: {} } } };
 const SCRIPT = 'x\npermissions:\n  network:\n    allow:\n      - sts.us-east-1.amazonaws.com\n      - logs.us-east-1.amazonaws.com\n      - sentry.io\nYAML\n';
 const ask = { work: 'W-1', sandbox: SB, why: 'Globex: read the Lever refusal in production logs' };
 

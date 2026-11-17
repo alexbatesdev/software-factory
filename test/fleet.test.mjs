@@ -29,14 +29,14 @@ test('working and blocked pass through; done with nothing active is plain idle',
 });
 
 test('layout: 3 panes per tab everywhere, board spawns in Board Actions, no Assistants workspace', () => {
-  const workspaces = [{ workspace_id: 'w1', label: 'Main' }, { workspace_id: 'w2', label: 'Assistants' }, { workspace_id: 'w3', label: 'Board Actions' }, { workspace_id: 'w4', label: 'Terminals' }];
+  const workspaces = [{ workspace_id: 'w1', label: 'Main' }, { workspace_id: 'w2', label: 'Assistants' }, { workspace_id: 'w3', label: 'Factory Actions' }, { workspace_id: 'w4', label: 'Terminals' }];
   const tabs = [{ workspace_id: 'w1', label: 'Head', pane_count: 4 }, { workspace_id: 'w3', label: 'runs', pane_count: 3 }];
-  const agents = [{ label: 'triage-run TR-9', workspace: 'Main' }, { label: 'triage-run TR-8', workspace: 'Board Actions' }, { label: 'x', workspace: 'Terminals' }];
+  const agents = [{ label: 'triage-run TR-9', workspace: 'Main' }, { label: 'triage-run TR-8', workspace: 'Factory Actions' }, { label: 'x', workspace: 'Terminals' }];
   const issues = layoutIssues({ workspaces, tabs, agents, units: [] });
   assert.equal(issues.length, 4, issues.join('\n'));
   assert.match(issues.join('\n'), /Main tab "Head" has 4 panes/);
   assert.match(issues.join('\n'), /Assistants/);
-  assert.match(issues.join('\n'), /"triage-run TR-9" .*Board Actions/);
+  assert.match(issues.join('\n'), /"triage-run TR-9" .*Factory Actions/);
   assert.match(issues.join('\n'), /Terminals/);
 });
 

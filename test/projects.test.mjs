@@ -102,10 +102,10 @@ test('a project gets one planning job when the factory has a record on one of it
   const { triageCreates } = await import('../core/projects.mjs');
   const queued = { ...works, 'W-3': { id: 'W-3', phase: 'ready', source: { type: 'teamwork', key: 'tw-102' }, links: {} } };
   const [c] = triageCreates([C({}, queued)], queued, { questionsTo: 'alex' });
-  assert.deepEqual([c.title, c.repo, c.kind, c.phase, c.source], ['Plan project: Position End Date', 'project-planning', 'build', 'ready', { type: 'agent', by: 'board (projects)', key: 'project:2026-10-position-end-date' }]);
+  assert.deepEqual([c.title, c.repo, c.kind, c.phase, c.source], ['Plan project: Position End Date', 'project-planning', 'build', 'ready', { type: 'agent', by: 'factory (projects)', key: 'project:2026-10-position-end-date' }]);
   assert.deepEqual(triageCreates([C({ factoryPlan: true }, queued)], queued, {}), [], 'planned');
   assert.deepEqual(triageCreates([C({}, works)], works, {}), [], 'nothing of ours waiting to start');
-  const open = { ...queued, 'W-9': { id: 'W-9', phase: 'implementation', source: { type: 'agent', by: 'board (projects)', key: 'project:2026-10-position-end-date' } } };
+  const open = { ...queued, 'W-9': { id: 'W-9', phase: 'implementation', source: { type: 'agent', by: 'factory (projects)', key: 'project:2026-10-position-end-date' } } };
   assert.deepEqual(triageCreates([C({}, open)], open, {}), [], 'one planning job at a time');
 });
 

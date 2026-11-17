@@ -64,7 +64,7 @@ test('triage sees the parent task before asking, so it does not ask what the epi
 
 test('a PR past internal review waits on the board to mark it ready, and on Alex only when that attempt failed', () => {
   const w = { id: 'W-1', phase: 'ready_for_human', head: 'aaa', links: { pr: 'https://github.com/acme-org/app/pull/5' }, prReadyOps: [] };
-  assert.equal(waitingOn(w, { questions: [] }).who, 'board');
+  assert.equal(waitingOn(w, { questions: [] }).who, 'factory');
   const failed = { ...w, prReadyOps: [{ id: 'P1', head: 'aaa', status: 'failed' }] };
   assert.match(waitingOn(failed, { questions: [] }).text, /^Waiting on you: marking #5 ready was failed/);
 });

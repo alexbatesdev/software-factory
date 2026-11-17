@@ -5,7 +5,7 @@ import { openStore } from '../core/store.mjs';
 import { createApi } from '../core/api.mjs';
 
 const S1 = 'sup: stream-1';
-const config = { roles: { 'local-head': 'local-head', 'questions router': 'questions-router', 'board lead': 'board-lead', 'triage board worker': 'board-developer' }, routing: { supervisors: { [S1]: {} } } };
+const config = { roles: { 'local-head': 'local-head', 'questions router': 'questions-router', 'board lead': 'factory-lead', 'triage board worker': 'factory-developer' }, routing: { supervisors: { [S1]: {} } } };
 async function serve() {
   const store = openStore(':memory:', { supervisors: [S1] });
   const server = http.createServer(createApi({ store, config, now: () => '2026-10-30T20:00:00.000Z' }));
@@ -160,7 +160,7 @@ test('the page and board view are served; a read-only factory refuses writes', a
 });
 
 test("prioritize marks a record as Alex's priority and clears it back to the default", async () => {
-  const f = await serveWith({ config: { ...config, roles: { ...config.roles, 'triage board worker': 'board-developer' } } });
+  const f = await serveWith({ config: { ...config, roles: { ...config.roles, 'triage board worker': 'factory-developer' } } });
   try {
     await f.act('triage board worker', 'create', { title: 'Urgent fix' });
     await f.act('triage board worker', 'prioritize', { work: 'W-1' });
@@ -444,7 +444,7 @@ test("local-head's tools offer every board action, each with a field for Alex's 
   const tools = toolsFor('local-head');
   assert.ok(tools.some(t => t.name === 'cancel') && tools.some(t => t.name === 'resolve_thread'));
   assert.ok(tools.filter(t => !['inbox', 'read', 'questions'].includes(t.name)).every(t => t.inputSchema.properties.alexAsked), 'every action tool takes alexAsked');
-  assert.ok(!toolsFor('board-lead').some(t => t.inputSchema.properties.alexAsked), 'only local-head speaks for Alex');
+  assert.ok(!toolsFor('factory-lead').some(t => t.inputSchema.properties.alexAsked), 'only local-head speaks for Alex');
 });
 
 test("a discovery citing a file that isn't on origin/main is the PR's own code: it is filed inScope, not split out as new work (W-509: W-507, W-508)", async () => {

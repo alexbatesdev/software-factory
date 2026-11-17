@@ -110,12 +110,12 @@ async function down() {
 
 async function rename() {
   const server = planStop(seats.filter(s => s.label === serverLabel), (await observe()).panes)[0];
-  if (server?.action === 'stop') { console.log(`The board server (${serverLabel}) is running; run \`down\` first.`); process.exit(1); }
+  if (server?.action === 'stop') { console.log(`The factory server (${serverLabel}) is running; run \`down\` first.`); process.exit(1); }
   const db = path.join(ROOT, 'data/factory.db'), backup = path.join(ROOT, 'data/spamton-factory-pre-rename.db');
   fs.copyFileSync(db, backup);
   const store = openStore(db, { supervisors: Object.keys(config.routing.supervisors) });
   for (const [from, to] of Object.entries(config.routing.renamed || {}).filter(([k]) => k !== '_doc')) {
-    if (!JSON.stringify(store.state).includes(JSON.stringify(from))) { console.log(`skip  ${from}: not on the board`); continue; }
+    if (!JSON.stringify(store.state).includes(JSON.stringify(from))) { console.log(`skip  ${from}: not in the factory`); continue; }
     store.append({ kind: 'rename_seat', payload: { from, to } }, { now: new Date().toISOString(), by: 'factory.mjs rename' });
     console.log(`moved ${from} -> ${to}`);
   }
