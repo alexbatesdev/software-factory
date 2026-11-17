@@ -147,7 +147,7 @@ const REVIEW_SETTLES_REQUEST_FROM = '2026-11-16T19:30:00.000Z';
 const ALEX_LIFTS_DEFERRAL_FROM = '2026-11-16T19:45:00.000Z';
 const IN_SCOPE_OPENS_FIXES_FROM = '2026-11-16T20:30:00.000Z';
 const MERGE_SETTLES_REQUESTS_FROM = '2026-11-16T21:15:00.000Z';
-const QUEUED_FIXES_REQUEST_FROM = '2026-11-17T22:30:00.000Z';
+const QUEUED_FIXES_REQUEST_FROM = '2026-11-17T22:08:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {

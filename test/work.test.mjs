@@ -872,7 +872,7 @@ test("with no task of its own a record's single linked task is taken as its own;
 });
 
 test('a fixes job queued on a built PR waiting for approval moves it to fixes and asks for the round, so it enters the factory queue (W-533)', () => {
-  const T = '2026-11-17T23:00:00.000Z';
+  const T = '2026-11-17T23:30:00.000Z';
   const w = run({ ...readyPr(), phase: 'awaiting_human_approval' }, { type: 'assign', assignmentId: 'R9', kind: 'fixes', status: 'queued', evidence: 'Alex: merge origin/main, the red is stale main', ctx: { now: T, by: 'local-head' } });
   assert.equal(w.phase, 'fixes');
   const r = w.requests.at(-1);
