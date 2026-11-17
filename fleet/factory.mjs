@@ -49,6 +49,9 @@ export function planFactory(seats, panes) {
     const base = { seat, pane: p.pane, rename: p.label !== seat.label, ...(name ? { name } : {}) };
     if (p.workspace !== seat.workspace) return { ...base, action: 'report-misplaced', why: `in ${p.workspace}, the manifest says ${seat.workspace}` };
     if (!running(seat, p.argv) && seat.workspace === TERMINALS) return { ...base, action: 'report-stopped', why: `stopped; Terminals is Alex's, run \`${seat.run}\` there` };
+    // Its herdr name held by an agent in another pane (W-525: panes relabelled by hand): starting it can only fail.
+    const holder = ['claude', 'codex'].includes(seat.kind) && !running(seat, p.argv) && panes.find(x => x.pane !== p.pane && x.agentName === slug(seat.label));
+    if (holder) return { ...base, action: 'report-name-taken', why: `its herdr name "${slug(seat.label)}" is held by the pane labelled "${holder.label}" (${holder.pane}); rename that agent (herdr agent rename ${holder.pane} <its own name>) or relabel the panes, then run up again` };
     if (!running(seat, p.argv)) return { ...base, action: { shell: 'run', sbx: 'reconnect' }[seat.kind] || 'start', why: 'pane is up, its process is not' };
     if (seat.role && !p.argv.includes(`--agent ${seat.role}`)) return { ...base, action: 'report-role', why: `running without --agent ${seat.role}; restart it fresh to load the role` };
     return { ...base, action: 'none', why: 'running' };

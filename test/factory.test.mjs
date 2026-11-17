@@ -164,3 +164,13 @@ test('the server names any running seat agent that lost its herdr name, so `herd
     { ref: 'p3', label: 'sup: s1', agent: 'claude', name: 'sup-s1' }, { ref: 'p4', label: 'sbx: s1', agent: 'claude', name: null }, { ref: 'p5', label: 'board', agent: null, name: null }];
   assert.deepEqual(seatRenames(seatsOf(config), agents), [{ ref: 'p1', label: 'local-head', name: 'local-head' }]);
 });
+
+test("a seat whose herdr name is held by another pane is reported with who holds it and what to do, not started into an error (W-525)", () => {
+  const plan = planFactory(seatsOf(config), [
+    pane('unblocker', 'Main', 'Agent Unblocker', 'zsh'),
+    pane('utility', 'Main', 'Assistants', 'codex resume abc', { agentName: 'unblocker', ref: 'p-util' }),
+  ]);
+  const s = plan.find(x => x.seat.label === 'unblocker');
+  assert.equal(s.action, 'report-name-taken');
+  assert.match(s.why, /herdr name "unblocker" is held by the pane labelled "utility" .*rename that agent .*or relabel the panes/);
+});
