@@ -12,7 +12,8 @@ const unrequested = w => w.phase === 'queued' && !pendingDispatch(w) && !takenUp
 // One factory queue (Alex 11-16, W-505): a fixes or review request no worker has started and no stream has been told of
 // waits for the next free stream, not for the stream that built the record.
 const liveJob = w => (w.assignments || []).some(a => ['started', 'blocked'].includes(a.status) && !parked(a));
-export const waitingRequest = (w, told = new Set()) => !liveJob(w) && !(w.assignments || []).some(a => a.status === 'queued')
+// A queued job beside an unacked request (W-533) is still waiting for a stream: nobody has taken the round up yet.
+export const waitingRequest = (w, told = new Set()) => !liveJob(w)
   && (w.requests || []).find(r => ['fixes', 'review'].includes(r.type) && currentRequest(w, r) && !told.has(`${w.id}/${r.id}`)) || null;
 // A stream is busy while its worker has a job: building or fixing, a live work assignment, or a dispatch not yet acked.
 const active = told => w => (BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && pendingDispatch(w))) && !unrequested(w) && !waitingRequest(w, told);

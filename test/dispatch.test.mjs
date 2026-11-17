@@ -298,3 +298,8 @@ test("a project's task that isn't ready to start waits, naming what it needs (pr
   assert.equal(p['W-1'].action, null); assert.match(p['W-1'].reason, /project 2026-10-position-end-date isn't ready for it: no test plan for task 102/);
   assert.equal(p['W-2'].action, 'queue');
 });
+
+test('a fixes round with a queued job nobody has started, and a request no stream was told of, is in the factory queue (W-533)', () => {
+  const p = plan([fixesWaiting('W-76', { assignments: [{ id: 'R1', kind: 'implementation', status: 'done' }, { id: 'R12', kind: 'fixes', status: 'queued' }] })]);
+  assert.deepEqual([p['W-76'].action, p['W-76'].request], ['deliver', 'W-76/R5']);
+});

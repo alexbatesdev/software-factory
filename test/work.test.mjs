@@ -870,3 +870,14 @@ test("with no task of its own a record's single linked task is taken as its own;
   assert.equal(observeHealth(w, { head: 'aaa', conflict: false, failing: [], prBodyTasks: ['111'] }, c), w);
   assert.match(observeHealth(w, { head: 'aaa', conflict: false, failing: [], prBodyTasks: ['111', '222'] }, c).findings.at(-1).text, /links 2 Teamwork tasks \(111, 222\).*only the one it completes/);
 });
+
+test('a fixes job queued on a built PR waiting for approval moves it to fixes and asks for the round, so it enters the factory queue (W-533)', () => {
+  const T = '2026-11-17T23:00:00.000Z';
+  const w = run({ ...readyPr(), phase: 'awaiting_human_approval' }, { type: 'assign', assignmentId: 'R9', kind: 'fixes', status: 'queued', evidence: 'Alex: merge origin/main, the red is stale main', ctx: { now: T, by: 'local-head' } });
+  assert.equal(w.phase, 'fixes');
+  const r = w.requests.at(-1);
+  assert.deepEqual([r.type, r.ack, r.head], ['fixes', null, w.head]);
+  assert.equal(w.assignments.at(-1).status, 'queued', 'the supervisor starts the job it was given');
+  const before = run({ ...readyPr(), phase: 'awaiting_human_approval' }, { type: 'assign', assignmentId: 'R9', kind: 'fixes', status: 'queued', evidence: 'x', ctx: { now: '2026-11-17T21:00:00.000Z', by: 'local-head' } });
+  assert.deepEqual([before.phase === 'fixes', before.requests.filter(r => r.type === 'fixes').length], [false, 0], 'replayed from before the change: no round opened');
+});

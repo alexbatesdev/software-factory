@@ -147,6 +147,7 @@ const REVIEW_SETTLES_REQUEST_FROM = '2026-11-16T19:30:00.000Z';
 const ALEX_LIFTS_DEFERRAL_FROM = '2026-11-16T19:45:00.000Z';
 const IN_SCOPE_OPENS_FIXES_FROM = '2026-11-16T20:30:00.000Z';
 const MERGE_SETTLES_REQUESTS_FROM = '2026-11-16T21:15:00.000Z';
+const QUEUED_FIXES_REQUEST_FROM = '2026-11-17T22:30:00.000Z';
 export function normalize(w, ctx = {}) {
   const kept = ctx.now >= QUESTIONS_KEEP_READY_FROM ? { ...ctx, openQuestions: 0 } : ctx;
   if (w.phase === 'awaiting_human_approval') {
@@ -652,6 +653,13 @@ export function applyEvent(work, e, ctx) {
       w.assignments = [...(w.assignments || []), a];
       if (e.owner && takesOwner(e) && (!other || e.status === 'started')) w.owner = e.owner;
       if (PRE_QUEUE.includes(w.phase)) w.phase = 'queued';
+      // A fixes job queued on a built PR nobody is working (W-533: local-head's merge-main rounds) is a fixes round: the record
+      // moves to fixes and the round is requested, so the factory queue gives it to a stream and tells that stream.
+      if (ctx.now >= QUEUED_FIXES_REQUEST_FROM && e.kind === 'fixes' && e.status === 'queued' && prLinked(w) && ['ready_for_human', 'awaiting_human_approval', ...REVIEWING].includes(w.phase)
+        && !w.requests.some(r => r.type === 'fixes' && !r.ack)) {
+        w.phase = 'fixes'; w.approvalWait = null;
+        w.requests.push({ id: nextId(w.requests, 'R'), type: 'fixes', at: ctx.now, by: ctx.by, delivery: 'pending', ack: null, head: w.head });
+      }
       note(w, ctx, `Assignment ${a.id} (${a.kind}) recorded as queued${a.owner ? ` for ${a.owner}` : ''}${a.dependsOn.length ? `, depending on ${a.dependsOn.join(', ')}` : ''}${a.after.length ? `, after ${a.after.join(', ')}'s worker finishes` : ''}${waits.length ? `, after ${waits.join(', ')} ends` : ''}${a.parallel ? `, in parallel with ${other?.id}` : ''}. Evidence: ${e.evidence}.`);
       if (e.status === 'started') startAssignment(w, a, ctx, false); // recorded as started: still version 1
       break;
