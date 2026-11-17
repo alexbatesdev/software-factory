@@ -41,3 +41,19 @@ export function compareWarnings(pr, main, base = null) {
   const atBase = base && new Set(base.map(w => w.fingerprint)), stale = atBase && prOnly.length && pr.filter(w => !onMain.has(w.fingerprint)).every(w => atBase.has(w.fingerprint));
   return { verdict: stale ? 'fixed on main' : prOnly.length ? 'ours' : 'red on main', prOnly, shared, unit: 'Brakeman warning' };
 }
+
+/** Every failing test's file changed on main since the branch point and not in the PR: main fixed it (W-532). */
+export function staleOnMain(tests, prFiles, mainFiles) {
+  const files = [...new Set((tests || []).map(t => t.split('::')[0]))];
+  return files.length > 0 && files.every(f => mainFiles.includes(f) && !prFiles.includes(f));
+}
+
+/**
+ * A comparison that couldn't place the PR's failures on main (unknown, or "ours") becomes "fixed on main" when main has
+ * changed every failing test's file since the PR branched and the PR hasn't (W-532: main red on something unrelated).
+ */
+export function withStaleness(c, pr, { prFiles = [], mainFiles = [] } = {}) {
+  if (!['unknown', 'ours'].includes(c.verdict) || !pr?.tests?.length) return c;
+  const failing = c.verdict === 'ours' ? pr.tests.filter(t => c.prOnly.includes(t)) : pr.tests;
+  return staleOnMain(failing, prFiles, mainFiles) ? { ...c, verdict: 'fixed on main', prOnly: failing, unit: c.unit || 'failing test' } : c;
+}

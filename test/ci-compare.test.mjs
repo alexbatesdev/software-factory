@@ -91,3 +91,23 @@ test("warnings a PR carries from where it branched off, gone from main since, ar
   assert.match(compareText('Audit Ruby code and dependencies', c), /2 Brakeman warning\(s\) here are fixed on main since this branch's base.*merge origin\/main.*no code fix/);
   assert.equal(compareWarnings([w('f1', 122), w('f9', 5)], [], [w('f1', 122)]).verdict, 'ours', 'one warning new on the branch: the PR\'s');
 });
+
+// W-532 (Alex 11-17): PRs red only because their branch lacks fixes main has, while main is red on something unrelated.
+test("failing tests whose files main changed since the branch point, and the PR didn't touch, are 'fixed on main'", async () => {
+  const { staleOnMain } = await import('../core/ci-compare.mjs');
+  const tests = ['spec/support/example_watchdog_spec.rb::times out', 'spec/queries/datasheet_spec.rb::row scope'];
+  const main = ['spec/support/example_watchdog_spec.rb', 'spec/queries/datasheet_spec.rb', 'app/queries/datasheet.rb'];
+  assert.equal(staleOnMain(tests, [], main), true);
+  assert.equal(staleOnMain(tests, ['spec/queries/datasheet_spec.rb'], main), false, 'the PR changed that spec: maybe its own');
+  assert.equal(staleOnMain(tests, [], ['spec/support/example_watchdog_spec.rb']), false, 'one failing file main never changed');
+  assert.equal(staleOnMain([], [], main), false, 'no failing tests: nothing to place');
+});
+
+test("a check whose failing tests main has since fixed reads 'merge origin/main', even while main is red on other tests", async () => {
+  const { compareCheck, withStaleness, compareText } = await import('../core/ci-compare.mjs');
+  const pr = { status: 'failed', tests: ['spec/a_spec.rb::x'] }, mainDiedEarly = { status: 'failed', tests: null };
+  const c = withStaleness(compareCheck(pr, mainDiedEarly), pr, { prFiles: [], mainFiles: ['spec/a_spec.rb'] });
+  assert.equal(c.verdict, 'fixed on main');
+  assert.match(compareText('ci/circleci: unit-tests', c), /fixed on main since this branch's base.*merge origin\/main.*no code fix/);
+  assert.equal(withStaleness(compareCheck(pr, { status: 'failed', tests: ['spec/a_spec.rb::x'] }), pr, { prFiles: [], mainFiles: ['spec/a_spec.rb'] }).verdict, 'red on main', 'the same test still fails on main: main\'s');
+});

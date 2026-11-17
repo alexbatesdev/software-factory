@@ -27,7 +27,7 @@ import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.
 import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask, readTree } from '../sources/teamwork.mjs';
 import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
-import { compareCheck, compareWarnings } from '../core/ci-compare.mjs';
+import { compareCheck, compareWarnings, withStaleness } from '../core/ci-compare.mjs';
 import { runBrakeman, AUDIT_CHECK } from '../sources/audit.mjs';
 import { buildProjects, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
@@ -279,6 +279,22 @@ async function compareAudit(health, ciCompare) {
   }
 }
 
+// The files a PR's branch changed and the files main changed since the branch point (W-532), per head and main commit.
+const branchFileCache = new Map();
+async function branchFiles(repo, head) {
+  const git = await mainGit(repo);
+  if (!git) return null;
+  try {
+    const main = (await git('rev-parse', 'origin/main')).stdout.trim(), key = `${repo}@${head}@${main}`;
+    if (branchFileCache.has(key)) return branchFileCache.get(key);
+    await git('cat-file', '-e', `${head}^{commit}`).catch(() => git('fetch', '-q', 'origin', head));
+    const base = (await git('merge-base', main, head)).stdout.trim(), names = async (a, b) => (await git('diff', '--name-only', a, b)).stdout.split('\n').filter(Boolean);
+    const files = { prFiles: await names(base, head), mainFiles: await names(base, main) };
+    branchFileCache.set(key, files);
+    return files;
+  } catch (e) { once(`branch files ${repo}@${head.slice(0, 7)}: ${e.message}`); return null; }
+}
+
 async function compareCi(health, mainFailing, prs, owner) {
   const out = new Map();
   if (!circleReady()) return out;
@@ -288,8 +304,15 @@ async function compareCi(health, mainFailing, prs, owner) {
     if (h.base !== 'main' || !branch || !checks.length) continue;
     try {
       const pr = await ciRun(`${slug}@${h.head}`, () => readJobFailures(slug, branch, h.head));
-      const main = await ciRun(`${slug}@main`, () => readJobFailures(slug, 'main'), 600000);
-      if (pr && main) out.set(key, Object.fromEntries(checks.map(f => [f, compareCheck(pr.get(f), main.get(f))])));
+      const main = await ciRun(`${slug}@main`, () => readJobFailures(slug, 'main'), 600000) || new Map();
+      if (!pr) continue;
+      let cmp = Object.fromEntries(checks.map(f => [f, compareCheck(pr.get(f), main.get(f))]));
+      // Failures main may have fixed since the branch point (W-532): the files each side changed decide it.
+      if (Object.values(cmp).some(c => ['unknown', 'ours'].includes(c.verdict))) {
+        const files = await branchFiles(repo, h.head);
+        if (files) cmp = Object.fromEntries(Object.entries(cmp).map(([f, c]) => [f, withStaleness(c, pr.get(f), files)]));
+      }
+      out.set(key, cmp);
     } catch (e) { once(`circleci ${key}: ${e.message}`); }
   }
   return out;
