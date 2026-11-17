@@ -60,7 +60,7 @@ Each role is a Claude (or Codex) session in a herdr pane. Behaviour lives in the
 | `questions router` | Routing | Gives answers and unowned items an owner. |
 | `sup: <stream>` | Stream supervisor | Takes its stream's records, briefs its worker by file, records every step. |
 | `sbx: <stream>` | Worker | Does the repo work in a Docker sandbox and reports with `progress`. |
-| `triage board worker` | Board developer | Builds this repo. |
+| `factory-developer` | Factory developer | Builds this repo. |
 
 Streams: `stream-1` (Claude), `stream-2` (Codex), and `host` (workers on the host for repos a sandbox can't reach, such as built-customer-implementations and teamwork-mini-mcp).
 

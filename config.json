@@ -27,7 +27,8 @@
       "_doc": "old seat label -> new (Alex, 11-05). `factory.mjs rename` moves the board's records; up/down find panes still under the old label.",
       "sup: stream-1 (support+sec)": "sup: stream-1",
       "sup: stream-conf-stack": "sup: stream-2",
-      "sbx: stream-conf-stack": "sbx: stream-2"
+      "sbx: stream-conf-stack": "sbx: stream-2",
+      "triage board worker": "factory-developer"
     },
     "questionsRouter": "questions router"
   },
@@ -153,7 +154,7 @@
         "tab": "Local head"
       },
       {
-        "label": "triage board worker", "stays": true,
+        "label": "factory-developer", "stays": true,
         "kind": "claude",
         "role": "board-developer",
         "workspace": "Main",
@@ -195,7 +196,7 @@
     "local-head": "local-head",
     "questions router": "questions-router",
     "board lead": "board-lead",
-    "triage board worker": "board-developer",
+    "factory-developer": "board-developer",
     "agent-unblocker": "agent-unblocker"
   },
   "_comment": "V2 owns its config (V1 is frozen, 10-30). Streams have no topic words (decision 8). roles maps a seat label to its role; every routing.supervisors label is a stream-supervisor.",

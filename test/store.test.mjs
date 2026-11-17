@@ -199,7 +199,7 @@ test('a triaged record shows its verdict, and a factory record waits on the boar
   s.appendAll(commandsFor('triage', { work: f, bucket: 'ready', note: 'clear' }), ctx({ by: 'board lead' }));
   const [card] = boardView(s.state, { supervisors: ['sup: stream-1'] });
   assert.equal(card.category, 'ready');
-  assert.deepEqual([card.waiting.who, card.waiting.text], ['triage board worker', 'Waiting on the board developer (triage board worker) to fix it']);
+  assert.deepEqual([card.waiting.who, card.waiting.text], ['factory-developer', 'Waiting on the factory developer to fix it'], 'Alex 11-17: the seat is factory-developer');
 });
 
 test('resolve closes a factory record, or a manual one with no criteria, with a note; never PR work', async () => {

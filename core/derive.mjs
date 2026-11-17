@@ -53,8 +53,8 @@ const live = (w, kind) => (w.assignments || []).find(a => LIVE_ASSIGNMENT.includ
  * @returns {{who: string|null, text: string, question?: object}|null} null when nothing waits (done, cancelled)
  */
 export function waitingOn(w, { questions = [] } = {}) {
-  // Factory records are the board developer's queue, never a stream's.
-  if (w.kind === 'factory' && !TERMINAL.includes(w.phase)) return { who: 'triage board worker', text: 'Waiting on the board developer (triage board worker) to fix it' };
+  // Factory records are the factory developer's queue, never a stream's.
+  if (w.kind === 'factory' && !TERMINAL.includes(w.phase)) return { who: 'factory-developer', text: 'Waiting on the factory developer to fix it' };
   if (w.phase === 'intake' && w.triage?.bucket === 'intake') {
     if (w.waitingOn) return { who: w.waitingOn.who, text: `Waiting on ${w.waitingOn.who}: ${w.waitingOn.what}` };
     const merges = (w.externalDeps || []).filter(d => d.pr).map(d => d.pr);
