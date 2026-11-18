@@ -19,6 +19,19 @@ export const waitingRequest = (w, told = new Set()) => !liveJob(w)
 // (unacked, or acked before the supervisor records it started: W-554).
 const active = told => w => (BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && (pendingDispatch(w) || takenUp(w)))) && !unrequested(w) && !waitingRequest(w, told);
 
+/**
+ * The agent a job fits (W-557, Alex 11-18), or null for no preference. Codex: rounds whose brief is the spec (fixes,
+ * PR feedback, red CI, a Sentry fix the scout proposed). Claude: planning, research and discovery. A record's model or
+ * effort override wins (no preference); reviews are Claude only and decided in place() (W-556).
+ */
+export function preferredAgent(w, job, byId = new Map()) {
+  if (w.model || w.effort) return null;
+  if (job?.type === 'fixes' || w.kind === 'pr-feedback' || w.source?.by === 'board (ci)' || byId.get(w.proposedFrom)?.kind === 'scout') return 'codex';
+  if (w.repo === 'project-planning' || ['research', 'discovery'].includes(w.kind)) return 'claude';
+  return null;
+}
+const FALLBACK_MS = 20 * 60000;
+
 /** A stream with `repos` {name: checkout} (a host stream, TB-159) works only those repos; the sbx streams work everything else. */
 export function canTake(w, label, supervisors) {
   // A host stream names its repos, and branches inside other repos (Mutation work, 11-09) that need the host.
@@ -122,7 +135,16 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const here = routeOf(w, labels), mine = STREAM_LOAD.includes(w.phase) ? here : null;
     const cost = l => load[l] // this record's own slot doesn't count against its stream
       - (l === mine ? 1 : 0);
-    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors) && runsModel(l) && fits(l)).sort((a, b) => cost(a) - cost(b))[0];
+    const free = labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors) && runsModel(l) && fits(l)).sort((a, b) => cost(a) - cost(b));
+    // The agent that fits the job first; after FALLBACK_MS waiting, any free stream, so nothing starves (W-557).
+    const wantAgent = bound ? null : preferredAgent(w, job, byId), agentOf = l => cfg.supervisors[l]?.agent || 'claude';
+    const since = job?.at || w.triage?.at || w.createdAt, fallback = cfg.agentFallbackMs ?? FALLBACK_MS;
+    const waited = !cfg.now || !since || Date.parse(cfg.now) - Date.parse(since) >= fallback;
+    const fitting = wantAgent ? free.filter(l => agentOf(l) === wantAgent) : free;
+    if (wantAgent && !fitting.length && free.length && !waited && labels.some(l => agentOf(l) === wantAgent && canTake(w, l, cfg.supervisors))) {
+      wait(`waits for a ${wantAgent === 'codex' ? 'Codex' : 'Claude'} stream (its kind of job); any free stream takes it after ${Math.round(fallback / 60000)} min`); return;
+    }
+    const to = bound?.to || (fitting.length ? fitting : free)[0];
     if (!to && labels.some(l => !holds.has(l) && !fits(l))) { wait(`an internal review runs on Claude, and every Claude stream is busy (${[...holds].filter(([l]) => fits(l)).map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     busy.set(to, w.id); runningOn.set(to, w.id);

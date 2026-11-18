@@ -332,3 +332,25 @@ test('a review round goes to a Claude stream even when a Codex stream built the 
   const fixes = p([running, fixesWaiting('W-74', { stream: S2, owner: S2 })])['W-74'];
   assert.equal(fixes.to, S2, 'a fixes round still goes to a Codex stream');
 });
+
+// W-557 (Alex 11-18): a job goes to the agent that fits it; after a wait any free stream takes it, so nothing starves.
+test('a job prefers the agent that fits its type, and takes any free stream once it has waited long enough (W-557)', () => {
+  const S3 = 'sup: stream-3';
+  const mixed = { ...cfg, supervisors: { [S1]: cfg.supervisors[S1], [S2]: { ...cfg.supervisors[S2], agent: 'codex' }, [S3]: {} }, agentFallbackMs: 20 * 60000 };
+  const at = (works, now = '2026-11-18T19:00:00.000Z') => Object.fromEntries(autoDispatchPlan(works, { ...mixed, now }).map(x => [x.id, x]));
+  const req = at => [{ id: 'R5', type: 'fixes', ack: null, head: 'h1', delivery: 'pending', at }];
+  // A fixes round with a Codex stream free goes there, though a Claude stream is free too.
+  assert.equal(at([fixesWaiting('W-71', { stream: null, owner: null, requests: req('2026-11-18T18:59:00.000Z') })])['W-71'].to, S2);
+  // A planning job goes to Claude even when Codex is the least loaded.
+  assert.notEqual(at([loose('W-512', { owner: null, repo: 'project-planning', createdAt: '2026-11-18T18:59:00.000Z' })])['W-512'].to, S2);
+  // Codex busy: a fresh fixes round waits for it, an old one takes the free Claude stream.
+  const codexBusy = loose('W-9', { phase: 'implementation', stream: S2, owner: S2, assignments: [{ id: 'R1', kind: 'implementation', status: 'started' }] });
+  const fresh = at([codexBusy, fixesWaiting('W-72', { stream: null, owner: null, requests: req('2026-11-18T18:55:00.000Z') })])['W-72'];
+  assert.equal(fresh.action, null); assert.match(fresh.reason, /Codex stream.*20 min/);
+  assert.ok([S1, S3].includes(at([codexBusy, fixesWaiting('W-73', { stream: null, owner: null, requests: req('2026-11-18T18:30:00.000Z') })])['W-73'].to), 'waited 30 min: any free stream');
+  // A model on the record wins: it needs Claude, whatever the job.
+  assert.notEqual(at([fixesWaiting('W-74', { stream: null, owner: null, model: 'opus', requests: req('2026-11-18T18:59:00.000Z') })])['W-74'].to, S2);
+  // A Sentry fix the scout proposed prefers Codex; a plain new build has no preference.
+  const scout = loose('W-60', { kind: 'scout', phase: 'done', owner: null });
+  assert.equal(at([scout, loose('W-61', { owner: null, proposedFrom: 'W-60', createdAt: '2026-11-18T18:59:00.000Z' })])['W-61'].to, S2);
+});

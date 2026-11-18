@@ -139,7 +139,7 @@ function autoDispatchTick() {
   const views = Object.values(s.work).map(w => ({ ...prGateView(s, w), ...derivedCtx(s, w.id, prs), ...(gates.has(w.id) ? { projectGate: gates.get(w.id) } : {}) }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
   const toldRequests = new Set(Object.values(s.messages).flatMap(m => [m.about?.requests].flat().filter(Boolean)));
-  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, ...skipped(), drain, prApproval: config.prApproval, running: tuned, toldRequests }, { terminals });
+  const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, ...skipped(), drain, prApproval: config.prApproval, running: tuned, toldRequests, now: now(), agentFallbackMs: config.autoDispatch?.agentFallbackMs }, { terminals });
   heldRequests = new Set(plan.filter(p => !p.action && p.request).map(p => p.request));
   // One factory queue (W-505): a waiting round moves to the free stream; its owner follows when it was the old stream's.
   for (const p of plan.filter(p => p.action === 'route')) {
