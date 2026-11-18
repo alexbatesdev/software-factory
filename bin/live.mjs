@@ -49,6 +49,7 @@ import { createRuntimeLog } from '../core/runtime-log.mjs';
 import { captureManifests, manifestsDue } from '../core/manifest.mjs';
 import { outcomes, outcomesMarkdown, codexSinceOf } from '../core/outcomes.mjs';
 import { usageDue, costOf, sumTokens } from '../core/usage.mjs';
+import { autoMergePlan } from '../core/automerge.mjs';
 import { readHostUsage } from '../hosts/usage.mjs';
 import { checkConfig } from '../core/preflight.mjs';
 import { ROLES } from '../core/capabilities.mjs';
@@ -702,6 +703,29 @@ every(60000, duplicateTick);
 every(60000, manifestTick);
 if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config.backup.enabled is false)');
 every(60000, seatRestartTick);
+// W-564: GitHub auto-merge for our PRs with no project or hold, at Alex's bar (1 QA + 1 dev approval on the head).
+// Off in config until Alex's rule edits land; until then each decision is logged as what it would do.
+const AM = { enabled: false, org: config.githubOwner, qaTeam: 'qa', devTeam: 'developers', repos: ['built-rails'], ...config.autoMerge };
+let amTeams = null, amTeamsAt = 0;
+every(config.poll.githubMs, async function autoMergeTick() {
+  if (DRY || !openPrs.size) return;
+  if (!amTeams || Date.now() - amTeamsAt > 3600000) {
+    try { amTeams = { qa: await gh.teamMembers(AM.org, AM.qaTeam), devs: await gh.teamMembers(AM.org, AM.devTeam) }; amTeamsAt = Date.now(); }
+    catch (e) { once(`auto-merge: team read failed: ${e.message}`); return; }
+  }
+  const repoOf = u => String(u || '').match(/github\.com\/[\w.-]+\/([\w.-]+)\/pull\//)?.[1];
+  const records = Object.values(store.state.work).filter(w => !['done', 'cancelled'].includes(w.phase) && AM.repos.includes(repoOf(w.links?.pr)));
+  for (const x of autoMergePlan(records, openPrs, { me: config.githubLogin, ...amTeams, spec: w => resolveSpec(w, specRead()) }).filter(x => x.action)) {
+    if (!AM.enabled) { once(`auto-merge (off): would ${x.action} ${x.work} ${x.pr}: ${x.reason}`); continue; }
+    try {
+      await gh.autoMerge(x.pr, x.action === 'enable');
+      const text = `GitHub auto-merge turned ${x.action === 'enable' ? 'on' : 'off'} for ${x.pr}: ${x.reason} (W-564).`;
+      apply([{ kind: 'event', target: x.work, payload: { type: 'note', text } },
+        { kind: 'message', payload: { to: 'local-head', work: x.work, about: { autoMerge: `${x.work}/${x.action}/${openPrs.get(x.pr)?.head}` }, text: `[software factory, automated, not Alex] ${x.work}: ${text} Put it in Alex's digest.` } }], 'factory (auto-merge)');
+      log(`auto-merge ${x.action} ${x.work}: ${x.reason}`);
+    } catch (e) { once(`auto-merge ${x.action} ${x.work} failed: ${e.message}`); }
+  }
+});
 // W-561: each finished worker job's tokens, read in its sandbox before a recycle can take them; and which Claude sessions
 // each supervisor seat has had, so the weekly report can total a seat's tokens.
 const USAGE_FROM = '2026-11-18T19:50:00.000Z', SEAT_SESSIONS = join(dirname(DB), 'seat-sessions.json');

@@ -1,5 +1,5 @@
-// GitHub writes and the reads that confirm them. Writes: `gh pr ready`, and resolving a review thread Alex resolved
-// on the dashboard. Never merge, never request reviewers.
+// GitHub writes and the reads that confirm them. Writes: `gh pr ready`, resolving a review thread Alex resolved on the
+// dashboard, and GitHub auto-merge on and off for PRs at Alex's bar (W-564). Never a direct merge, never request reviewers.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readPrs } from '../sources/github.mjs';
@@ -22,6 +22,10 @@ export const gh = {
     const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{comments(last:5){nodes{author{login} body createdAt url}}}}}', '-f', `id=${id}`], { timeout: 20000 });
     return (JSON.parse(stdout).data?.node?.comments?.nodes || []).map(c => ({ by: c.author?.login || 'ghost', at: c.createdAt, body: c.body, url: c.url }));
   },
+  /** W-564: GitHub merges the PR (merge commit) once its own rules pass; the factory decides when this is on. */
+  autoMerge: async (url, on) => { await exec('gh', ['pr', 'merge', url, ...(on ? ['--auto', '--merge'] : ['--disable-auto'])], { timeout: 30000 }); },
+  /** Logins in an org team (W-564: who counts as a QA approval). */
+  teamMembers: async (org, team) => (await exec('gh', ['api', '--paginate', `orgs/${org}/teams/${team}/members`, '--jq', '.[].login'], { timeout: 20000 })).stdout.split('\n').filter(Boolean),
   resolveThread: async id => { await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', '-f', `id=${id}`], { timeout: 20000 }); },
   /** Submitted reviews on a PR; a pending draft has no submitted time. */
   reviews: async url => {
