@@ -37,3 +37,15 @@ test('decisions yield their status and who they need', () => {
 test("the factory's own decision log, numbered FD-, parses like the team's", () => {
   assert.deepEqual(parseDecisions('### FD-001 — Bulk limit\n- status: open\n- needs: Casey\n').map(({ text, ...d }) => d), [{ id: 'FD-001', title: 'Bulk limit', status: 'open', needs: 'Casey' }]);
 });
+
+test('a struck-through requirement is kept as removed, whether its ID or only its text is struck (W-549 phase 2)', () => {
+  const s = parseSpec(`## Requirements
+| ID | Requirement | Notes |
+| --- | --- | --- |
+| REQ-001 | Live one. | D-1 |
+| ~~REQ-002~~ | ~~Moved away.~~ | Removed: moved to another project (D-2) |
+| REQ-003 | ~~Old text.~~ | Removed: replaced by REQ-004 |
+`);
+  assert.deepEqual(Object.entries(s.reqs).map(([id, r]) => [id, r.removed]), [['REQ-001', false], ['REQ-002', true], ['REQ-003', true]]);
+  assert.equal(s.reqs['REQ-002'].text, 'Moved away.');
+});

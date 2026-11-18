@@ -29,7 +29,7 @@ import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
 import { compareCheck, compareWarnings, withStaleness } from '../core/ci-compare.mjs';
 import { runBrakeman, AUDIT_CHECK } from '../sources/audit.mjs';
-import { buildProjects, triageCreates } from '../core/projects.mjs';
+import { buildProjects, specView, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat, seatRenames } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -526,7 +526,7 @@ http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, gh: DRY ? 
   const git = await mainGit(repo);
   return !git || git('cat-file', '-e', `origin/main:${path}`).then(() => true, () => false);
 }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin }), readAt: projectsRead.readAt, me: config.githubLogin }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
+  observed: () => ({ specs: () => ({ ...specView(store.state.work, { planning: projectsRead.readAt ? projectsRead.planning : null, trees: projectsRead.trees }), readAt: projectsRead.readAt }), projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin }), readAt: projectsRead.readAt, me: config.githubLogin }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 
 // The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never

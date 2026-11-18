@@ -1,6 +1,6 @@
 // Projects (Alex, 11-16; ~/Code/plans/software-factory-v2/projects-design.md): a planning-repo project joined to its
 // Teamwork tree. Each leaf task is one PR (D-013); progress is finished leaves over all leaves. Pure, read-only.
-import { BUILDING, REVIEWING } from './work.mjs';
+import { BUILDING, REVIEWING, ownTasks } from './work.mjs';
 
 /**
  * Whether a leaf may start (Alex 11-16, decision 5): the spec has REQ IDs, the leaf has a test plan, and no open decision
@@ -91,4 +91,47 @@ export function triageObjective(p, { questionsTo = 'alex' } = {}) {
     'Review before you report: a fresh subagent reads the plan, the decision log and the test plans against the spec and the team decisions for gaps, contradictions and unanswered edge cases. Fix what it finds. The built-rails review lenses do not apply to this repo.',
     'Stop when the draft PR is open and pushed: report the PR, the pushed head SHA, and the FD entries left open.',
   ].join('\n\n');
+}
+
+/**
+ * Phase 2: the spec and requirements a record is built against (architecture decision 11). Observation only so far.
+ * @param read {planning: [readPlanning row] | null, trees: {root: [{id, parent}]}}
+ * @returns {status: resolved | no spec | ambiguous | unavailable, reason?, slug?, commit?, specBlob?, tasks?, reqs?}
+ */
+export function resolveSpec(w, { planning, trees }) {
+  const tasks = [...ownTasks(w)];
+  if (!tasks.length) return { status: 'no spec', reason: 'no Teamwork task' };
+  if (!planning) return { status: 'unavailable', reason: 'project-planning not read yet' };
+  // The factory's recorded top-level parent (observe_project) places the record without reading every tree.
+  const top = w.project?.id ? String(w.project.id) : null, hits = new Map(), unread = [];
+  for (const p of planning) {
+    const roots = [...new Set([p.readme?.teamworkTask, p.spec?.teamworkTask].filter(Boolean))];
+    for (const root of roots) {
+      const tree = trees[root], kids = new Map();
+      for (const n of tree || []) kids.set(n.parent, [...(kids.get(n.parent) || []), n.id]);
+      const below = id => (kids.get(id) || []).flatMap(k => [k, ...below(k)]), all = new Set([root, ...below(root)]);
+      const mine = top === root ? tasks : tasks.filter(t => all.has(t));
+      if (!mine.length) { if (!tree && !top) unread.push(p.slug); continue; }
+      // Without the tree, a task with its own test plan is a leaf; any other task below the root can't be expanded.
+      if (!tree && mine.some(t => t !== root && !p.testPlanReqs?.[t])) return { status: 'unavailable', reason: `Teamwork tree not read for ${p.slug}` };
+      const leaves = mine.flatMap(t => kids.has(t) ? below(t).filter(k => !kids.has(k)) : [t]);
+      hits.set(p.slug, { p, mine, leaves, split: roots.length > 1 });
+    }
+  }
+  if (hits.size > 1) return { status: 'ambiguous', reason: `tasks ${tasks.join(', ')} are in ${[...hits.keys()].join(' and ')}` };
+  if (!hits.size) return unread.length ? { status: 'unavailable', reason: `Teamwork tree not read for ${unread.join(', ')}` } : { status: 'no spec', reason: 'task is in no project' };
+  const [{ p, mine, leaves, split }] = hits.values();
+  if (split) return { status: 'ambiguous', reason: `${p.slug}: README names task ${p.readme.teamworkTask}, spec names ${p.spec.teamworkTask}` };
+  const ids = [...new Set(leaves.flatMap(t => p.testPlanReqs?.[t] || []))].sort();
+  return { status: 'resolved', slug: p.slug, commit: p.commit, specBlob: p.specBlob, tasks: mine,
+    reqs: Object.fromEntries(ids.filter(id => p.spec?.reqs?.[id]).map(id => [id, { text: p.spec.reqs[id].text, removed: p.spec.reqs[id].removed }])),
+    ...(ids.some(id => !p.spec?.reqs?.[id]) ? { missing: ids.filter(id => !p.spec?.reqs?.[id]) } : {}),
+    ...(leaves.some(t => !p.testPlanReqs?.[t]) ? { untested: leaves.filter(t => !p.testPlanReqs?.[t]) } : {}) };
+}
+
+/** Every open record's spec resolution, for /api/specs (phase 2 observation). Counts by status first. */
+export function specView(works, read) {
+  const rows = Object.values(works).filter(w => !['done', 'cancelled'].includes(w.phase)).map(w => ({ id: w.id, title: w.title, phase: w.phase, ...resolveSpec(w, read) }));
+  const counts = {}; for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
+  return { counts, rows };
 }

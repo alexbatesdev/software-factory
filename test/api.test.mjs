@@ -505,3 +505,9 @@ test("a worker's discovery with no text is refused even when it names its assign
     assert.match(Object.values(store.state.work).at(-1).objective, /^app\/x\.rb:12 keeps it$/, "the worker's own text, no assignment prefix");
   } finally { server.close(); }
 });
+
+test('the spec resolution view is served read-only (phase 2 observation)', async () => {
+  const view = { counts: { resolved: 1 }, rows: [{ id: 'W-1', status: 'resolved' }] };
+  const f = await serveWith({ observed: () => ({ specs: () => view }) });
+  try { assert.deepEqual(await (await fetch(`${f.base}/api/specs`)).json(), view); } finally { f.close(); }
+});

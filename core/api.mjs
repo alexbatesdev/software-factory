@@ -144,6 +144,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       if (req.method === 'GET' && url.pathname === '/queue') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(readFileSync(QUEUE_PAGE)); }
       if (req.method === 'GET' && url.pathname === '/api/queue') { const o = observed(); return send(res, 200, queueView(store.state, o.queue || [], o.busy || [], Object.keys(config.routing?.supervisors || {}))); }
       if (req.method === 'GET' && url.pathname === '/projects') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(readFileSync(PROJECTS_PAGE)); }
+      if (req.method === 'GET' && url.pathname === '/api/specs') return send(res, 200, observed().specs?.() || { counts: {}, rows: [] });
       if (req.method === 'GET' && url.pathname === '/api/projects') return send(res, 200, observed().projects?.() || { projects: [], loose: [], readAt: null });
       if (req.method === 'GET' && url.pathname === '/') { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); return res.end(readFileSync(PAGE)); }
       if (req.method === 'GET' && url.pathname === '/api/board') {

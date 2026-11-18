@@ -5,13 +5,16 @@ const cells = line => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map(
 /** Rows of every table under the `## <heading>` section whose first cell is a REQ ID. */
 function reqRows(text, heading) {
   const body = String(text).split(new RegExp(`^## ${heading}\\s*$`, 'm'))[1]?.split(/^## /m)[0] || '';
-  return body.split('\n').filter(l => /^\|\s*REQ-\d+\s*\|/.test(l)).map(cells);
+  return body.split('\n').filter(l => /^\|\s*(~~)?REQ-\d+(~~)?\s*\|/.test(l)).map(cells);
 }
 
-/** @returns {teamworkTask, reqs: {REQ-n: {text, notes, devToVerify}}, acs: [{req, text}]} */
+const unstrike = s => s.replace(/~~/g, '').trim();
+
+/** @returns {teamworkTask, reqs: {REQ-n: {text, notes, devToVerify, removed}}, acs: [{req, text}]} Removed rows stay as tombstones. */
 export function parseSpec(text) {
   const reqs = {};
-  for (const [id, req, notes = ''] of reqRows(text, 'Requirements')) reqs[id] = { text: req, notes, devToVerify: /dev to verify/i.test(notes) };
+  for (const [id, req, notes = ''] of reqRows(text, 'Requirements'))
+    reqs[unstrike(id)] = { text: unstrike(req), notes, devToVerify: /dev to verify/i.test(notes), removed: /~~/.test(id) || /^Removed\b/i.test(notes) };
   const acs = reqRows(text, 'Acceptance criteria').map(([req, ac]) => ({ req, text: ac }));
   return { teamworkTask: front(text).teamwork_task?.match(/tasks\/(\d+)/)?.[1] || null, reqs, acs };
 }
