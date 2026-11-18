@@ -80,3 +80,9 @@ test('the spec view lists every open record with its resolution and counts each 
   const v = specView({ a: { ...W('111'), id: 'W-1', phase: 'ready' }, b: { id: 'W-2', phase: 'done', source: {} }, c: { id: 'W-3', phase: 'ready', source: {} } }, read());
   assert.deepEqual([v.counts, v.rows.map(r => [r.id, r.status])], [{ resolved: 1, 'no spec': 1 }, [['W-1', 'resolved'], ['W-3', 'no spec']]]);
 });
+
+test("a project's Teamwork roots come from its README or its spec, so a spec-only root's tree is read too", async () => {
+  const { projectRoots } = await import('../core/projects.mjs');
+  assert.deepEqual(projectRoots({ readme: { teamworkTask: null }, spec: { teamworkTask: '300' } }), ['300']);
+  assert.deepEqual(projectRoots(P()), ['100']);
+});

@@ -29,7 +29,7 @@ import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
 import { compareCheck, compareWarnings, withStaleness } from '../core/ci-compare.mjs';
 import { runBrakeman, AUDIT_CHECK } from '../sources/audit.mjs';
-import { buildProjects, specView, triageCreates } from '../core/projects.mjs';
+import { buildProjects, projectRoots, specView, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat, seatRenames } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -220,8 +220,8 @@ function subtasksOf(trees = {}) {
 async function projectsTick() {
   if (DRY) return;
   const planning = await readPlanning(), trees = { ...projectsRead.trees };
-  for (const p of planning.filter(p => p.readme.teamworkTask && !['Archived', 'Complete'].includes(p.readme.status)))
-    try { trees[p.readme.teamworkTask] = await readTree(p.readme.teamworkTask); } catch (e) { once(`project tree ${p.slug}: ${e.message}`); }
+  for (const p of planning.filter(p => !['Archived', 'Complete'].includes(p.readme.status))) for (const root of projectRoots(p))
+    try { trees[root] = await readTree(root); } catch (e) { once(`project tree ${p.slug}: ${e.message}`); }
   // Phase D: everyone's open PRs in the team repos, read-only, so a teammate's PR shows on its project task.
   const teamPrs = await readTeamPrs(config.projects?.teamRepos || ['built-rails'], config.githubOwner).catch(e => { once(`team PRs: ${e.message}`); return projectsRead.teamPrs || []; });
   projectsRead = { planning, trees, teamPrs, readAt: now() };

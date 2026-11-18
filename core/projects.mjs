@@ -93,6 +93,9 @@ export function triageObjective(p, { questionsTo = 'alex' } = {}) {
   ].join('\n\n');
 }
 
+/** The Teamwork tasks a project names as its root: the README's Teamwork row and the spec's teamwork_task. */
+export const projectRoots = p => [...new Set([p.readme?.teamworkTask, p.spec?.teamworkTask].filter(Boolean))];
+
 /**
  * Phase 2: the spec and requirements a record is built against (architecture decision 11). Observation only so far.
  * @param read {planning: [readPlanning row] | null, trees: {root: [{id, parent}]}}
@@ -105,7 +108,7 @@ export function resolveSpec(w, { planning, trees }) {
   // The factory's recorded top-level parent (observe_project) places the record without reading every tree.
   const top = w.project?.id ? String(w.project.id) : null, hits = new Map(), unread = [];
   for (const p of planning) {
-    const roots = [...new Set([p.readme?.teamworkTask, p.spec?.teamworkTask].filter(Boolean))];
+    const roots = projectRoots(p);
     for (const root of roots) {
       const tree = trees[root], kids = new Map();
       for (const n of tree || []) kids.set(n.parent, [...(kids.get(n.parent) || []), n.id]);
