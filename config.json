@@ -216,7 +216,8 @@
   },
   "autoMerge": {
     "_doc": "W-564 (Alex 11-18): GitHub auto-merge (merge commit) for small, quick fixes, e.g. security fixes, where one approval is enough: our PRs on main, ready after the internal review, with no project and no hold. GitHub's ruleset decides when they merge; enabling auto-merge is not a merge. Turned off again when a hold or a changes request arrives. Off until Alex runs ~/Code/plans/spamton-alex-edits-w564.sh and says go; while off, the server logs what it would do.",
-    "enabled": false,
+    "enabled": true,
+    "_enabled": "Alex 11-18: \"auto-merge is on\" (the rule text is in ~/.claude/CLAUDE.md, ~/Code/CLAUDE.md and local-head.md).",
     "repos": ["built-rails"]
   },
   "prices": {
