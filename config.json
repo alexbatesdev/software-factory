@@ -11,9 +11,7 @@
         "workspace": "Stream 2",
         "worker": "sbx: stream-2",
         "agent": "codex",
-        "agentSince": "2026-11-09T18:41:56Z",
-        "supervisorKind": "codex",
-        "_supervisorKind": "W-557 trial (Alex 11-18): this stream's supervisor runs on Codex for a week."
+        "agentSince": "2026-11-09T18:41:56Z"
       },
       "sup: host": {
         "workspace": "Host",
@@ -173,8 +171,7 @@
       },
       {
         "label": "questions router",
-        "kind": "codex",
-        "_trial": "W-557 (Alex 11-18): a Codex questions router for a week; back to claude if it routes worse.",
+        "kind": "claude",
         "role": "questions-router",
         "workspace": "Services",
         "tab": "Factory"
