@@ -293,6 +293,13 @@ test('a fixes round already told to its stream stays with it, so no supervisor h
   assert.notEqual(p['W-71']?.action, 'route');
 });
 
+test('a fixes round GitHub asked for reaches a stream while the record has open questions; new work still waits on them (W-544)', () => {
+  const parkedOn = { assignments: [{ id: 'R1', kind: 'implementation', status: 'done' }, { id: 'R4', kind: 'fixes', status: 'blocked', waitingOn: 'TB-253' }], openQuestions: 2 };
+  const p = plan([fixesWaiting('W-77', { ...parkedOn, requests: [{ id: 'R5', type: 'fixes', by: 'github', ack: null, head: 'h1', delivery: 'pending' }] })]);
+  assert.deepEqual([p['W-77'].action, p['W-77'].request], ['deliver', 'W-77/R5']);
+  assert.equal(plan([loose('W-1', { openQuestions: 1 })])['W-1'].action, null);
+});
+
 test("a project's task that isn't ready to start waits, naming what it needs (projects phase B)", () => {
   const p = plan([loose('W-1', { projectGate: { slug: '2026-10-position-end-date', ready: false, reasons: ['no test plan for task 102'] } }), loose('W-2', { projectGate: { slug: 'x', ready: true, reasons: [] } })]);
   assert.equal(p['W-1'].action, null); assert.match(p['W-1'].reason, /project 2026-10-position-end-date isn't ready for it: no test plan for task 102/);
