@@ -11,7 +11,9 @@
         "workspace": "Stream 2",
         "worker": "sbx: stream-2",
         "agent": "codex",
-        "agentSince": "2026-11-09T18:41:56Z"
+        "agentSince": "2026-11-09T18:41:56Z",
+        "supervisorKind": "codex",
+        "_supervisorKind": "W-557 trial (Alex 11-18): this stream's supervisor runs on Codex for a week."
       },
       "sup: host": {
         "workspace": "Host",
