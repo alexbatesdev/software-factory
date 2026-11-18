@@ -78,10 +78,13 @@ export function inboxCommands(state, cfg, fleet = null) {
       cmds.push(msg(d.to, d.work, { workerBlocked: `${d.work}/${d.since}` }, `${d.worker} has been blocked at a dialog for 5+ min while ${d.work} is started: read its pane. A permission prompt is the agent unblocker's; a question is yours to answer.`));
     const sent = Object.fromEntries([...told].filter(k => k.startsWith('idleQueue:')).map(k => [k.slice(10), true]));
     const drain = fleet.drain || new Map();
-    // A draining stream takes no new work: its supervisor hears once per sandbox, and gets no "your stream is free" wake.
+    // A draining stream takes no new work: its supervisor hears once per crossing, and gets no "your stream is free" wake.
+    // A crossing ends with a recycle or a lifted drain; the recycled sandbox keeps its name, so the key alone can't tell (W-551).
     for (const u of fleet.units) {
       const why = drain.get(u.supervisor?.label), key = `${u.worker?.label}/${u.worker?.sandbox || u.worker?.ref}`;
-      if (why && u.worker && !told.has(`recycle:${key}`)) cmds.push(msg(u.supervisor.label, null, { recycle: key }, `${why}. Finish the running job, then start nothing new: the factory recycles the worker between tasks and tells you when the fresh one is up.`));
+      const theirs = Object.values(state.messages).filter(m => m.to === u.supervisor?.label), told1 = theirs.filter(m => m.about?.recycle === key).at(-1);
+      const crossingTold = told1 && !theirs.some(m => (m.about?.recycled || m.about?.drainLifted) && m.at >= told1.at);
+      if (why && u.worker && !crossingTold) cmds.push(msg(u.supervisor.label, null, { recycle: key }, `${why}. Finish the running job, then start nothing new: the factory recycles the worker between tasks and tells you when the fresh one is up.`));
       // A drain that lifts without a recycle is withdrawn, or the supervisor holds its queue for a recycle that won't come (W-537).
       if (why || !u.worker || !fleet.drainRead) continue;
       const to = u.supervisor.label, mine = Object.values(state.messages).filter(m => m.to === to && (!cfg.drainLiftSince || m.at >= cfg.drainLiftSince));

@@ -351,3 +351,18 @@ test("a project task's dispatch notice names the project's implementation plan a
   const [m] = inboxCommands(state, { supervisors: ['sup: stream-1'], seats: [], projectNotes: { 'W-3': note } }, null).cmds.filter(c => c.payload.about?.requests);
   assert.match(m.payload.text, /build to projects\/2026-10-position-end-date\/factory\/implementation-plan\.md/);
 });
+
+test('a crossing after a recycle or a lifted drain is told again, though the recycled sandbox keeps its name (W-551)', () => {
+  const s = store({ work: {} });
+  const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'idle', sandbox: 'box-1' } };
+  const drained = { units: [unit], now: 0, watches: {}, drainRead: true, drain: new Map([[S1, 'disk at 80%']]) };
+  const recycleNotices = () => inboxCommands(s.state, cfg, drained).cmds.filter(c => c.payload.about.recycle);
+  s.append(recycleNotices()[0], { now: '2026-11-10T00:00:00.000Z', by: 'factory' });
+  assert.equal(recycleNotices().length, 0, 'once per crossing');
+  s.append({ kind: 'message', payload: { to: S1, about: { recycled: 'box-1/t' }, text: 'recycled' } }, { now: '2026-11-11T00:00:00.000Z', by: 'factory' });
+  const again = recycleNotices();
+  assert.equal(again.length, 1, 'the next crossing after a recycle');
+  s.append(again[0], { now: '2026-11-17T00:00:00.000Z', by: 'factory' });
+  s.append({ kind: 'message', payload: { to: S1, about: { drainLifted: 'M-x' }, text: 'lifted' } }, { now: '2026-11-17T01:00:00.000Z', by: 'factory' });
+  assert.equal(recycleNotices().length, 1, 'and after a drain lifted without one');
+});
