@@ -205,3 +205,16 @@ test('a fresh Codex seat starts with its role, and a stop quits the agent actual
   await stopSeat({ label: 'router', kind: 'codex', role: 'questions-router' }, 'p1', herdr, 'claude --agent questions-router');
   assert.ok(calls.some(c => c[1] === 'send-text' && c[3] === '/exit'), 'Claude is running: /exit, not Codex\'s /quit');
 });
+
+test("a Codex seat is told its own pane: the shared Codex daemon's environment names whichever pane started it (W-560, W-557)", async () => {
+  const { startSeat } = await import('../fleet/factory.mjs');
+  const calls = [], herdr = async (...a) => { calls.push(a); return {}; };
+  for (const seat of [{ label: 'router', kind: 'codex', role: 'questions-router' }, { label: 'unblocker', kind: 'codex', resume: 'abc' }]) {
+    calls.length = 0;
+    await startSeat(seat, 'w9:p7', herdr);
+    const args = calls.find(c => c[1] === 'start').slice(calls.find(c => c[1] === 'start').indexOf('--') + 1);
+    assert.ok(args.includes('shell_environment_policy.set.HERDR_PANE_ID="w9:p7"'), `${seat.label}: its commands see its pane`);
+    assert.ok(args.includes('mcp_servers.software-factory.env.HERDR_PANE_ID="w9:p7"'), `${seat.label}: the factory server sees its pane`);
+  }
+  assert.equal(calls.find(c => c[1] === 'start').at(-1), 'abc', 'resume keeps its session id last');
+});

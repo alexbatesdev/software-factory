@@ -133,7 +133,10 @@ export const argvOf = async (herdr, pane) => ((await herdr('pane', 'process-info
 export async function startSeat(seat, pane, herdr) {
   if (seat.kind === 'shell') return herdr('pane', 'run', pane, `cd ${JSON.stringify(home(seat.cwd))} && ${seat.run.replace(/~\//g, `${os.homedir()}/`)}`);
   // Codex has no --agent: a fresh Codex seat is told its role file as its first prompt (W-557).
-  const args = seat.kind === 'codex' ? (seat.resume ? ['resume', seat.resume] : seat.role ? [`You are the "${seat.label}" seat of the software factory. Read ${os.homedir()}/Code/.claude/agents/${seat.role}.md now and act as that role for this whole session. Your factory tools are the software-factory MCP tools; the factory knows your seat from your pane label.`] : [])
+  // Codex sessions run in one shared app-server daemon whose environment names the pane that started it, so each Codex
+  // seat is told its own pane, for its commands and for the factory server that finds its seat by pane (W-560, W-557).
+  const own = seat.kind === 'codex' ? ['-c', `shell_environment_policy.set.HERDR_PANE_ID="${pane}"`, '-c', `mcp_servers.software-factory.env.HERDR_PANE_ID="${pane}"`] : [];
+  const args = seat.kind === 'codex' ? (seat.resume ? ['resume', ...own, seat.resume] : seat.role ? [...own,`You are the "${seat.label}" seat of the software factory. Read ${os.homedir()}/Code/.claude/agents/${seat.role}.md now and act as that role for this whole session. Your factory tools are the software-factory MCP tools; the factory knows your seat from your pane label.`] : [])
     : seat.role ? ['--agent', seat.role] : [];
   await pause(4000); // a fresh shell isn't ready for agent start straight away
   return herdr('agent', 'start', slug(seat.label), '--kind', seat.kind, '--pane', pane, '--', ...args);
