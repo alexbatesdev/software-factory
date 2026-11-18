@@ -100,3 +100,63 @@ test('a spec delta names requirements added, changed and removed since the pin; 
   assert.deepEqual(specDelta(pin, { status: 'unavailable' }), { unavailable: 'unavailable' }, 'no current read: say so, never "no change"');
   assert.equal(specDelta({ status: 'no spec' }, { status: 'no spec' }), null);
 });
+
+test('a spec delta on an enabled project becomes an in-scope finding, a question for a removal, and one note to the supervisor (phase 2)', async () => {
+  const { specFollowUps } = await import('../core/projects.mjs');
+  const pinReqs = { 'REQ-001': { text: 'One.', removed: false }, 'REQ-002': { text: 'Two.', removed: false } };
+  const work = { 'W-1': { ...W('111', '112'), id: 'W-1', phase: 'fixes', stream: 'sup: s1', assignments: [{ id: 'R2', kind: 'fixes', status: 'started' }] } };
+  const manifests = { 'W-1/R2/1': { spec: { status: 'resolved', slug: 'p-end-date', commit: 'c0', specBlob: 'b0', reqs: pinReqs } } };
+  const now = read([P({ specBlob: 'b9', commit: 'c9', spec: { teamworkTask: '100', reqs: { 'REQ-001': { text: 'One, edited.', removed: false }, 'REQ-002': { text: 'Two.', removed: true }, 'REQ-003': { text: 'Gone.', removed: true } } } }), Q]);
+  const state = { work, manifests, messages: {} };
+  assert.deepEqual(specFollowUps(state, now, { slugs: [] }), [], 'only enabled projects');
+  const cmds = specFollowUps(state, now, { slugs: ['p-end-date'] });
+  const [finding, ask, msg] = cmds;
+  assert.deepEqual([finding.kind, finding.target, finding.payload.type, finding.payload.inScope], ['event', 'W-1', 'discovery', true]);
+  assert.match(finding.payload.text, /REQ-001 changed.*One, edited\./);
+  assert.deepEqual([ask.kind, ask.payload.work], ['ask', 'W-1']);
+  assert.match(ask.payload.title, /REQ-002/);
+  assert.deepEqual([msg.kind, msg.payload.to, msg.payload.about.specDelta.map(k => k.replace(/:[0-9a-f]{10}$/, ':h'))], ['message', 'sup: s1', ['W-1/R2/REQ-001:h', 'W-1/R2/REQ-002:removed']]);
+  assert.match(msg.payload.text, /R2's brief stands/);
+  // Told once per assignment and spec version.
+  assert.deepEqual(specFollowUps({ ...state, messages: { m: { about: msg.payload.about } } }, now, { slugs: ['p-end-date'] }), []);
+});
+
+test('the spec follow-up commands are accepted by the store, and the removal question can be answered', async () => {
+  const { specFollowUps } = await import('../core/projects.mjs');
+  const { openStore } = await import('../core/store.mjs');
+  const store = openStore(':memory:', { supervisors: ['sup: s1'] });
+  const c = { now: '2026-11-18T19:00:00.000Z', by: 'factory (spec)' };
+  store.append({ kind: 'create', payload: { title: 'x', stream: 'sup: s1', source: { type: 'teamwork', key: 'tw-111' } } }, c);
+  const w = store.state.work['W-1'];
+  Object.assign(w, { stream: 'sup: s1', phase: 'fixes', assignments: [{ id: 'R2', kind: 'fixes', status: 'started', history: [] }] });
+  store.state.manifests = { 'W-1/R2/1': { spec: { status: 'resolved', slug: 'p-end-date', commit: 'c0', specBlob: 'b0', reqs: { 'REQ-001': { text: 'One.', removed: false } } } } };
+  const now = read([P({ specBlob: 'b9', spec: { teamworkTask: '100', reqs: { 'REQ-001': { text: 'One.', removed: true } } } }), Q]);
+  const cmds = specFollowUps(store.state, now, { slugs: ['p-end-date'] });
+  for (const cmd of cmds) store.append(cmd, c);
+  const [q] = Object.entries(store.state.questions);
+  store.append({ kind: 'answer', target: q[0], payload: { choice: 'rec' } }, { ...c, by: 'local-head' });
+  assert.equal(store.state.questions[q[0]].answer.choice, 'a');
+  assert.deepEqual(specFollowUps(store.state, now, { slugs: ['p-end-date'] }), [], 'told once');
+});
+
+test('a later spec edit files only what is new: each requirement change is told once, whatever the spec blob (phase 2)', async () => {
+  const { specFollowUps } = await import('../core/projects.mjs');
+  const work = { 'W-1': { ...W('111'), id: 'W-1', phase: 'fixes', stream: 'sup: s1', assignments: [{ id: 'R2', kind: 'fixes', status: 'started' }] } };
+  const manifests = { 'W-1/R2/1': { spec: { status: 'resolved', slug: 'p-end-date', commit: 'c0', specBlob: 'b0', reqs: { 'REQ-001': { text: 'One.', removed: false } } } } };
+  const at = (blob, text) => read([P({ specBlob: blob, spec: { teamworkTask: '100', reqs: { 'REQ-001': { text, removed: false } } } }), Q]);
+  const state = { work, manifests, messages: {} };
+  const first = specFollowUps(state, at('b9', 'One, edited.'), { slugs: ['p-end-date'] });
+  state.messages.m1 = first.at(-1).payload;
+  assert.deepEqual(specFollowUps(state, at('b10', 'One, edited.'), { slugs: ['p-end-date'] }), [], 'an unrelated edit elsewhere in the spec');
+  const again = specFollowUps(state, at('b11', 'One, edited twice.'), { slugs: ['p-end-date'] });
+  assert.equal(again.length, 2, 'a second edit to the same requirement is new');
+  assert.match(again[0].payload.text, /edited twice/);
+});
+
+test("the removal question quotes the requirement's pinned text, so it can be answered without opening the spec", async () => {
+  const { specFollowUps } = await import('../core/projects.mjs');
+  const work = { 'W-1': { ...W('111'), id: 'W-1', phase: 'fixes', stream: 'sup: s1', assignments: [{ id: 'R2', kind: 'fixes', status: 'started' }] } };
+  const manifests = { 'W-1/R2/1': { spec: { status: 'resolved', slug: 'p-end-date', commit: 'c0', specBlob: 'b0', reqs: { 'REQ-001': { text: 'One.', removed: false } } } } };
+  const [ask] = specFollowUps({ work, manifests, messages: {} }, read([P({ specBlob: 'b9', spec: { teamworkTask: '100', reqs: { 'REQ-001': { text: 'One.', removed: true } } } }), Q]), { slugs: ['p-end-date'] });
+  assert.match(ask.payload.promptedBy, /REQ-001 was: "One\."/);
+});

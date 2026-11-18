@@ -233,6 +233,8 @@
   "projects": {
     "_doc": "Projects (Alex 11-16, ~/Code/plans/software-factory-v2/projects-design.md). questionsTo: where a planning job's open questions go: 'alex' (an ask each on the planning record), 'owner' (the README Owner) or 'developers' (the tasks' assignees); the last two are written as needs: in the factory decision log and listed in the PR for Alex to forward. planningJobs: false stops the board creating planning jobs.",
     "questionsTo": "alex",
-    "planningJobs": true
+    "planningJobs": true,
+    "_specFollowUps": "Phase 2 (Alex 'go phase 2', 11-18): projects whose spec edits during a job become follow-ups (changed/added REQ: in-scope finding; removed: a question to Alex). Every other project is observed only, on /api/specs.",
+    "specFollowUps": ["2026-10-position-end-date"]
   }
 }

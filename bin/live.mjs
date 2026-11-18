@@ -29,7 +29,7 @@ import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
 import { compareCheck, compareWarnings, withStaleness } from '../core/ci-compare.mjs';
 import { runBrakeman, AUDIT_CHECK } from '../sources/audit.mjs';
-import { buildProjects, projectRoots, resolveSpec, specView, triageCreates } from '../core/projects.mjs';
+import { buildProjects, projectRoots, resolveSpec, specFollowUps, specView, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat, seatRenames } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -46,7 +46,7 @@ import { readReport } from '../hosts/sbx.mjs';
 import { readFile } from 'node:fs/promises';
 import { backup, backupPlan, verifyBackup } from './backup.mjs';
 import { createRuntimeLog } from '../core/runtime-log.mjs';
-import { captureManifests } from '../core/manifest.mjs';
+import { captureManifests, manifestsDue } from '../core/manifest.mjs';
 import { checkConfig } from '../core/preflight.mjs';
 import { ROLES } from '../core/capabilities.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
@@ -234,6 +234,12 @@ async function projectsTick() {
     try { const { id } = store.append({ kind: 'create', payload: c }, by('factory (projects)')); log(`planning job ${id}: ${c.title}`); } catch (e) { log(`planning job refused: ${e.message}`); }
   writeFileSync(PROJECTS_CACHE, JSON.stringify(projectsRead));
   log(`projects: ${planning.length} read, ${Object.keys(trees).length} trees`);
+  // Phase 2: a spec edit during a job on an enabled project becomes its follow-up; the job's brief and pin stand.
+  // One record's follow-up lands whole or not at all: its message is what marks it told.
+  const follow = specFollowUps(store.state, specRead(), { slugs: config.projects?.specFollowUps || [] }), byRecord = new Map();
+  for (const c of follow) { const id = c.target || c.payload.work; byRecord.set(id, [...(byRecord.get(id) || []), c]); }
+  for (const [id, cmds] of byRecord)
+    try { store.appendAll(cmds, by('factory (spec)')); log(`spec follow-up ${cmds.at(-1).payload.about.specDelta}`); } catch (e) { log(`spec follow-up ${id} refused: ${e.message}`); }
 }
 
 // W-501: a PR's CircleCI check that fails on main by name is compared test by test with main's latest finished run.
@@ -577,6 +583,8 @@ const INSTRUCTIONS = { 'stream-supervisor role': '~/Code/.claude/agents/stream-s
   'internal review (claude)': '~/.claude/skills/internal-review/SKILL.md', 'internal review (codex)': '~/Code/plans/standards/internal-review-codex.md' };
 async function manifestTick() {
   if (DRY) return;
+  // A run pins the spec as it is when it starts, not the last 30-minute read: the worker reads main live (phase 2).
+  if (manifestsDue(store.state).length) try { projectsRead = { ...projectsRead, planning: await readPlanning(), readAt: now() }; } catch (e) { once(`planning read for a pin: ${e.message}`); }
   await captureManifests(store, { root: ARTIFACTS, now, home: homedir(), factoryVersion: FACTORY_VERSION, config: readFileSync(join(ROOT, 'config.json'), 'utf8'),
     instructions: Object.fromEntries(Object.entries(INSTRUCTIONS).map(([k, p]) => [k, p.replace(/^~/, homedir())])), read: p => readFile(p),
     harness: stream => { const w = fleet?.units.find(u => u.supervisor?.label === stream)?.worker; return { agent: config.routing.supervisors[stream]?.agent || (w ? 'claude' : null), sandbox: w?.sandbox || null, model: tuned[stream]?.model ?? null, effort: tuned[stream]?.effort ?? null }; },

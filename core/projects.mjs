@@ -1,5 +1,6 @@
 // Projects (Alex, 11-16; ~/Code/plans/software-factory-v2/projects-design.md): a planning-repo project joined to its
 // Teamwork tree. Each leaf task is one PR (D-013); progress is finished leaves over all leaves. Pure, read-only.
+import { createHash } from 'node:crypto';
 import { BUILDING, REVIEWING, ownTasks } from './work.mjs';
 
 /**
@@ -152,10 +153,52 @@ export function specView(state, read) {
 export function specDelta(pin, now) {
   if (pin?.status !== 'resolved') return null;
   if (now?.status !== 'resolved' || now.slug !== pin.slug) return { unavailable: now?.status === 'resolved' ? `now resolves to ${now.slug}` : now?.status || 'unknown' };
-  if (now.specBlob === pin.specBlob) return null;
   const live = r => r && !r.removed, was = pin.reqs || {}, is = now.reqs || {};
   const added = Object.keys(is).filter(id => live(is[id]) && !live(was[id])).sort();
   const changed = Object.keys(is).filter(id => live(is[id]) && live(was[id]) && is[id].text !== was[id].text).sort();
   const removed = Object.keys(was).filter(id => live(was[id]) && !live(is[id])).sort();
   return added.length || changed.length || removed.length ? { added, changed, removed } : null;
+}
+
+const PREFIX = '[software factory, automated, not Alex]';
+const clip = t => (t.length > 300 ? `${t.slice(0, 297)}...` : t);
+
+/**
+ * A spec edit during a job, on an enabled project (architecture decision 11): added or changed REQs become an in-scope
+ * finding (a fixes round once nothing runs), a removed REQ is a question to Alex, and the supervisor hears once per
+ * assignment and spec version. The job's brief and pin stay as they were.
+ */
+export function specFollowUps(state, read, { slugs = [] } = {}) {
+  const told = new Set(Object.values(state.messages || {}).flatMap(m => [m.about?.specDelta].flat()).filter(Boolean)), out = [];
+  for (const w of Object.values(state.work)) {
+    if (['done', 'cancelled'].includes(w.phase)) continue;
+    const a = [...(w.assignments || [])].reverse().find(a => BUILDING.includes(a.kind) && state.manifests?.[`${w.id}/${a.id}/1`]?.spec);
+    const pin = a && state.manifests[`${w.id}/${a.id}/1`].spec;
+    if (!pin || !slugs.includes(pin.slug)) continue;
+    const now = resolveSpec(w, read), d = specDelta(pin, now);
+    if (!d || d.unavailable) continue;
+    // Each change is told once: a later edit elsewhere in the spec doesn't file it again, a second edit to it does.
+    const keyOf = (id, how) => `${w.id}/${a.id}/${id}:${how === 'removed' ? 'removed' : createHash('sha1').update(now.reqs[id].text).digest('hex').slice(0, 10)}`;
+    const fresh = how => d[how].filter(id => !told.has(keyOf(id, how)));
+    const added = fresh('added'), changed = fresh('changed'), removed = fresh('removed');
+    if (!added.length && !changed.length && !removed.length) continue;
+    const where = `projects/${pin.slug}/spec.md (project-planning ${pin.commit?.slice(0, 7)} to ${now.commit?.slice(0, 7)})`, cmds = [], said = [];
+    if (added.length || changed.length) {
+      const rows = [...added.map(id => `${id} added: "${clip(now.reqs[id].text)}"`), ...changed.map(id => `${id} changed, now: "${clip(now.reqs[id].text)}"`)];
+      cmds.push({ kind: 'event', target: w.id, payload: { type: 'discovery', inScope: true, text: `The spec changed after ${a.id} was briefed (${where}). ${rows.join('; ')}. Build to the new text; the rest of the brief stands.` } });
+      said.push(`${[...added, ...changed].join(', ')} added or changed: an open finding on ${w.id} carries it`);
+    }
+    if (removed.length) {
+      cmds.push({ kind: 'ask', payload: { work: w.id, promptedBy: `spec change in ${where}. ${removed.map(id => `${id} was: "${clip(pin.reqs[id].text)}"`).join('; ')}`,
+        title: `${w.id}: the spec dropped ${removed.join(', ')} after ${a.id} was briefed. Take what was built for ${removed.length > 1 ? 'them' : 'it'} out of the PR?`,
+        options: [{ key: 'a', text: 'Take it out in a fixes round (the spec wins)' }, { key: 'b', text: 'Keep it as built; the spec stays as it is' }, { key: 'c', text: 'Keep it; the spec should get the requirement back' }], recommend: 'a',
+        why: 'Architecture decision 11: a removed requirement is a question to Alex, never an automatic change.',
+        wwbd: 'No passage settles whether work already built for a requirement the spec has since dropped comes out of the PR.' } });
+      said.push(`${removed.join(', ')} removed: a question to Alex decides it, so leave that code as it is until he answers${added.length || changed.length ? ' (the fixes round for the rest waits on that answer too)' : ''}`);
+    }
+    cmds.push({ kind: 'message', payload: { to: w.stream || w.owner, work: w.id, about: { specDelta: [...added.map(id => keyOf(id, 'added')), ...changed.map(id => keyOf(id, 'changed')), ...removed.map(id => keyOf(id, 'removed'))] },
+      text: `${PREFIX} ${w.id}: the spec changed during ${a.id} (${where}). ${a.id}'s brief stands; ${said.join('; ')}.` } });
+    out.push(...cmds);
+  }
+  return out;
 }
