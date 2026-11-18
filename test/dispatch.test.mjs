@@ -43,7 +43,7 @@ test('work no stream is bound to goes to the least-loaded free stream, whatever 
     loose('W-20', { owner: null, title: 'Ashby send values' }), loose('W-21', { title: 'Position end date' })]);
   assert.deepEqual([p['W-20'].action, p['W-20'].to, p['W-20'].owner], ['queue', S2, S2]);
   assert.match(p['W-20'].reason, /least loaded/);
-  assert.deepEqual([p['W-21'].action, p['W-21'].to], ['queue', S1], 'S2 took W-20 this tick, so S1 is the free one');
+  assert.equal(p['W-21'].action, null, 'S2 took W-20 this tick, and S1 holds W-2, acked and about to start (W-554)');
 });
 
 test('a never-started record leaves a busy stream for a free one', () => {
@@ -309,4 +309,11 @@ test("a project's task that isn't ready to start waits, naming what it needs (pr
 test('a fixes round with a queued job nobody has started, and a request no stream was told of, is in the factory queue (W-533)', () => {
   const p = plan([fixesWaiting('W-76', { assignments: [{ id: 'R1', kind: 'implementation', status: 'done' }, { id: 'R12', kind: 'fixes', status: 'queued' }] })]);
   assert.deepEqual([p['W-76'].action, p['W-76'].request], ['deliver', 'W-76/R5']);
+});
+
+test('a dispatch its supervisor acked but has not started yet still holds the stream (W-554)', () => {
+  const acked = loose('W-341', { phase: 'queued', owner: S2, stream: S2, requests: [{ id: 'R1', type: 'dispatch', ack: { outcome: 'received', by: S2 } }] });
+  const p = plan([acked, loose('W-553', { owner: null }), loose('W-1', { owner: S1, stream: S1, phase: 'implementation' })]);
+  assert.equal(p['W-553'].action, null, 'every stream is taken');
+  assert.match(p['W-553'].reason, /W-341/);
 });

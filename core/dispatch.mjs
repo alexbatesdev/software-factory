@@ -15,8 +15,9 @@ const liveJob = w => (w.assignments || []).some(a => ['started', 'blocked'].incl
 // A queued job beside an unacked request (W-533) is still waiting for a stream: nobody has taken the round up yet.
 export const waitingRequest = (w, told = new Set()) => !liveJob(w)
   && (w.requests || []).find(r => ['fixes', 'review'].includes(r.type) && currentRequest(w, r) && !told.has(`${w.id}/${r.id}`)) || null;
-// A stream is busy while its worker has a job: building or fixing, a live work assignment, or a dispatch not yet acked.
-const active = told => w => (BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && pendingDispatch(w))) && !unrequested(w) && !waitingRequest(w, told);
+// A stream is busy while its worker has a job: building or fixing, a live work assignment, or a dispatch not yet started
+// (unacked, or acked before the supervisor records it started: W-554).
+const active = told => w => (BUILDING.includes(w.phase) || live(w) || (w.phase === 'queued' && (pendingDispatch(w) || takenUp(w)))) && !unrequested(w) && !waitingRequest(w, told);
 
 /** A stream with `repos` {name: checkout} (a host stream, TB-159) works only those repos; the sbx streams work everything else. */
 export function canTake(w, label, supervisors) {
