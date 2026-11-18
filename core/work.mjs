@@ -1005,7 +1005,9 @@ export function stranded(w, now) {
   if (capped(w, { now }) && open.length && open.every(f => f.reviewHead)) return false;
   const r = phaseRequest(w);
   // A clean review at the head after a "received" ack means the round needed no commit (W-249): nothing is pending.
-  const settled = r?.ack?.outcome === 'received' && w.reviews.some(v => v.result === 'clean' && sameSha(v.head, w.head) && v.at > r.ack.at);
+  // So does a work round that finished after the ack: the request was folded into it, and nothing is left pending (W-555).
+  const roundDoneAfter = r?.ack?.at && (w.assignments || []).some(a => BUILDING.includes(a.kind) && a.status === 'done' && (a.history.at(-1)?.at || '') > r.ack.at);
+  const settled = r?.ack?.outcome === 'received' && (roundDoneAfter || w.reviews.some(v => v.result === 'clean' && sameSha(v.head, w.head) && v.at > r.ack.at));
   return !r || !!r.ack && (settled || !(r.ack.outcome === 'received' && (now || '') >= RECEIVED_PENDING_FROM));
 }
 

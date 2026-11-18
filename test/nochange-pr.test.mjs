@@ -183,3 +183,15 @@ test('feedback that lands while the fixes job is parked on a question files a ne
  const running = ev(w, { type: 'progress', assignmentId: 'R5', expectedVersion: 2, stage: 'started', text: 'resumed' }, at);
  assert.equal(W.observeHealth(running, { head, conflict: false, failing: [], threads: [{ id: 'T1', by: 'sam', url: 'u3' }] }, at).requests.length, before, 'a running fixes job picks it up when it reports done');
 });
+
+test('a fixes request received mid-round is not pending once that round finishes: feedback left open is stranded (W-555)', () => {
+ const later = { ...ctx, now: '2026-11-18T01:00:00Z' };
+ let w = ready(); w.phase = 'fixes'; w.approvalWait = null;
+ w = ev(w, { type: 'assign', assignmentId: 'R6', kind: 'fixes', status: 'started', owner: 'worker', evidence: 'brief' }, later);
+ // GitHub's next round arrives while R6 runs; the supervisor folds it into R6 and acks it received.
+ w = W.observeHealth(w, { head, conflict: false, failing: [], threads: [{ id: 'T1', by: 'rev', url: 'u' }] }, { ...later, now: '2026-11-18T02:18:00Z' });
+ w.requests.push({ id: 'R7', type: 'fixes', at: '2026-11-18T02:18:00Z', by: 'github', ack: { by: 's', outcome: 'received', at: '2026-11-18T02:20:00Z' }, head });
+ assert.ok(!W.stranded(w, '2026-11-18T03:00:00Z'), 'its round is running');
+ const a = w.assignments.at(-1); a.history.push({ status: 'started', at: '2026-11-18T16:54:00Z', by: 's' }); a.status = 'done';
+ assert.ok(W.stranded(w, '2026-11-18T17:30:00Z'), 'the round it was folded into is done and the feedback is still open');
+});
