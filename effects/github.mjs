@@ -23,8 +23,17 @@ export const gh = {
     const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{comments(last:5){nodes{author{login} body createdAt url}}}}}', '-f', `id=${id}`], { timeout: 20000 });
     return (JSON.parse(stdout).data?.node?.comments?.nodes || []).map(c => ({ by: c.author?.login || 'ghost', at: c.createdAt, body: c.body, url: c.url }));
   },
-  /** W-564: GitHub merges the PR (merge commit) once its own ruleset passes; the factory only turns this on or off. */
-  autoMerge: async (url, on) => { await exec('gh', ['pr', 'merge', url, ...(on ? ['--auto', '--merge'] : ['--disable-auto'])], { timeout: 30000 }); },
+  /**
+   * W-564: GitHub merges the PR (merge commit) once its own ruleset passes; the factory only turns this on or off.
+   * The API mutation, never `gh pr merge --auto`: on a PR already mergeable that merges it outright (#8906, 11-18).
+   */
+  autoMerge: async (url, on, run = exec) => {
+    const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/) || (() => { throw new Error(`${url} is not a PR`); })();
+    const id = (await run('gh', ['api', `repos/${m[1]}/${m[2]}/pulls/${m[3]}`, '--jq', '.node_id'], { timeout: 20000 })).stdout.trim().replace(/^"|"$/g, '');
+    const mutation = on ? 'mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE}){clientMutationId}}'
+      : 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){clientMutationId}}';
+    await run('gh', ['api', 'graphql', '-f', `query=${mutation}`, '-f', `id=${id}`], { timeout: 30000 });
+  },
   resolveThread: async id => { await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', '-f', `id=${id}`], { timeout: 20000 }); },
   /** Submitted reviews on a PR; a pending draft has no submitted time. */
   reviews: async url => {

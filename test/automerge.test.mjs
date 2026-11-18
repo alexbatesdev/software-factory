@@ -34,3 +34,20 @@ test('auto-merge already on is left alone while the PR qualifies, and turned off
   assert.deepEqual(plan(rec({ externalDeps: [{ text: 'hold' }] }), pr({ autoMerge: true })).map(x => x.action), ['disable']);
   assert.deepEqual(plan(rec(), pr({ autoMerge: true, reviewDecision: 'CHANGES_REQUESTED' })).map(x => x.action), ['disable']);
 });
+
+test('a PR already mergeable is left for Alex: GitHub takes no auto-merge on it, and merging it is his (W-564: #8906)', () => {
+  const x = plan(rec(), pr({ mergeState: 'CLEAN' }));
+  assert.equal(x[0]?.action ?? 'none', 'none');
+  assert.match(x[0].reason, /already mergeable/);
+});
+
+test('turning auto-merge on is the enablePullRequestAutoMerge mutation, never `gh pr merge`, which merges a mergeable PR outright (#8906)', async () => {
+  const { gh } = await import('../effects/github.mjs');
+  const calls = [], run = async (cmd, args) => { calls.push([cmd, ...args]); return { stdout: JSON.stringify(args.includes('--jq') ? 'PR_node1' : { data: {} }) }; };
+  await gh.autoMerge('https://github.com/acme-org/app/pull/7', true, run);
+  await gh.autoMerge('https://github.com/acme-org/app/pull/7', false, run);
+  assert.ok(calls.every(c => !(c.includes('pr') && c.includes('merge'))), 'no gh pr merge');
+  const muts = calls.map(c => c.join(' ')).filter(c => /mutation/.test(c));
+  assert.match(muts[0], /enablePullRequestAutoMerge\(input:\{pullRequestId:\$id,mergeMethod:MERGE\}\)/);
+  assert.match(muts[1], /disablePullRequestAutoMerge/);
+});

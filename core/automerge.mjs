@@ -31,7 +31,9 @@ export function autoMergePlan(records, prs, cfg) {
     const p = prs.get(w.links?.pr);
     if (!p) continue;
     const why = blocker(w, p, cfg);
-    if (!why && !p.autoMerge) out.push({ work: w.id, pr: p.url, action: 'enable', reason: 'a small, quick fix (main, no project, no hold, ready after its internal review); GitHub merges it once its own rules pass' });
+    // GitHub takes no auto-merge on a PR already mergeable; merging it is Alex's, never the factory's (#8906).
+    if (!why && !p.autoMerge && p.mergeState === 'CLEAN') out.push({ work: w.id, pr: p.url, action: null, reason: 'already mergeable, so GitHub takes no auto-merge on it: merging it is Alex\'s' });
+    else if (!why && !p.autoMerge) out.push({ work: w.id, pr: p.url, action: 'enable', reason: 'a small, quick fix (main, no project, no hold, ready after its internal review); GitHub merges it once its own rules pass' });
     else if (why && p.autoMerge) out.push({ work: w.id, pr: p.url, action: 'disable', reason: why });
     else if (why) out.push({ work: w.id, pr: p.url, action: null, reason: why });
   }
