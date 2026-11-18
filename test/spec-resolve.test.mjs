@@ -89,3 +89,14 @@ test("a project's Teamwork roots come from its README or its spec, so a spec-onl
   assert.deepEqual(projectRoots({ readme: { teamworkTask: null }, spec: { teamworkTask: '300' } }), ['300']);
   assert.deepEqual(projectRoots(P()), ['100']);
 });
+
+test('a spec delta names requirements added, changed and removed since the pin; an unchanged blob is no delta', async () => {
+  const { specDelta } = await import('../core/projects.mjs');
+  const pin = { status: 'resolved', slug: 'p', specBlob: 'b1', reqs: { 'REQ-001': { text: 'One.', removed: false }, 'REQ-002': { text: 'Two.', removed: false }, 'REQ-003': { text: 'Three.', removed: false } } };
+  assert.equal(specDelta(pin, { ...pin }), null);
+  const now = { status: 'resolved', slug: 'p', specBlob: 'b2', reqs: { 'REQ-001': { text: 'One, edited.', removed: false }, 'REQ-002': { text: 'Two.', removed: true }, 'REQ-004': { text: 'Four.', removed: false } } };
+  assert.deepEqual(specDelta(pin, now), { added: ['REQ-004'], changed: ['REQ-001'], removed: ['REQ-002', 'REQ-003'] });
+  assert.equal(specDelta(pin, { ...now, reqs: pin.reqs }), null, 'a new blob with the same rows (an edit elsewhere in the spec) is no delta');
+  assert.deepEqual(specDelta(pin, { status: 'unavailable' }), { unavailable: 'unavailable' }, 'no current read: say so, never "no change"');
+  assert.equal(specDelta({ status: 'no spec' }, { status: 'no spec' }), null);
+});

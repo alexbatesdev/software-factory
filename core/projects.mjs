@@ -137,9 +137,25 @@ export function specView(state, read) {
   const rows = Object.values(state.work).filter(w => !['done', 'cancelled'].includes(w.phase)).map(w => {
     const a = [...(w.assignments || [])].reverse().find(a => BUILDING.includes(a.kind) && state.manifests?.[`${w.id}/${a.id}/1`]?.spec);
     const p = a && state.manifests[`${w.id}/${a.id}/1`].spec;
-    return { id: w.id, title: w.title, phase: w.phase, ...resolveSpec(w, read),
-      ...(p ? { pinned: { assignment: a.id, status: p.status, commit: p.commit || null, specBlob: p.specBlob || null, reqs: Object.keys(p.reqs || {}) } } : {}) };
+    const now = resolveSpec(w, read);
+    return { id: w.id, title: w.title, phase: w.phase, ...now,
+      ...(p ? { pinned: { assignment: a.id, status: p.status, commit: p.commit || null, specBlob: p.specBlob || null, reqs: Object.keys(p.reqs || {}) }, delta: specDelta(p, now) } : {}) };
   });
   const counts = {}; for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
   return { counts, rows };
+}
+
+/**
+ * What changed in a record's requirements since its pin (phase 2): null when nothing did. A requirement struck out, or gone
+ * from the test plan's set, is removed. A pinned contract that can't be compared now says why rather than reading as unchanged.
+ */
+export function specDelta(pin, now) {
+  if (pin?.status !== 'resolved') return null;
+  if (now?.status !== 'resolved' || now.slug !== pin.slug) return { unavailable: now?.status === 'resolved' ? `now resolves to ${now.slug}` : now?.status || 'unknown' };
+  if (now.specBlob === pin.specBlob) return null;
+  const live = r => r && !r.removed, was = pin.reqs || {}, is = now.reqs || {};
+  const added = Object.keys(is).filter(id => live(is[id]) && !live(was[id])).sort();
+  const changed = Object.keys(is).filter(id => live(is[id]) && live(was[id]) && is[id].text !== was[id].text).sort();
+  const removed = Object.keys(was).filter(id => live(was[id]) && !live(is[id])).sort();
+  return added.length || changed.length || removed.length ? { added, changed, removed } : null;
 }
