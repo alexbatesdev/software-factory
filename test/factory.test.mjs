@@ -174,3 +174,34 @@ test("a seat whose herdr name is held by another pane is reported with who holds
   assert.equal(s.action, 'report-name-taken');
   assert.match(s.why, /herdr name "unblocker" is held by the pane labelled "utility" .*rename that agent .*or relabel the panes/);
 });
+
+// W-557 trial (Alex 11-18): a seat can switch between Claude and Codex in its own pane.
+test('a seat switched to Codex while Claude still runs in its pane is reported, never started over it (W-557)', () => {
+  const cfg = { routing: { supervisors: { 'sup: s1': { workspace: 'Stream 1', supervisorKind: 'codex' } } }, factory: { seats: [{ label: 'router', kind: 'codex', role: 'questions-router', workspace: 'Main', tab: 'A' }] } };
+  const seats = seatsOf(cfg);
+  assert.equal(seats.find(s => s.label === 'sup: s1').kind, 'codex', 'a supervisor seat takes its stream\'s supervisorKind');
+  const plan = planFactory(seats, [pane('router', 'Main', 'A', 'claude --agent questions-router'), pane('sup: s1', 'Stream 1', 'Orchestrator', 'codex')]);
+  assert.deepEqual(actionsOf(plan), { router: 'report-kind', 'sup: s1': 'none' }, 'a running Codex seat has no --agent to check');
+  assert.match(plan[0].why, /claude.*codex/i);
+  assert.equal(actionsOf(planStop(seats, [pane('router', 'Main', 'A', 'claude --agent questions-router')])).router, 'stop', 'down stops whichever agent runs there');
+});
+
+test('the seat restart switches a seat to its configured agent at its next gap (W-557)', () => {
+  const seats = [{ label: 'router', kind: 'codex', role: 'questions-router' }];
+  const agents = [{ label: 'router', status: 'idle', ref: 'p1', agent: 'claude' }];
+  const at = agentsNow => planSeatRestarts(seats, agentsNow, { messages: {}, work: {} }, { now: '2026-11-18T19:00:00.000Z', hourUtc: 10, enabled: true, done: {} }).map(r => r.seat.label);
+  assert.deepEqual(at(agents), ['router']);
+  assert.deepEqual(at([{ ...agents[0], agent: 'codex' }]), [], 'already on Codex: nothing to do outside the daily hour');
+});
+
+test('a fresh Codex seat starts with its role, and a stop quits the agent actually running (W-557)', async () => {
+  const { startSeat, stopSeat } = await import('../fleet/factory.mjs');
+  const calls = [], herdr = async (...a) => { calls.push(a); return a[0] === 'pane' && a[1] === 'process-info' ? { process_info: { foreground_processes: [] } } : {}; };
+  await startSeat({ label: 'router', kind: 'codex', role: 'questions-router' }, 'p1', herdr);
+  const start = calls.find(c => c[0] === 'agent' && c[1] === 'start');
+  assert.deepEqual(start.slice(0, 6), ['agent', 'start', 'router', '--kind', 'codex', '--pane']);
+  assert.match(start.at(-1), /\.claude\/agents\/questions-router\.md/);
+  calls.length = 0;
+  await stopSeat({ label: 'router', kind: 'codex', role: 'questions-router' }, 'p1', herdr, 'claude --agent questions-router');
+  assert.ok(calls.some(c => c[1] === 'send-text' && c[3] === '/exit'), 'Claude is running: /exit, not Codex\'s /quit');
+});

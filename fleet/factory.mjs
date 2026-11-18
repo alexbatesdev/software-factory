@@ -16,7 +16,7 @@ export const QUIT = { claude: '/exit', codex: '/quit' };
 export function seatsOf(config) {
   const was = label => Object.entries(config.routing?.renamed || {}).filter(([, to]) => to === label).map(([from]) => from);
   const streams = Object.entries(config.routing?.supervisors || {}).filter(([, s]) => s.workspace).flatMap(([label, s]) => [
-    { label, kind: 'claude', role: 'stream-supervisor', workspace: s.workspace, tab: ORCHESTRATOR_TAB },
+    { label, kind: s.supervisorKind || 'claude', role: 'stream-supervisor', workspace: s.workspace, tab: ORCHESTRATOR_TAB },
     ...(s.worker ? [{ label: s.worker, kind: 'sbx', agent: agentOf(config, s.worker), workspace: s.workspace, tab: WORKER_TAB }] : []),
   ]);
   return [...(config.factory?.seats || []).filter(s => s.enabled !== false), ...streams].map(s => ({ ...s, was: was(s.label) }));
@@ -31,6 +31,9 @@ const running = (seat, argv) => ({
   codex: () => /(^|[\s/])codex\b/.test(argv),
   sbx: () => /\bsbx exec\b/.test(argv),
 })[seat.kind]();
+/** Which agent a pane is running, whatever its seat says (a seat can switch between them, W-557). */
+const agentIn = argv => /(^|[\s/])codex\b/.test(argv) ? 'codex' : /(^|[\s/])claude\b/.test(argv) ? 'claude' : null;
+const isAgent = seat => ['claude', 'codex'].includes(seat.kind);
 
 /**
  * @param seats from seatsOf
@@ -52,8 +55,10 @@ export function planFactory(seats, panes) {
     // Its herdr name held by an agent in another pane (W-525: panes relabelled by hand): starting it can only fail.
     const holder = ['claude', 'codex'].includes(seat.kind) && !running(seat, p.argv) && panes.find(x => x.pane !== p.pane && x.agentName === slug(seat.label));
     if (holder) return { ...base, action: 'report-name-taken', why: `its herdr name "${slug(seat.label)}" is held by the pane labelled "${holder.label}" (${holder.pane}); rename that agent (herdr agent rename ${holder.pane} <its own name>) or relabel the panes, then run up again` };
+    // Switched agents with the old one still up: starting would type into it. Stop it first (down), or let the seat restart do it.
+    if (isAgent(seat) && !running(seat, p.argv) && agentIn(p.argv)) return { ...base, action: 'report-kind', why: `running ${agentIn(p.argv)}, the config says ${seat.kind}; it switches at the seat restart's next gap, or stop it (factory.mjs down) and run up` };
     if (!running(seat, p.argv)) return { ...base, action: { shell: 'run', sbx: 'reconnect' }[seat.kind] || 'start', why: 'pane is up, its process is not' };
-    if (seat.role && !p.argv.includes(`--agent ${seat.role}`)) return { ...base, action: 'report-role', why: `running without --agent ${seat.role}; restart it fresh to load the role` };
+    if (seat.kind === 'claude' && seat.role && !p.argv.includes(`--agent ${seat.role}`)) return { ...base, action: 'report-role', why: `running without --agent ${seat.role}; restart it fresh to load the role` };
     return { ...base, action: 'none', why: 'running' };
   });
 }
@@ -68,7 +73,7 @@ export function planStop(seats, panes, { serverLabel, all = false } = {}) {
   return seats.filter(s => all || !s.stays)
     .map(seat => ({ seat, p: paneOf(seat, panes) }))
     .sort((a, b) => rank(a.seat) - rank(b.seat))
-    .map(({ seat, p }) => ({ seat, pane: p?.pane, action: !p ? 'skip-missing' : running(seat, p.argv) ? 'stop' : 'skip-stopped' }));
+    .map(({ seat, p }) => ({ seat, pane: p?.pane, action: !p ? 'skip-missing' : running(seat, p.argv) || (isAgent(seat) && agentIn(p.argv)) ? 'stop' : 'skip-stopped' }));
 }
 
 const QUIET_SHELL = ['--env', 'DISABLE_AUTO_UPDATE=true'];
@@ -106,8 +111,10 @@ export function planSeatRestarts(seats, agents, state, { now, hourUtc = 10, enab
   const day = String(now).slice(0, 10), daily = new Date(now).getUTCHours() === hourUtc;
   if (!enabled) return [];
   // A seat whose role's board tools changed since it started (W-431) restarts at its next gap, whatever the hour.
-  const due = s => (daily && done[s.label] !== day) || (!!toolsOf && toolsDone[s.label] !== toolsOf(s));
-  return seats.filter(s => s.kind === 'claude' && !s.stays && due(s)).flatMap(seat => {
+  // So does a seat whose pane runs the other agent (W-557: switched in config).
+  const switched = s => { const a = agents.find(x => x.label === s.label); return !!a?.agent && a.agent !== s.kind; };
+  const due = s => (daily && done[s.label] !== day) || (!!toolsOf && toolsDone[s.label] !== toolsOf(s)) || switched(s);
+  return seats.filter(s => isAgent(s) && !s.resume && !s.stays && due(s)).flatMap(seat => {
     const a = agents.find(x => x.label === seat.label);
     if (!a || !['idle', 'done'].includes(a.status)) return [];
     if (Object.values(state.messages).some(m => m.to === seat.label && !m.ackedAt)) return [];
@@ -125,20 +132,25 @@ export const argvOf = async (herdr, pane) => ((await herdr('pane', 'process-info
 /** Start a seat's process in its pane, as `factory.mjs up` does. */
 export async function startSeat(seat, pane, herdr) {
   if (seat.kind === 'shell') return herdr('pane', 'run', pane, `cd ${JSON.stringify(home(seat.cwd))} && ${seat.run.replace(/~\//g, `${os.homedir()}/`)}`);
-  const args = seat.kind === 'codex' ? ['resume', seat.resume] : seat.role ? ['--agent', seat.role] : [];
+  // Codex has no --agent: a fresh Codex seat is told its role file as its first prompt (W-557).
+  const args = seat.kind === 'codex' ? (seat.resume ? ['resume', seat.resume] : seat.role ? [`You are the "${seat.label}" seat of the software factory. Read ${os.homedir()}/Code/.claude/agents/${seat.role}.md now and act as that role for this whole session. Your factory tools are the software-factory MCP tools; the factory knows your seat from your pane label.`] : [])
+    : seat.role ? ['--agent', seat.role] : [];
   await pause(4000); // a fresh shell isn't ready for agent start straight away
   return herdr('agent', 'start', slug(seat.label), '--kind', seat.kind, '--pane', pane, '--', ...args);
 }
 
 /** Stop a seat's process, keeping its pane; true once it is down within 30 s. */
-export async function stopSeat(seat, pane, herdr) {
+export async function stopSeat(seat, pane, herdr, argv = null) {
+  // An agent seat quits with the agent actually running there, which differs from its kind mid-switch (W-557).
+  const was = isAgent(seat) ? agentIn(argv ?? await argvOf(herdr, pane)) || seat.kind : null;
+  const down = a => isAgent(seat) ? !agentIn(a) : !running(seat, a);
   if (seat.kind === 'shell') await herdr('pane', 'send-keys', pane, 'ctrl+c');
-  else { await herdr('pane', 'send-keys', pane, 'esc'); await pause(1000); await herdr('pane', 'send-text', pane, QUIT[seat.agent || seat.kind] || QUIT.claude); await herdr('pane', 'send-keys', pane, 'enter'); }
+  else { await herdr('pane', 'send-keys', pane, 'esc'); await pause(1000); await herdr('pane', 'send-text', pane, QUIT[was || seat.agent || seat.kind] || QUIT.claude); await herdr('pane', 'send-keys', pane, 'enter'); }
   for (let i = 0; i < 30; i++) {
     await pause(1000);
-    if (!running(seat, await argvOf(herdr, pane))) return true;
+    if (down(await argvOf(herdr, pane))) return true;
     // Claude's "Background work is running" dialog: Exit and stop tasks (Alex, 11-06).
-    if (seat.kind !== 'claude') continue;
+    if ((was || seat.kind) !== 'claude') continue;
     const screen = await promisify(execFile)('herdr', ['pane', 'read', pane, '--source', 'visible'], { timeout: 5000 }).then(r => r.stdout, () => '');
     const key = exitChoice(screen);
     if (key) await herdr('pane', 'send-keys', pane, key);
