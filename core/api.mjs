@@ -135,7 +135,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       const url = new URL(req.url, 'http://127.0.0.1');
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'Local requests only.' });
       const seat = req.headers['x-seat'];
-      if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq, artifacts = {}, manifests = {} } = store.state; return send(res, 200, { work, questions, messages, seq, artifacts, manifests }); }
+      if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq, artifacts = {}, manifests = {}, deliverables = {} } = store.state; return send(res, 200, { work, questions, messages, seq, artifacts, manifests, deliverables }); }
       const art = req.method === 'GET' && /^\/api\/artifacts\/([0-9a-f]{64})$/.exec(url.pathname)?.[1];
       if (art && artifactRoot && existsSync(join(artifactRoot, art.slice(0, 2), art))) { res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' }); return res.end(readFileSync(join(artifactRoot, art.slice(0, 2), art))); }
       // Vendored page libraries (markdown for review-thread messages), by exact name only.
@@ -204,6 +204,17 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
         if (!['approve', 'decline'].includes(decision)) return send(res, 400, { error: 'decision is approve or decline.' });
         const results = await decideTaskRequests(store, ids, decision, note, tw, now);
         if (decision === 'approve') for (const id of ids) alexNote(store.state.taskRequests[id]?.work, note, `Alex, approving Teamwork task ${id}`);
+        return send(res, 200, { results });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/deliverables') {
+        const ds = Object.values(store.state.deliverables || {}).map(d => ({ ...d, record: store.state.work[d.work] ? { title: store.state.work[d.work].title, phase: store.state.work[d.work].phase } : null }));
+        return send(res, 200, { deliverables: ds.sort((a, b) => b.at.localeCompare(a.at)) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/deliverables/archive') {
+        if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
+        if (readOnly) return send(res, 405, { error: 'This factory is read-only (shadow mode).' });
+        const { ids = [], note = null, unarchive = false } = await readBody(req);
+        const results = ids.map(id => { try { store.append({ kind: 'deliverable_archive', target: id, payload: { note, unarchive: !!unarchive } }, { now: now(), by: 'Alex (dashboard)' }); return { id, ok: true }; } catch (e) { return { id, error: e.message }; } });
         return send(res, 200, { results });
       }
       if (req.method === 'POST' && url.pathname === '/api/pr-approvals') {

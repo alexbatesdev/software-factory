@@ -67,6 +67,9 @@ export function inboxCommands(state, cfg, fleet = null) {
     const own = rec && [rec.stream, rec.owner].find(x => x && x !== to && cfg.seats.includes(x));
     if (own) cmds.push(msg(own, q.work, { answers: id }, text));
   }
+  // The deliverable inbox (Alex 11-18): local-head hears of each new item once, so it can bring it to Alex.
+  for (const d of Object.values(state.deliverables || {})) if (!d.archived && !told.has(`deliverable:${d.id}`))
+    cmds.push(msg('local-head', d.work, { deliverable: d.id }, `New deliverable ${d.id} "${d.title}" from ${d.from} on ${d.work}: read it with the deliverables tool (id: ${d.id}) and tell Alex what it says; it's on the dashboard's Deliverables panel.`));
   let watches = fleet?.watches || {};
   if (fleet) {
     const stops = planWorkerStops({ units: fleet.units, others: fleet.others || [], works: state.work, watch: watches.workerStops, now: fleet.now, supervisors: cfg.supervisors });

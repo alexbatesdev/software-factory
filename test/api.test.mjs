@@ -220,7 +220,7 @@ test('the server serves each seat its current tool table', async () => {
   const f = await serveWith({});
   try {
     const tools = await (await fetch(`${f.base}/api/tools`, { headers: { 'x-seat': 'questions router' } })).json();
-    assert.deepEqual(tools.map(t => t.name).sort(), ['ack', 'create', 'inbox', 'questions', 'read', 'route', 'set_owner']);
+    assert.deepEqual(tools.map(t => t.name).sort(), ['ack', 'create', 'deliverables', 'inbox', 'questions', 'read', 'route', 'set_owner']);
     assert.ok(tools.every(t => t.inputSchema?.type === 'object'));
   } finally { f.close(); }
 });
@@ -454,7 +454,7 @@ test("local-head's tools offer every board action, each with a field for Alex's 
   const { toolsFor } = await import('../mcp/server.mjs');
   const tools = toolsFor('local-head');
   assert.ok(tools.some(t => t.name === 'cancel') && tools.some(t => t.name === 'resolve_thread'));
-  assert.ok(tools.filter(t => !['inbox', 'read', 'questions'].includes(t.name)).every(t => t.inputSchema.properties.alexAsked), 'every action tool takes alexAsked');
+  assert.ok(tools.filter(t => !['inbox', 'read', 'questions', 'deliverables'].includes(t.name)).every(t => t.inputSchema.properties.alexAsked), 'every action tool takes alexAsked');
   assert.ok(!toolsFor('factory-lead').some(t => t.inputSchema.properties.alexAsked), 'only local-head speaks for Alex');
 });
 
@@ -510,4 +510,18 @@ test('the spec resolution view is served read-only (phase 2 observation)', async
   const view = { counts: { resolved: 1 }, rows: [{ id: 'W-1', status: 'resolved' }] };
   const f = await serveWith({ observed: () => ({ specs: () => view }) });
   try { assert.deepEqual(await (await fetch(`${f.base}/api/specs`)).json(), view); } finally { f.close(); }
+});
+
+test('the deliverable inbox: a seat delivers, the dashboard lists it with its record and archives it as Alex', async () => {
+  const f = await serve(), base = `http://127.0.0.1:${f.port}`;
+  try {
+    await f.act('local-head', 'create', { title: 'Look into the gap' });
+    await f.act(S1, 'deliver', { work: 'W-1', title: 'Findings', text: '# Gap\nIt is the import.' });
+    const { deliverables } = await (await fetch(`${base}/api/deliverables`)).json();
+    assert.deepEqual(deliverables.map(d => [d.id, d.title, d.from, d.record?.title, d.archived]), [['D-1', 'Findings', S1, 'Look into the gap', null]]);
+    assert.equal((await fetch(`${base}/api/deliverables/archive`, { method: 'POST', body: JSON.stringify({ ids: ['D-1'] }) })).status, 403, 'needs the dashboard header');
+    const r = await (await fetch(`${base}/api/deliverables/archive`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids: ['D-1'], note: 'done with it' }) })).json();
+    assert.deepEqual(r.results, [{ id: 'D-1', ok: true }]);
+    assert.equal(f.store.state.deliverables['D-1'].archived.by, 'Alex (dashboard)');
+  } finally { f.close(); }
 });

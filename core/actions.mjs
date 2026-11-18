@@ -103,6 +103,9 @@ const BUILD = {
     if (a.decision === 'decline') return [ev(a.work, { type: 'withdraw', note: `Alex declined (via local-head): ${said}` })];
     fail('decision is approve or decline.');
   },
+  // The deliverable inbox (Alex 11-18): a report for a record, kept by the factory; archived when it no longer matters.
+  deliver: a => { need(a, 'work', 'title', 'text'); return [{ kind: 'deliverable', payload: { work: a.work, title: a.title, text: a.text } }]; },
+  archive_deliverable: a => { need(a, 'id'); return [{ kind: 'deliverable_archive', target: a.id, payload: { note: a.note || null, unarchive: !!a.unarchive } }]; },
   // AWS read access for a sandbox waits for Alex's click on the dashboard (W-420); the factory runs the script, never a seat.
   request_aws: a => [{ kind: 'aws_request', payload: { work: a.work, sandbox: a.sandbox, why: a.why } }],
   propose_task: a => [{ kind: 'task_request', payload: { work: a.work, name: a.name, description: a.description, tasklistId: a.tasklistId, parentTaskId: a.parentTaskId, assigneeUserId: a.assigneeUserId, why: a.why } }],

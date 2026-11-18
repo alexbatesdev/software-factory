@@ -1,18 +1,18 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
-export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws', 'approve_pr'];
+export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws', 'approve_pr', 'deliver', 'archive_deliverable'];
 
 /** The two factory roles other code names (Alex 11-17: the factory, not a board). */
 export const LEAD_ROLE = 'factory-lead', DEVELOPER_ROLE = 'factory-developer';
 
 export const ROLES = {
-  'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner', 'progress', 'approve_pr'],
+  'local-head': ['read', 'ack', 'answer', 'ask', 'create', 'assign', 'set_owner', 'progress', 'approve_pr', 'deliver', 'archive_deliverable'],
   'questions-router': ['read', 'ack', 'route', 'create', 'set_owner'],
-  'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread', 'settle_finding', 'propose_task', 'request_aws'],
-  'factory-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify', 'cancel', 'propose_task'],
+  'stream-supervisor': ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'cancel', 'resolve_thread', 'settle_finding', 'propose_task', 'request_aws', 'deliver', 'archive_deliverable'],
+  'factory-lead': ['read', 'ack', 'create', 'set_owner', 'assign', 'progress', 'message', 'triage', 'ask', 'verify', 'cancel', 'propose_task', 'deliver', 'archive_deliverable'],
   'factory-developer': ACTIONS,
   'trusted-reviewer': [], // PR review carve-out (Alex, 11-06): trusted reviews run off the board
   // A stream's sbx worker, on the sandbox port only. Its instructions come in its brief, not a role file.
-  'sbx-worker': ['read', 'ack', 'progress'],
+  'sbx-worker': ['read', 'ack', 'progress', 'deliver'],
   // The Codex agent unblocker (W-414): its policy is ~/Code/CLAUDE.md's Agent unblocker section, not a role file; it reads and acks board messages.
   'agent-unblocker': ['read', 'ack'],
 };

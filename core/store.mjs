@@ -9,6 +9,7 @@ import { foldQuestion } from './questions.mjs';
 import { PR_REF, prRefUrl, prKey } from './units.mjs';
 import { foldThread, THREAD_KINDS } from './threads.mjs';
 import { foldTaskRequest, TASK_KINDS } from './task-requests.mjs';
+import { foldDeliverable, DELIVERABLE_KINDS } from './deliverables.mjs';
 import { foldAwsRequest, AWS_KINDS } from './aws-access.mjs';
 import { foldArtifact, ARTIFACT_KINDS } from './artifacts.mjs';
 import { foldManifest, MANIFEST_KINDS } from './manifest.mjs';
@@ -110,6 +111,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   if (kind === 'import') { importRow(state, id, payload); state.seq = row.seq; return id; }
   if (THREAD_KINDS.includes(kind)) { const t = foldThread(state, row); state.seq = row.seq; return t; }
   if (TASK_KINDS.includes(kind)) { const t = foldTaskRequest(state, row); state.seq = row.seq; return t; }
+  if (DELIVERABLE_KINDS.includes(kind)) { const t = foldDeliverable(state, row); state.seq = row.seq; return t; }
   if (AWS_KINDS.includes(kind)) { const t = foldAwsRequest(state, row); state.seq = row.seq; return t; }
   if (ARTIFACT_KINDS.includes(kind)) { const t = foldArtifact(state, row); state.seq = row.seq; return t; }
   if (MANIFEST_KINDS.includes(kind)) { const t = foldManifest(state, row); state.seq = row.seq; return t; }

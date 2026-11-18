@@ -69,6 +69,15 @@ details summary { cursor: pointer; }
 #side .feed h3 { margin: 0 0 2px; font-size: 16px; color: var(--acc); display: flex; gap: 8px; align-items: baseline; } #side .feed h3 .n { font-size: 13px; color: var(--mute); font-weight: 400; }
 #side .pr { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 8px; }
 #side .prh { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+/* Deliverables (Alex 11-18): reports and information tasks produced, outside git. Left panel, closed on load. */
+#dside { position: fixed; top: 0; left: 0; bottom: 0; width: 640px; overflow-y: auto; background: var(--card); border-right: 1px solid var(--line); box-shadow: 4px 0 16px rgba(0,0,0,.15); padding: 12px 16px; z-index: 10; }
+#dside .sh { display: flex; gap: 10px; align-items: center; margin-bottom: 8px; } #dside .sh h2 { margin: 0 auto 0 0; }
+#dside details { border-top: 1px solid var(--line); padding: 8px 0; } #dside summary { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+#dside summary b { font-size: 15px; } #dside .arch { opacity: .6; }
+#dside .md { font-size: 14px; line-height: 1.5; padding: 6px 0 0 4px; } #dside .md pre { background: var(--bg); padding: 8px; border-radius: 6px; overflow-x: auto; font-size: 12px; }
+#dside .md code { background: var(--bg); padding: 0 3px; border-radius: 3px; } #dside .md table { border-collapse: collapse; font-size: 13px; } #dside .md td, #dside .md th { border: 1px solid var(--line); padding: 3px 6px; }
+#dside .md h1, #dside .md h2, #dside .md h3 { font-size: 15px; margin: 10px 0 4px; }
+#deliverablesBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
 #supportBtn { margin-left: auto; margin-right: 8px; } #supportBtn.on { font-weight: 700; color: var(--you); border-color: var(--you); } #approvalsBtn.has { font-weight: 700; color: var(--you); border-color: var(--you); }
 details.msgs { margin-top: 4px; font-size: 13px; }
 .msg { border: 1px solid var(--line); border-left: 3px solid var(--factory); border-radius: 6px; margin: 8px 0; background: var(--card); overflow: hidden; }
@@ -94,11 +103,16 @@ button:disabled { opacity: .5; cursor: default; }
 <script src="/vendor/purify-3.1.6.min.js"></script>
 </head>
 <body>
-<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="supportBtn" title="Pause: the factory leaves every support task alone (no dispatch, notices, auto-ready or reviewer re-requests) so you can work them with your own agent.">Pause support</button><button id="approvalsBtn">Approvals</button><a href="/projects">Projects</a> <a href="/queue">Queue</a></header>
+<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="supportBtn" title="Pause: the factory leaves every support task alone (no dispatch, notices, auto-ready or reviewer re-requests) so you can work them with your own agent.">Pause support</button><button id="deliverablesBtn">Deliverables</button> <button id="approvalsBtn">Approvals</button><a href="/projects">Projects</a> <a href="/queue">Queue</a></header>
 <section class="you" id="you" hidden>
   <div class="head"><span class="big" id="youCount"></span><h2>waiting on you</h2><span class="mute" style="margin-left:10px">Ask local-head "what's waiting on me" to answer them.</span></div>
   <div class="groups" id="youGroups"></div>
 </section>
+<aside id="dside" hidden>
+  <div class="sh"><h2>Deliverables</h2><label class="mute"><input type="checkbox" id="dArch"> show archived</label><button id="dClose">Close</button></div>
+  <div class="mute">Reports and information tasks produced that don't belong in a git repo. Agents read these too. Archive one once it no longer matters to the work.</div>
+  <div id="dList"></div>
+</aside>
 <aside id="side" hidden>
   <div class="sh"><h2>Approvals</h2><button id="sideClose">Close</button></div>
   <section class="feed prs"><h3>New PRs to approve <span class="n" id="prN"></span></h3><div class="mute">Company-repo work no Teamwork task asked for. Approve and it queues; Decline withdraws it.</div><div id="prList"></div></section>
@@ -347,7 +361,47 @@ document.getElementById('supportBtn').onclick = async e => {
 };
 document.getElementById('approvalsBtn').onclick = () => { document.getElementById('side').hidden = false; };
 document.getElementById('sideClose').onclick = () => { document.getElementById('side').hidden = true; };
-render(); setInterval(render, 15000);
+// Deliverables: a small markdown renderer over escaped text, so an agent's report can't inject markup.
+function md(src) {
+  const e = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const inline = s => e(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  const out = [], lines = String(src).split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    if (/^```/.test(l)) { const code = []; while (++i < lines.length && !/^```/.test(lines[i])) code.push(lines[i]); out.push(`<pre>${e(code.join('\n'))}</pre>`); continue; }
+    if (/^#{1,6} /.test(l)) { const n = Math.min(3, l.match(/^#+/)[0].length); out.push(`<h${n}>${inline(l.replace(/^#+ /, ''))}</h${n}>`); continue; }
+    if (/^\s*\|/.test(l)) { const rows = []; for (; i < lines.length && /^\s*\|/.test(lines[i]); i++) if (!/^\s*\|[\s:|-]+\|\s*$/.test(lines[i])) rows.push(lines[i].trim().replace(/^\||\|$/g, '').split('|')); i--;
+      out.push(`<table>${rows.map((r, j) => `<tr>${r.map(c => j ? `<td>${inline(c.trim())}</td>` : `<th>${inline(c.trim())}</th>`).join('')}</tr>`).join('')}</table>`); continue; }
+    if (/^\s*([-*]|\d+\.) /.test(l)) { const tag = /^\s*\d/.test(l) ? 'ol' : 'ul', items = []; for (; i < lines.length && /^\s*([-*]|\d+\.) /.test(lines[i]); i++) items.push(`<li>${inline(lines[i].replace(/^\s*([-*]|\d+\.) /, ''))}</li>`); i--; out.push(`<${tag}>${items.join('')}</${tag}>`); continue; }
+    out.push(l.trim() ? `<p>${inline(l)}</p>` : '');
+  }
+  return out.join('');
+}
+const dOpen = new Set();
+async function renderDeliverables() {
+  let ds; try { ds = (await (await fetch('/api/deliverables')).json()).deliverables; } catch { return; }
+  const active = ds.filter(d => !d.archived), btn = document.getElementById('deliverablesBtn');
+  btn.textContent = `Deliverables${active.length ? ` (${active.length})` : ''}`; btn.classList.toggle('has', active.length > 0);
+  const shown = document.getElementById('dArch').checked ? ds : active, box = document.getElementById('dList');
+  box.replaceChildren();
+  for (const d of shown) {
+    const det = document.createElement('details'); det.open = dOpen.has(d.id); if (d.archived) det.className = 'arch';
+    det.ontoggle = () => det.open ? dOpen.add(d.id) : dOpen.delete(d.id);
+    const sum = document.createElement('summary');
+    sum.innerHTML = `<b></b><a href="/#${d.work}"></a><span class="mute"></span>`;
+    sum.children[0].textContent = d.title; sum.children[1].textContent = `${d.work}${d.record ? `: ${d.record.title}` : ''}`;
+    sum.children[2].textContent = `${d.id} · ${d.from} · ${new Date(d.at).toLocaleString()}${d.archived ? ` · archived by ${d.archived.by}` : ''}`;
+    const body = document.createElement('div'); body.className = 'md'; body.innerHTML = md(d.text);
+    const b = document.createElement('button'); b.textContent = d.archived ? 'Unarchive' : 'Archive';
+    b.onclick = async () => { b.disabled = true; await fetch('/api/deliverables/archive', { method: 'POST', headers: { 'content-type': 'application/json', 'x-factory': '1' }, body: JSON.stringify({ ids: [d.id], unarchive: !!d.archived }) }); renderDeliverables(); };
+    det.append(sum, body, b); box.append(det);
+  }
+  if (!shown.length) box.append(Object.assign(document.createElement('div'), { className: 'mute', textContent: 'Nothing here.' }));
+}
+document.getElementById('deliverablesBtn').onclick = () => { document.getElementById('dside').hidden = false; renderDeliverables(); };
+document.getElementById('dClose').onclick = () => { document.getElementById('dside').hidden = true; };
+document.getElementById('dArch').onchange = renderDeliverables;
+render(); setInterval(render, 15000); renderDeliverables(); setInterval(renderDeliverables, 15000);
 </script>
 </body>
 </html>
