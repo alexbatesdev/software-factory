@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 // Cycling a worker's host when its disk fills (Alex, 11-04: at 75%, between tasks). Pure: the host adapter does the cycling.
 import { parked, TERMINAL, workIdOf } from './work.mjs';
 
@@ -35,6 +36,9 @@ export function planRecycles({ units, health = {}, works, threshold = 0.75, recy
   }
   return { drain, due };
 }
+
+/** What blocks a recycle, as a dedupe key: a new blocker at the same count is told again (W-543). */
+export const blockKey = (sandbox, problems) => `${sandbox}/${createHash('sha1').update(problems.map(p => `${p.path}: ${p.problem}`).sort().join('\n')).digest('hex').slice(0, 12)}`;
 
 /** A worktree named for a finished record holds nothing a later job needs (W-493): it goes with the sandbox, and is named. */
 export const releaseFinished = (found, works) => found.map(p => {

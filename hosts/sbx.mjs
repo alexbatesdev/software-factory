@@ -27,17 +27,17 @@ export const parseDf = out => { const m = String(out).trim().split('\n').at(-1)?
  */
 const STALE_DAYS = 3;
 export function parsePreflight(out) {
-  return String(out).split('\n').filter(Boolean).map(l => l.split('\t')).flatMap(([path, dirty, state, age, untracked]) => [
+  return String(out).split('\n').filter(Boolean).map(l => l.split('\t')).flatMap(([path, dirty, state, age, untracked, head, url]) => [
     ...(Number(dirty) > 0 ? [{ path, problem: `${dirty} uncommitted change(s)`, blocking: true }] : []),
     ...(Number(untracked) > 0 ? [{ path, problem: `${untracked} untracked file(s)`, blocking: false }] : []),
-    ...(state === 'unpushed' ? [{ path, problem: `commits GitHub doesn't have (${age} day(s) old)`, blocking: Number(age) < STALE_DAYS }] : []),
+    ...(state === 'unpushed' ? [{ path, problem: `commits GitHub doesn't have (${age} day(s) old)`, blocking: Number(age) < STALE_DAYS, head, url }] : []),
     ...(state === 'replaced' ? [{ path, problem: `replaced on GitHub by a newer push (${age} day(s) old)`, blocking: Number(age) < STALE_DAYS }] : []),
   ]);
 }
 
 // Workers push by HTTPS URL (SSH is blocked in the VM), which never updates origin/* refs, so "pushed" is asked of GitHub:
-// HEAD is a branch tip there, inside its branch, inside main, or a commit GitHub still serves by SHA (a deleted branch its PR keeps, W-542).
-// Build output and spamton-* don't count. Prints `<path>\t<tracked changes>\t<ok|replaced|unpushed>\t<days since HEAD's commit>\t<untracked files>`.
+// HEAD is a branch tip there, inside its branch, or inside main; the host asks GitHub about the rest (settleOnGitHub).
+// Build output and spamton-* don't count. Prints `<path>\t<tracked changes>\t<ok|replaced|unpushed>\t<days since HEAD's commit>\t<untracked files>\t<HEAD>\t<remote>`.
 const BUILT_RAILS_SBX = '/Users/alex.bates/Code/repos/built-rails-a';
 export const PREFLIGHT = `cd "$WORKSPACE_DIR" 2>/dev/null || cd ${BUILT_RAILS_SBX}
 url=$(git remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#')
@@ -51,9 +51,8 @@ git worktree list --porcelain | sed -n 's/^worktree //p' | while read -r d; do
   if printf '%s\\n' "$heads" | cut -f1 | grep -qx "$head" || git -C "$d" merge-base --is-ancestor "$head" refs/factory/main 2>/dev/null; then state=ok
   elif [ -n "$branch" ] && printf '%s\\n' "$heads" | grep -q "refs/heads/$branch$"; then
     if git -C "$d" fetch -q "$url" "$branch" </dev/null 2>/dev/null && git -C "$d" merge-base --is-ancestor "$head" FETCH_HEAD; then state=ok; else state=replaced; fi
-  elif probe=$(mktemp -d) && git init -q "$probe" && git -C "$probe" fetch -q --depth=1 --filter=tree:0 "$url" "$head" </dev/null 2>/dev/null; then state=ok; rm -rf "$probe"
-  else state=unpushed; rm -rf "$probe"; fi
-  printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$d" "$dirty" "$state" "$age" "$untracked"
+  else state=unpushed; fi
+  printf '%s\\t%s\\t%s\\t%s\\t%s\\t%s\\t%s\\n' "$d" "$dirty" "$state" "$age" "$untracked" "$head" "$url"
 done`;
 
 /** `df -P /`, then `--`, then the agent's elapsed seconds (none when no agent runs), as {diskPct, agentSince (epoch ms)}. */
@@ -83,9 +82,20 @@ export async function health(worker) {
   return parseHealth(stdout);
 }
 
+/** An unpushed HEAD GitHub still has (a deleted branch its PR keeps, W-542) is pushed. Asked from the host: a full sandbox can't write (W-543). */
+export async function settleOnGitHub(found, exists = hasCommit) {
+  const held = await Promise.all(found.map(p => p.head && p.url ? exists(p.url, p.head).catch(() => false) : false));
+  return found.filter((p, i) => !held[i]);
+}
+async function hasCommit(url, sha) {
+  const slug = String(url).match(/github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?$/)?.[1];
+  if (!slug || !/^[0-9a-f]{40}$/.test(sha)) return false;
+  return run('gh', ['api', `repos/${slug}/commits/${sha}`, '--silent'], { timeout: 30000 }).then(() => true, () => false);
+}
+
 export async function preflight(worker) {
   const { stdout } = await run('sbx', ['exec', worker.sandbox, 'bash', '-lc', PREFLIGHT], { timeout: 120000, maxBuffer: 1 << 22 });
-  return parsePreflight(stdout);
+  return settleOnGitHub(parsePreflight(stdout));
 }
 
 const plugin = f => import(join(PLUGIN, 'src', f));
