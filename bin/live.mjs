@@ -671,7 +671,8 @@ async function seatRestartTick() {
   if (!fleet) return;
   const agents = [...fleet.others, ...fleet.units.flatMap(u => [u.supervisor, u.worker].filter(Boolean))];
   for (const { seat, pane } of planSeatRestarts(seatsOf(config), agents, store.state, { now: now(), ...config.seatRecycle, done: restartedOn, toolsOf, toolsDone })) {
-    const why = toolsDone[seat.label] !== toolsOf(seat) ? 'its factory tools changed' : 'daily fresh start';
+    const a = agents.find(x => x.label === seat.label);
+    const why = a?.agent && a.agent !== seat.kind ? `switching from ${a.agent} to ${seat.kind}` : toolsDone[seat.label] !== toolsOf(seat) ? 'its factory tools changed' : 'daily fresh start';
     restartedOn[seat.label] = now().slice(0, 10); toolsDone[seat.label] = toolsOf(seat);
     writeFileSync(RESTARTED, JSON.stringify(restartedOn)); writeFileSync(SEAT_TOOLS, JSON.stringify(toolsDone));
     if (DRY) { once(`dry run: would restart ${seat.label}`); continue; }

@@ -139,7 +139,13 @@ export async function startSeat(seat, pane, herdr) {
   const args = seat.kind === 'codex' ? (seat.resume ? ['resume', ...own, seat.resume] : seat.role ? [...own,`You are the "${seat.label}" seat of the software factory. Read ${os.homedir()}/Code/.claude/agents/${seat.role}.md now and act as that role for this whole session. Your factory tools are the software-factory MCP tools; the factory knows your seat from your pane label.`] : [])
     : seat.role ? ['--agent', seat.role] : [];
   await pause(4000); // a fresh shell isn't ready for agent start straight away
-  return herdr('agent', 'start', slug(seat.label), '--kind', seat.kind, '--pane', pane, '--', ...args);
+  try { return await herdr('agent', 'start', slug(seat.label), '--kind', seat.kind, '--pane', pane, '--', ...args); }
+  catch (e) {
+    // herdr can exit non-zero for a Codex start that did start (W-557): the pane's process is the truth.
+    await pause(3000);
+    if (isAgent(seat) && agentIn(await argvOf(herdr, pane)) === seat.kind) return { startedDespite: e.message };
+    throw e;
+  }
 }
 
 /** Stop a seat's process, keeping its pane; true once it is down within 30 s. */

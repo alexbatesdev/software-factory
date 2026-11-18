@@ -218,3 +218,15 @@ test("a Codex seat is told its own pane: the shared Codex daemon's environment n
   }
   assert.equal(calls.find(c => c[1] === 'start').at(-1), 'abc', 'resume keeps its session id last');
 });
+
+test('a seat start herdr reports failed counts as started when the agent is running in the pane (W-557)', async () => {
+  const { startSeat } = await import('../fleet/factory.mjs');
+  const herdr = async (...a) => {
+    if (a[1] === 'start') throw new Error('Command failed: herdr agent start');
+    if (a[1] === 'process-info') return { process_info: { foreground_processes: [{ argv: ['codex', '-c', 'x'] }] } };
+    return {};
+  };
+  await startSeat({ label: 'router', kind: 'codex', role: 'questions-router' }, 'p1', herdr);
+  const none = async (...a) => { if (a[1] === 'start') throw new Error('Command failed'); return { process_info: { foreground_processes: [{ argv: ['zsh'] }] } }; };
+  await assert.rejects(startSeat({ label: 'router', kind: 'codex', role: 'questions-router' }, 'p1', none), /Command failed/);
+});
