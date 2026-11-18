@@ -215,10 +215,8 @@
     "maxAgeDays": 7
   },
   "autoMerge": {
-    "_doc": "W-564 (Alex 11-18): GitHub auto-merge (merge commit) for our PRs on main with no project or hold, once the head has a QA-team approval and another developer's, and nothing is open. Off until Alex runs ~/Code/plans/spamton-alex-edits-w564.sh and says go; while off, the server logs what it would do.",
+    "_doc": "W-564 (Alex 11-18): GitHub auto-merge (merge commit) for small, quick fixes, e.g. security fixes, where one approval is enough: our PRs on main, ready after the internal review, with no project and no hold. GitHub's ruleset decides when they merge; enabling auto-merge is not a merge. Turned off again when a hold or a changes request arrives. Off until Alex runs ~/Code/plans/spamton-alex-edits-w564.sh and says go; while off, the server logs what it would do.",
     "enabled": false,
-    "qaTeam": "qa",
-    "devTeam": "developers",
     "repos": ["built-rails"]
   },
   "prices": {

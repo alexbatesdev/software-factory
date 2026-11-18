@@ -703,19 +703,14 @@ every(60000, duplicateTick);
 every(60000, manifestTick);
 if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config.backup.enabled is false)');
 every(60000, seatRestartTick);
-// W-564: GitHub auto-merge for our PRs with no project or hold, at Alex's bar (1 QA + 1 dev approval on the head).
-// Off in config until Alex's rule edits land; until then each decision is logged as what it would do.
-const AM = { enabled: false, org: config.githubOwner, qaTeam: 'qa', devTeam: 'developers', repos: ['built-rails'], ...config.autoMerge };
-let amTeams = null, amTeamsAt = 0;
+// W-564: GitHub auto-merge for small, quick fixes: our PRs on main with no project or hold, ready after the internal review.
+// GitHub's ruleset decides when they merge. Off in config until Alex's rule text lands; until then decisions log as "would".
+const AM = { enabled: false, repos: ['built-rails'], ...config.autoMerge };
 every(config.poll.githubMs, async function autoMergeTick() {
   if (DRY || !openPrs.size) return;
-  if (!amTeams || Date.now() - amTeamsAt > 3600000) {
-    try { amTeams = { qa: await gh.teamMembers(AM.org, AM.qaTeam), devs: await gh.teamMembers(AM.org, AM.devTeam) }; amTeamsAt = Date.now(); }
-    catch (e) { once(`auto-merge: team read failed: ${e.message}`); return; }
-  }
   const repoOf = u => String(u || '').match(/github\.com\/[\w.-]+\/([\w.-]+)\/pull\//)?.[1];
   const records = Object.values(store.state.work).filter(w => !['done', 'cancelled'].includes(w.phase) && AM.repos.includes(repoOf(w.links?.pr)));
-  for (const x of autoMergePlan(records, openPrs, { me: config.githubLogin, ...amTeams, spec: w => resolveSpec(w, specRead()) }).filter(x => x.action)) {
+  for (const x of autoMergePlan(records, openPrs, { me: config.githubLogin, spec: w => resolveSpec(w, specRead()) }).filter(x => x.action)) {
     if (!AM.enabled) { once(`auto-merge (off): would ${x.action} ${x.work} ${x.pr}: ${x.reason}`); continue; }
     try {
       await gh.autoMerge(x.pr, x.action === 'enable');
