@@ -249,3 +249,14 @@ test("a finished record's leftover worktree doesn't block a recycle; it is dropp
     ['app-checkout', true, '2 uncommitted change(s)'],
   ]);
 });
+
+test('a disk reading is logged when it moves 5 points from the last logged one or crosses a threshold (W-552)', async () => {
+  const { diskNote } = await import('../core/recycle.mjs');
+  const T = [0.75, 0.9];
+  assert.equal(diskNote('sbx: s', null, 0.5, T), 'disk sbx: s: 50%', 'the first reading');
+  assert.equal(diskNote('sbx: s', 0.5, 0.53, T), null);
+  assert.equal(diskNote('sbx: s', 0.5, 0.55, T), 'disk sbx: s: 55% (was 50%)');
+  assert.equal(diskNote('sbx: s', 0.73, 0.76, T), 'disk sbx: s: 76% (was 73%), crossed 75%');
+  assert.equal(diskNote('sbx: s', 0.92, 0.88, T), 'disk sbx: s: 88% (was 92%), crossed 90%');
+  assert.equal(diskNote('sbx: s', 0.5, null, T), null, 'no reading, nothing logged');
+});

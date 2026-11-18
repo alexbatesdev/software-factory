@@ -45,3 +45,13 @@ export const releaseFinished = (found, works) => found.map(p => {
   const w = works[workIdOf(p.path.split('/').at(-1))];
   return p.blocking && w && TERMINAL.includes(w.phase) ? { ...p, problem: `${p.problem}, and ${w.id} is ${w.phase}`, blocking: false } : p;
 });
+
+/** A disk reading worth a log line (W-552): the first, a move of 5+ points since the last logged one, or a threshold crossed. */
+export function diskNote(label, logged, pct, thresholds) {
+  if (pct == null) return null;
+  const P = x => `${Math.round(x * 100)}%`;
+  if (logged == null) return `disk ${label}: ${P(pct)}`;
+  const crossed = thresholds.filter(t => (logged < t) !== (pct < t));
+  if (!crossed.length && Math.abs(pct - logged) < 0.05) return null;
+  return `disk ${label}: ${P(pct)} (was ${P(logged)})${crossed.length ? `, crossed ${crossed.map(P).join(' and ')}` : ''}`;
+}

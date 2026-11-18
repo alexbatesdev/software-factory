@@ -40,7 +40,7 @@ import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
-import { planRecycles, releaseFinished, blockKey } from '../core/recycle.mjs';
+import { planRecycles, releaseFinished, blockKey, diskNote } from '../core/recycle.mjs';
 import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
 import { readReport } from '../hosts/sbx.mjs';
 import { readFile } from 'node:fs/promises';
@@ -94,7 +94,8 @@ let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = nul
 const PROJECTS_CACHE = join(ROOT, 'data/projects-cache.json');
 let projectsRead = (() => { try { return JSON.parse(readFileSync(PROJECTS_CACHE, 'utf8')); } catch { return { planning: [], trees: {}, readAt: null }; } })();
 // Worker hosts (Alex, 11-04): disk readings, cycles under way or failed, and the streams draining for one.
-const RC = { enabled: false, threshold: 0.75, host: 'sbx', healthMs: 300000, ...config.recycle };
+const RC = { enabled: false, threshold: 0.75, hardStop: 0.9, host: 'sbx', healthMs: 300000, ...config.recycle };
+const diskLogged = {};
 const host = RC.enabled ? await import(`../hosts/${RC.host}.mjs`) : null;
 let health = {}, recycling = {}, drain = new Map(), drainRead = false, restartFailedAt = {};
 // Each sbx worker's model and effort (deep-model, Alex 11-11): what it was last started with, and restarts a record asked for.
@@ -592,6 +593,8 @@ async function recycleTick() {
   if (!host || !fleet) return;
   for (const u of fleet.units.filter(u => supervisors.includes(u.supervisor?.label) && (u.worker?.sandbox || RC.host !== 'sbx'))) {
     try { health[u.id] = await host.health(u.worker); } catch (e) { once(`health ${u.worker?.label}: ${e.message}`); }
+    const note = diskNote(u.worker.label, diskLogged[u.id], health[u.id]?.diskPct, [RC.threshold, RC.hardStop]);
+    if (note) { log(note); diskLogged[u.id] = health[u.id].diskPct; }
   }
   // When each worker's agent session started, read inside its sandbox with the disk check.
   const sessions = Object.fromEntries(Object.entries(health).filter(([, h]) => h?.agentSince).map(([k, h]) => [k, h.agentSince]));
