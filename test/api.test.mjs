@@ -280,6 +280,17 @@ test('a re-triage that releases the last hold must say what holds it next, and a
   } finally { f.close(); }
 });
 
+test('a ready triage settles the record\'s own review-by hold, so the record dispatches (W-539)', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'Parked' });
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', note: 'n', reviewBy: '2026-11-01', reviewer: 'board lead', untilMerged: '#5' }))[0], 200);
+    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'ready', note: 'reviewed: go', support: true });
+    assert.equal(code, 200, JSON.stringify(body));
+    assert.deepEqual(f.store.state.work['W-1'].externalDeps.map(d => d.text), ['#5 merges'], 'the review hold goes; a hold with its own release stays');
+  } finally { f.close(); }
+});
+
 test("a record-level wait on Alex is refused while the record has an open question: block on the TB-n, which clears when he answers (W-365: W-271, TB-214)", async () => {
   const f = await serve();
   try {

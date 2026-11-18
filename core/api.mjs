@@ -97,6 +97,8 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     // An ack or a create names the calling seat, never a claimed name.
     if (['ack', 'create'].includes(action)) args = { ...args, by: seat };
     let cmds = commandsFor(action, args);
+    // A ready triage is the review a "review by" hold asked for, so it settles it (W-539); a new reviewBy keeps one.
+    if (tw && !args.reviewBy) cmds = [...cmds, ...(tw.externalDeps || []).filter(d => d.review && d.text !== args.releaseHold).map(d => ({ kind: 'event', target: args.work, payload: { type: 'hold_released', text: d.text } }))];
     // Acking a request also closes the seat's inbox message about it.
     if (action === 'ack' && /^W-\d+\/R\d+$/.test(args.ref)) cmds = [...cmds, ...Object.values(s.messages).filter(m => m.to === seat && !m.ackedAt && [m.about?.requests].flat().includes(args.ref)).map(m => ({ kind: 'ack_message', target: m.id, payload: { outcome: args.outcome } }))];
     const ctx = { now: now(), by: seat };
