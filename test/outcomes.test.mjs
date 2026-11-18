@@ -26,6 +26,6 @@ test('jobs and PRs are counted by the agent that ran them: the manifest when it 
 
 test('the report says what it could not measure instead of guessing', () => {
   const md = outcomesMarkdown(outcomes({ work, manifests: {} }, cfg), cfg);
-  assert.match(md, /Cost and tokens: not recorded/);
-  assert.match(md, /\| claude \| review \| 1 \| 30 \|/);
+  assert.match(md, /jobs before that, host-stream workers and Codex supervisor seats have none/);
+  assert.match(md, /\| claude \| review \| 1 \| 30 \| 0 \| none \| none \|/, 'a job with no token count says none, not 0');
 });

@@ -214,6 +214,12 @@
     "enabled": false,
     "maxAgeDays": 7
   },
+  "prices": {
+    "_doc": "W-561: US$ per million tokens, Anthropic first-party rates from the claude-api skill (model table cached 2026-11-03; cache writes 1.25x input for 5 min, 2x for 1 h). A model not listed has no cost in the outcomes report (tokens only), never zero.",
+    "claude-opus-5-5": { "input": 4, "output": 20, "cacheWrite5m": 5, "cacheWrite1h": 8, "cacheRead": 0.2 },
+    "claude-sonnet-5-5": { "input": 2, "output": 10, "cacheWrite5m": 2.5, "cacheWrite1h": 4, "cacheRead": 0.1 },
+    "claude-fable-5-2": { "input": 8, "output": 40, "cacheWrite5m": 10, "cacheWrite1h": 16, "cacheRead": 0.2 }
+  },
   "seatRecycle": {
     "_doc": "Restart idle Claude seats (not stays) fresh once a day in this UTC hour; sbx workers use recycle instead.",
     "hourUtc": 10,

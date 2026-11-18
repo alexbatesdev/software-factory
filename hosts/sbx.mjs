@@ -6,7 +6,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join, relative, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { readFileSync, readdirSync } from 'node:fs';
 import { sandboxToken } from '../core/sandbox-seat.mjs';
 import { STANDARDS, MIRROR, IN_SANDBOX, CODEX_REVIEW, standardsClaudeMd } from './standards.mjs';
@@ -348,3 +349,11 @@ export const obsAccess = profile => ({
   }),
   allow: (sandbox, hosts) => run('sbx', ['policy', 'allow', 'network', '--sandbox', sandbox, hosts.join(',')], { timeout: 60000 }),
 });
+
+// W-561: a finished job's tokens, read inside its worker's sandbox. The script goes inline, so a full disk can't stop it.
+const USAGE_PY = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'usage.py'));
+export async function readUsage(sandbox, kind, windows) {
+  const cmd = `python3 -c "$(echo ${USAGE_PY.toString('base64')} | base64 -d)" ${kind} '${JSON.stringify(windows)}'`;
+  const { stdout } = await run('sbx', ['exec', sandbox, 'bash', '-lc', cmd], { timeout: 120000, maxBuffer: 1 << 22 });
+  return JSON.parse(stdout.trim().split('\n').at(-1));
+}

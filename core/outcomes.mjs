@@ -1,5 +1,6 @@
 // Outcomes by agent (W-558, Alex 11-18): how Claude and Codex jobs and the PRs they built fared, from what the factory
 // already records. Pure: the server or bin/outcomes.mjs supplies the state and writes the report.
+import { sumTokens } from './usage.mjs';
 
 const FEEDBACK = ['threads', 'changes_requested', 'comments'];
 const streamOf = owner => String(owner || '').replace(/^(sbx|sup): /, '');
@@ -30,7 +31,7 @@ export function outcomes(state, { since, until, codexSince = {} }) {
       if (a.kind === 'implementation' && !builtBy) builtBy = agent;
       if (a.status !== 'done') continue;
       const k = `${agent}|${a.kind}`, end = a.history.at(-1).at;
-      jobs.set(k, [...(jobs.get(k) || []), (Date.parse(end) - Date.parse(start)) / 60000]);
+      jobs.set(k, [...(jobs.get(k) || []), { mins: (Date.parse(end) - Date.parse(start)) / 60000, use: state.manifests?.[`usage:${w.id}/${a.id}`] }]);
     }
     if (!builtBy) continue;
     const reviews = w.reviews || [], clean = reviews.find(r => r.result === 'clean');
@@ -43,24 +44,32 @@ export function outcomes(state, { since, until, codexSince = {} }) {
     prs.set(builtBy, p);
   }
   return {
-    jobs: [...jobs].map(([k, mins]) => { const [agent, kind] = k.split('|'); return { agent, kind, count: mins.length, medianMinutes: median(mins) }; })
+    jobs: [...jobs].map(([k, js]) => {
+      const [agent, kind] = k.split('|'), used = js.filter(j => j.use?.usage), priced = used.filter(j => j.use.cost != null);
+      return { agent, kind, count: js.length, medianMinutes: median(js.map(j => j.mins)), withUsage: used.length, priced: priced.length,
+        meanTokens: used.length ? Math.round(used.reduce((n, j) => n + sumTokens(j.use.usage), 0) / used.length) : null,
+        meanCost: priced.length ? Math.round(priced.reduce((n, j) => n + j.use.cost, 0) / priced.length * 100) / 100 : null };
+    })
       .sort((a, b) => b.count - a.count || a.agent.localeCompare(b.agent)),
     prs: [...prs.values()].map(({ rounds, ...p }) => ({ ...p, reviewRoundsToClean: mean(rounds) })).sort((a, b) => a.agent.localeCompare(b.agent)),
   };
 }
 
-export function outcomesMarkdown(r, { since, until }) {
+export function outcomesMarkdown(r, cfg) {
+  const { since, until } = cfg, n = x => Math.round(x).toLocaleString('en-US');
   const day = s => String(s).slice(0, 10);
   return [`# Factory outcomes by agent, ${day(since)} to ${day(until)}`, '',
     'From the factory\'s own records (W-558). A job\'s agent is its run manifest\'s, else its stream\'s on the day it started.', '',
-    '## Jobs finished', '', '| Agent | Kind | Jobs | Median minutes, start to done |', '| --- | --- | --- | --- |',
-    ...r.jobs.map(j => `| ${j.agent} | ${j.kind} | ${j.count} | ${j.medianMinutes} |`), '',
+    '## Jobs finished', '', '| Agent | Kind | Jobs | Median minutes, start to done | Jobs with token counts | Mean tokens per job | Mean cost per job |', '| --- | --- | --- | --- | --- | --- | --- |',
+    ...r.jobs.map(j => `| ${j.agent} | ${j.kind} | ${j.count} | ${j.medianMinutes} | ${j.withUsage} | ${j.meanTokens == null ? 'none' : n(j.meanTokens)} | ${j.meanCost == null ? (j.withUsage ? 'tokens only (no price for its model)' : 'none') : `$${j.meanCost.toFixed(2)}${j.priced < j.withUsage ? ` (${j.priced} of ${j.withUsage} priced)` : ''}`} |`), '',
+    ...(cfg.supervisorUsage?.length ? ['## Supervisor seats', '', 'Each seat\'s Claude sessions on this Mac over the week (a supervisor works several records at once, so this is per seat, not per job).', '',
+      '| Seat | Sessions | Tokens | Cost |', '| --- | --- | --- | --- |', ...cfg.supervisorUsage.map(x => `| ${x.label} | ${x.sessions} | ${n(x.tokens)} | ${x.cost == null ? 'tokens only' : `$${x.cost.toFixed(2)}`} |`), ''] : []),
     '## PRs, by the agent that built them', '',
     '| Agent | Records | Internal review rounds before clean (mean) | Records with human feedback after our clean review | Changes-requested reviews | Red CI findings |', '| --- | --- | --- | --- | --- | --- |',
     ...r.prs.map(p => { const per = n => `${n} (${Math.round(n / p.records * 100)}%)`; return `| ${p.agent} | ${p.records} | ${p.reviewRoundsToClean ?? 'none clean yet'} | ${per(p.feedbackAfterClean)} | ${p.changesRequested} (${(p.changesRequested / p.records).toFixed(2)} per record) | ${p.redCi} (${(p.redCi / p.records).toFixed(2)} per record) |`; }), '',
     'Before 11-18 a Codex stream reviewed its own PRs, so Codex\'s review rounds measure Codex reviewing Codex (W-556 moved reviews to Claude).', '',
     '## Not measured', '',
-    '- Cost and tokens: not recorded per job by either harness yet.',
+    '- Tokens are read from each worker\'s session logs when its job finishes (W-561, from 11-18); jobs before that, host-stream workers and Codex supervisor seats have none. Cost is at Anthropic API rates for Claude; Codex shows tokens only.',
     '- Wall time includes time a job sat parked on a question.',
     '- Feedback after a clean review is not yet adjudicated as a real miss or not (the 26 escapes in the Phase 1 report).', ''].join('\n');
 }

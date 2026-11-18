@@ -42,12 +42,14 @@ import { syncResolvedThreads } from '../effects/threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles, releaseFinished, blockKey, diskNote } from '../core/recycle.mjs';
 import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
-import { readReport } from '../hosts/sbx.mjs';
+import { readReport, readUsage } from '../hosts/sbx.mjs';
 import { readFile } from 'node:fs/promises';
 import { backup, backupPlan, verifyBackup } from './backup.mjs';
 import { createRuntimeLog } from '../core/runtime-log.mjs';
 import { captureManifests, manifestsDue } from '../core/manifest.mjs';
 import { outcomes, outcomesMarkdown, codexSinceOf } from '../core/outcomes.mjs';
+import { usageDue, costOf, sumTokens } from '../core/usage.mjs';
+import { readHostUsage } from '../hosts/usage.mjs';
 import { checkConfig } from '../core/preflight.mjs';
 import { ROLES } from '../core/capabilities.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
@@ -700,11 +702,35 @@ every(60000, duplicateTick);
 every(60000, manifestTick);
 if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config.backup.enabled is false)');
 every(60000, seatRestartTick);
+// W-561: each finished worker job's tokens, read in its sandbox before a recycle can take them; and which Claude sessions
+// each supervisor seat has had, so the weekly report can total a seat's tokens.
+const USAGE_FROM = '2026-11-18T21:00:00.000Z', SEAT_SESSIONS = join(dirname(DB), 'seat-sessions.json');
+const seatSessions = (() => { try { return JSON.parse(readFileSync(SEAT_SESSIONS, 'utf8')); } catch { return {}; } })();
+every(300000, async function usageTick() {
+  if (DRY || !fleet) return;
+  let grew = false;
+  for (const u of fleet.units) { const s = u.supervisor; if (s?.session && supervisors.includes(s.label) && !seatSessions[s.label]?.[s.session]) { (seatSessions[s.label] ??= {})[s.session] = now(); grew = true; } }
+  if (grew) writeFileSync(SEAT_SESSIONS, JSON.stringify(seatSessions, null, 2));
+  const workers = fleet.units.filter(u => u.worker?.sandbox && supervisors.includes(u.supervisor?.label)).map(u => u.worker);
+  for (const d of usageDue(store.state, { workers: workers.map(x => x.label), since: USAGE_FROM })) {
+    const wk = workers.find(x => x.label === d.a.owner), kind = agentOf(config, wk.label) === 'codex' ? 'codex' : 'claude';
+    try {
+      const r = await readUsage(wk.sandbox, kind, d.windows);
+      store.append({ kind: 'manifest', payload: { key: d.key, usage: r.byModel, cost: costOf(r.byModel, config.prices), agent: kind, windows: d.windows } }, by('factory (usage)'));
+    } catch (e) { once(`usage ${d.key}: ${e.message}`); }
+  }
+});
+/** Each supervisor seat's tokens over a report window, from its recorded Claude sessions. */
+const supervisorUsage = async (since, until) => Promise.all(Object.entries(seatSessions).map(async ([label, ss]) => {
+  const usage = await readHostUsage(Object.keys(ss), [[since, until]]).catch(() => ({}));
+  return { label, sessions: Object.keys(ss).length, tokens: sumTokens(usage), cost: costOf(usage, config.prices) };
+}));
 // W-558: the weekly outcomes-by-agent report, Mondays from 10:00 UTC, over the 7 days before; local-head brings it to Alex.
-every(3600000, function outcomesTick() {
+every(3600000, async function outcomesTick() {
   const t = new Date(), day = now().slice(0, 10);
   if (DRY || t.getUTCDay() !== 1 || t.getUTCHours() < 10 || Object.values(store.state.messages).some(m => m.about?.outcomesReport === day)) return;
-  const cfg = { since: new Date(Date.parse(`${day}T00:00:00Z`) - 7 * 86400000).toISOString(), until: `${day}T00:00:00.000Z`, codexSince: codexSinceOf(config) };
+  const since = new Date(Date.parse(`${day}T00:00:00Z`) - 7 * 86400000).toISOString(), until = `${day}T00:00:00.000Z`;
+  const cfg = { since, until, codexSince: codexSinceOf(config), supervisorUsage: await supervisorUsage(since, until) };
   const out = join(homedir(), 'Code/plans', `factory-outcomes-${day}.md`);
   writeFileSync(out, outcomesMarkdown(outcomes(store.state, cfg), cfg));
   apply([{ kind: 'message', payload: { to: 'local-head', about: { outcomesReport: day }, text: `[software factory, automated, not Alex] This week's outcomes by agent (Claude vs Codex, W-558): ${out}. Give Alex the headline numbers.` } }], 'factory (outcomes)');
