@@ -171,7 +171,8 @@
       },
       {
         "label": "questions router",
-        "kind": "claude",
+        "kind": "codex",
+        "_trial": "W-557 (Alex 11-18): a Codex questions router for a week; back to claude if it routes worse.",
         "role": "questions-router",
         "workspace": "Services",
         "tab": "Factory"
