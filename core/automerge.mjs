@@ -30,6 +30,9 @@ export function autoMergePlan(records, prs, cfg) {
   for (const w of records) {
     const p = prs.get(w.links?.pr);
     if (!p) continue;
+    // Its last word on this PR was "on" and it's off now: someone turned it off on GitHub, and that choice stands (#8569).
+    const last = [...(w.updates || [])].reverse().find(u => u.by === 'factory (auto-merge)' && u.text.includes(` ${p.url}`));
+    if (!p.autoMerge && last && / turned on for /.test(last.text)) { out.push({ work: w.id, pr: p.url, action: null, reason: 'auto-merge was turned off by someone after the factory turned it on: it stays off' }); continue; }
     const why = blocker(w, p, cfg);
     // GitHub takes no auto-merge on a PR already mergeable; merging it is Alex's, never the factory's (#8906).
     if (!why && !p.autoMerge && p.mergeState === 'CLEAN') out.push({ work: w.id, pr: p.url, action: null, reason: 'already mergeable, so GitHub takes no auto-merge on it: merging it is Alex\'s' });

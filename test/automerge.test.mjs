@@ -51,3 +51,12 @@ test('turning auto-merge on is the enablePullRequestAutoMerge mutation, never `g
   assert.match(muts[0], /enablePullRequestAutoMerge\(input:\{pullRequestId:\$id,mergeMethod:MERGE\}\)/);
   assert.match(muts[1], /disablePullRequestAutoMerge/);
 });
+
+test("auto-merge someone else turned off stays off: the factory turned it on once and never again on that PR (#8569)", () => {
+  const on = { at: '2026-11-18T22:19:57Z', by: 'factory (auto-merge)', text: `GitHub auto-merge turned on for ${URL}: a small fix (W-564).` };
+  const x = plan(rec({ updates: [on] }), pr({ autoMerge: false }));
+  assert.equal(x[0]?.action ?? 'none', 'none');
+  assert.match(x[0].reason, /turned off by someone/);
+  const off = { at: '2026-11-18T22:25:00Z', by: 'factory (auto-merge)', text: `GitHub auto-merge turned off for ${URL}: a hold is on the record (W-564).` };
+  assert.equal(plan(rec({ updates: [on, off] }), pr())[0].action, 'enable', 'after the factory itself turned it off, it may turn it on again');
+});
