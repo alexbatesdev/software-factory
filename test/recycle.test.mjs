@@ -15,6 +15,13 @@ test('a worker over the threshold drains its stream, and cycles only between tas
   assert.deepEqual(planRecycles({ units: [unit('idle')], health: { u: { diskPct: 0.95 } }, works: free, supervisors: [S] }).due.map(d => d.unit), ['u'], 'queued work waits for the cycle');
 });
 
+test('a disk-full stream whose only job is parked is between tasks, so its worker cycles (W-538)', () => {
+  const parked = { 'W-1': { id: 'W-1', stream: S, assignments: [{ id: 'R16', kind: 'fixes', status: 'blocked', waitingOn: 'TB-252' }] } };
+  assert.deepEqual(planRecycles({ units: [unit('idle')], health: { u: { diskPct: 0.92 } }, works: parked, supervisors: [S] }).due.map(d => d.unit), ['u']);
+  const stuck = { 'W-1': { id: 'W-1', stream: S, assignments: [{ id: 'R16', kind: 'fixes', status: 'blocked' }] } };
+  assert.deepEqual(planRecycles({ units: [unit('idle')], health: { u: { diskPct: 0.92 } }, works: stuck, supervisors: [S] }).due, [], 'a block with no handoff still holds it');
+});
+
 test('a cycle under way, or one that failed, keeps the stream drained', () => {
   const p = planRecycles({ units: [unit('idle')], health: {}, works: free, recycling: { u: { step: 'removing', failed: 'sbx rm exited 1' } }, supervisors: [S] });
   assert.match(p.drain.get(S), /recycle failed: sbx rm exited 1/);

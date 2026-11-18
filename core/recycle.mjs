@@ -1,5 +1,5 @@
 // Cycling a worker's host when its disk fills (Alex, 11-04: at 75%, between tasks). Pure: the host adapter does the cycling.
-import { LIVE_ASSIGNMENT, parked, TERMINAL, workIdOf } from './work.mjs';
+import { parked, TERMINAL, workIdOf } from './work.mjs';
 
 /**
  * Which streams drain (take no new work) and which workers are ready to cycle now.
@@ -30,9 +30,8 @@ export function planRecycles({ units, health = {}, works, threshold = 0.75, recy
       continue;
     }
     drain.set(to, `${u.worker.label} disk at ${Math.round(h.diskPct * 100)}%: recycled after its running job`);
-    // Between tasks: nothing started or blocked on the stream, and the worker's agent has stopped.
-    const busy = Object.values(works).some(r => r.stream === to && (r.assignments || []).some(a => LIVE_ASSIGNMENT.includes(a.status) && a.status !== 'queued'));
-    if (!busy && ['idle', 'done'].includes(u.worker.status)) due.push({ unit: u.id, to, worker: u.worker, diskPct: h.diskPct });
+    // Between tasks: nothing running on the stream (a parked job's handoff is written, W-538), and the worker's agent has stopped.
+    if (!streamBusy(works, to) && ['idle', 'done'].includes(u.worker.status)) due.push({ unit: u.id, to, worker: u.worker, diskPct: h.diskPct });
   }
   return { drain, due };
 }
