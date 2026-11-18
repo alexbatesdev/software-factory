@@ -105,7 +105,9 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); return; }
     if (needsPrApproval(w, cfg.prApproval)) { wait("needs Alex's go to open a new PR (dashboard: New PRs)"); return; }
     if (w.proposal && !w.links?.pr && w.prApproval && !(w.duplicateCheckedAt >= w.prApproval.at)) { wait('re-checking open PRs for a duplicate since the approval (W-471)'); return; }
-    const bound = boundStream(w, byId, labels);
+    // The internal review is the pre-ready gate and runs on Claude whichever agent built the PR (W-556): never on Codex.
+    const fits = l => !(job?.type === 'review' && cfg.supervisors[l]?.agent === 'codex');
+    const found = boundStream(w, byId, labels), bound = found && fits(found.to) ? found : null;
     // A stream that declined this record isn't sent it again unless someone pins it there (W-217).
     const declined = new Set((w.requests || []).filter(r => r.type === 'dispatch' && r.ack?.outcome === 'declined').map(r => r.ack.by));
     // A pin to a host stream is a person's deliberate choice (W-356: Alex put OSUP on the host); the host reaches every repo, a sandbox doesn't.
@@ -120,7 +122,8 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const here = routeOf(w, labels), mine = STREAM_LOAD.includes(w.phase) ? here : null;
     const cost = l => load[l] // this record's own slot doesn't count against its stream
       - (l === mine ? 1 : 0);
-    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors) && runsModel(l)).sort((a, b) => cost(a) - cost(b))[0];
+    const to = bound?.to || labels.filter(l => !holds.has(l) && !declined.has(l) && canTake(w, l, cfg.supervisors) && runsModel(l) && fits(l)).sort((a, b) => cost(a) - cost(b))[0];
+    if (!to && labels.some(l => !holds.has(l) && !fits(l))) { wait(`an internal review runs on Claude, and every Claude stream is busy (${[...holds].filter(([l]) => fits(l)).map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     busy.set(to, w.id); runningOn.set(to, w.id);
     if (job) { out.push({ id: w.id, action: to === w.stream ? 'deliver' : 'route', to, request: `${w.id}/${job.id}`, reason: `its ${job.type} round: ${to} is free${bound ? ` (${bound.why})` : to === w.stream ? '' : `, ${w.stream} is busy with ${busy.get(w.stream) || holds.get(w.stream)}`}` }); return; }

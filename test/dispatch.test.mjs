@@ -317,3 +317,18 @@ test('a dispatch its supervisor acked but has not started yet still holds the st
   assert.equal(p['W-553'].action, null, 'every stream is taken');
   assert.match(p['W-553'].reason, /W-341/);
 });
+
+// W-556 (Alex 11-18): the internal review is the pre-ready gate, and Claude reviews it whichever agent built the PR.
+test('a review round goes to a Claude stream even when a Codex stream built the record, is pinned or is free (W-556)', () => {
+  const codex = { ...cfg, supervisors: { [S1]: cfg.supervisors[S1], [S2]: { ...cfg.supervisors[S2], agent: 'codex' } } };
+  const reviewWaiting = (id, over = {}) => fixesWaiting(id, { phase: 'review', stream: S2, owner: S2, requests: [{ id: 'R6', type: 'review', ack: null, head: 'h1', delivery: 'pending' }], ...over });
+  const p = id => Object.fromEntries(autoDispatchPlan(id, codex).map(x => [x.id, x]));
+  assert.deepEqual([p([reviewWaiting('W-71')])['W-71'].action, p([reviewWaiting('W-71')])['W-71'].to], ['route', S1], 'built on Codex, reviewed on Claude');
+  assert.equal(p([reviewWaiting('W-72', { streamPin: { by: 'Alex' } })])['W-72'].to, S1, 'a pin to a Codex stream does not hold a review there');
+  const running = loose('W-235', { phase: 'implementation', stream: S1, owner: S1, assignments: [{ id: 'R9', kind: 'implementation', status: 'started' }] });
+  const busy = p([running, reviewWaiting('W-73')])['W-73'];
+  assert.equal(busy.action, null, 'the only Claude stream is busy: it waits, never falls back to Codex');
+  assert.match(busy.reason, /Claude/);
+  const fixes = p([running, fixesWaiting('W-74', { stream: S2, owner: S2 })])['W-74'];
+  assert.equal(fixes.to, S2, 'a fixes round still goes to a Codex stream');
+});
