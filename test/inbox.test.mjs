@@ -366,3 +366,17 @@ test('a crossing after a recycle or a lifted drain is told again, though the rec
   s.append({ kind: 'message', payload: { to: S1, about: { drainLifted: 'M-x' }, text: 'lifted' } }, { now: '2026-11-17T01:00:00.000Z', by: 'factory' });
   assert.equal(recycleNotices().length, 1, 'and after a drain lifted without one');
 });
+
+test("a hard stop tells the supervisor to park its running job at the next checkpoint, once per crossing (W-550)", () => {
+  const s = store({ work: {} });
+  const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'working', sandbox: 'box-1' } };
+  const f = { units: [unit], now: 0, watches: {}, drainRead: true, drain: new Map([[S1, 'disk at 92%']]), stop: new Map([[S1, { work: 'W-9', assignment: 'R3', diskPct: 0.92 }]]) };
+  const stops = () => inboxCommands(s.state, cfg, f).cmds.filter(c => c.payload.about.hardStop);
+  const [m] = stops();
+  assert.deepEqual([m.payload.to, m.payload.work], [S1, 'W-9']);
+  assert.match(m.payload.text, /92%.*next checkpoint.*handoff.*waitingOn/s);
+  s.append(m, { now: '2026-11-18T00:00:00.000Z', by: 'factory' });
+  assert.equal(stops().length, 0);
+  s.append({ kind: 'message', payload: { to: S1, about: { recycled: 'box-1/t' }, text: 'recycled' } }, { now: '2026-11-18T01:00:00.000Z', by: 'factory' });
+  assert.equal(stops().length, 1, 'told again on the next crossing');
+});

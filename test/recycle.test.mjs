@@ -260,3 +260,12 @@ test('a disk reading is logged when it moves 5 points from the last logged one o
   assert.equal(diskNote('sbx: s', 0.92, 0.88, T), 'disk sbx: s: 88% (was 92%), crossed 90%');
   assert.equal(diskNote('sbx: s', 0.5, null, T), null, 'no reading, nothing logged');
 });
+
+test('past the hard stop, a running job is named so its supervisor can park it and let the recycle run (W-550)', () => {
+  const u = { id: 'u', supervisor: { label: S, status: 'idle' }, worker: { label: 'sbx: s', status: 'working', sandbox: 'box' } };
+  const running = { 'W-9': { id: 'W-9', stream: S, assignments: [{ id: 'R3', status: 'started' }] } };
+  const at = (pct, works = running) => planRecycles({ units: [u], health: { u: { diskPct: pct } }, works, supervisors: [S], hardStop: 0.9 }).stop;
+  assert.deepEqual([...at(0.92)], [[S, { work: 'W-9', assignment: 'R3', diskPct: 0.92 }]]);
+  assert.equal(at(0.85).size, 0, 'between the thresholds only the drain applies');
+  assert.equal(at(0.95, { 'W-9': { ...running['W-9'], assignments: [{ id: 'R3', status: 'blocked', waitingOn: 'disk' }] } }).size, 0, 'already parked');
+});

@@ -82,9 +82,11 @@ export function inboxCommands(state, cfg, fleet = null) {
     // A crossing ends with a recycle or a lifted drain; the recycled sandbox keeps its name, so the key alone can't tell (W-551).
     for (const u of fleet.units) {
       const why = drain.get(u.supervisor?.label), key = `${u.worker?.label}/${u.worker?.sandbox || u.worker?.ref}`;
-      const theirs = Object.values(state.messages).filter(m => m.to === u.supervisor?.label), told1 = theirs.filter(m => m.about?.recycle === key).at(-1);
-      const crossingTold = told1 && !theirs.some(m => (m.about?.recycled || m.about?.drainLifted) && m.at >= told1.at);
-      if (why && u.worker && !crossingTold) cmds.push(msg(u.supervisor.label, null, { recycle: key }, `${why}. Finish the running job, then start nothing new: the factory recycles the worker between tasks and tells you when the fresh one is up.`));
+      const theirs = Object.values(state.messages).filter(m => m.to === u.supervisor?.label);
+      const crossingTold = kind => { const t = theirs.filter(m => m.about?.[kind] === key).at(-1); return t && !theirs.some(m => (m.about?.recycled || m.about?.drainLifted) && m.at >= t.at); };
+      const stop = fleet.stop?.get(u.supervisor?.label);
+      if (stop && u.worker && !crossingTold('hardStop')) cmds.push(msg(u.supervisor.label, stop.work, { hardStop: key }, `${u.worker.label} disk at ${Math.round(stop.diskPct * 100)}%, past the hard stop: a running job can fill it. Have your worker stop ${stop.work} ${stop.assignment} at its next checkpoint, commit and push, and write its handoff. Then park it: progress --stage blocked --waitingOn "disk recycle" --actor other. The factory recycles the worker; after its recycled notice, brief a fresh worker from the handoff and clear the wait (waitingOn "clear").`));
+      if (why && u.worker && !crossingTold('recycle')) cmds.push(msg(u.supervisor.label, null, { recycle: key }, `${why}. Finish the running job, then start nothing new: the factory recycles the worker between tasks and tells you when the fresh one is up.`));
       // A drain that lifts without a recycle is withdrawn, or the supervisor holds its queue for a recycle that won't come (W-537).
       if (why || !u.worker || !fleet.drainRead) continue;
       const to = u.supervisor.label, mine = Object.values(state.messages).filter(m => m.to === to && (!cfg.drainLiftSince || m.at >= cfg.drainLiftSince));
