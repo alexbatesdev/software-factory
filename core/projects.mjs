@@ -132,9 +132,14 @@ export function resolveSpec(w, { planning, trees }) {
     ...(leaves.some(t => !p.testPlanReqs?.[t]) ? { untested: leaves.filter(t => !p.testPlanReqs?.[t]) } : {}) };
 }
 
-/** Every open record's spec resolution, for /api/specs (phase 2 observation). Counts by status first. */
-export function specView(works, read) {
-  const rows = Object.values(works).filter(w => !['done', 'cancelled'].includes(w.phase)).map(w => ({ id: w.id, title: w.title, phase: w.phase, ...resolveSpec(w, read) }));
+/** Every open record's spec resolution, and the pin of its latest work assignment (phase 2), for /api/specs. Counts by status first. */
+export function specView(state, read) {
+  const rows = Object.values(state.work).filter(w => !['done', 'cancelled'].includes(w.phase)).map(w => {
+    const a = [...(w.assignments || [])].reverse().find(a => BUILDING.includes(a.kind) && state.manifests?.[`${w.id}/${a.id}/1`]?.spec);
+    const p = a && state.manifests[`${w.id}/${a.id}/1`].spec;
+    return { id: w.id, title: w.title, phase: w.phase, ...resolveSpec(w, read),
+      ...(p ? { pinned: { assignment: a.id, status: p.status, commit: p.commit || null, specBlob: p.specBlob || null, reqs: Object.keys(p.reqs || {}) } } : {}) };
+  });
   const counts = {}; for (const r of rows) counts[r.status] = (counts[r.status] || 0) + 1;
   return { counts, rows };
 }

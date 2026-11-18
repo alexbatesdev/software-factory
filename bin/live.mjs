@@ -29,7 +29,7 @@ import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
 import { compareCheck, compareWarnings, withStaleness } from '../core/ci-compare.mjs';
 import { runBrakeman, AUDIT_CHECK } from '../sources/audit.mjs';
-import { buildProjects, projectRoots, specView, triageCreates } from '../core/projects.mjs';
+import { buildProjects, projectRoots, resolveSpec, specView, triageCreates } from '../core/projects.mjs';
 import { list as readFleet, herdrRaw } from '../fleet/herdr.mjs';
 import { seatsOf, planSeatRestarts, stopSeat, startSeat, seatRenames } from '../fleet/factory.mjs';
 import { toolsFor } from '../mcp/server.mjs';
@@ -92,6 +92,8 @@ const LIVE_SINCE = store.rows()[0]?.at || now();
 let fleet = null, watches = {}, woken = {}, openPrs = new Map(), prsReadAt = null, lastPlan = [], ownPrs = new Map(), heldRequests = new Set(), projectNotes = {}, lastBusy = [];
 // Projects (Alex, 11-16): the planning repo and each active project's Teamwork tree, read every 30 min and kept for a restart.
 const PROJECTS_CACHE = join(ROOT, 'data/projects-cache.json');
+// What spec resolution reads: the last planning read (null until there is one) and the project trees.
+const specRead = () => ({ planning: projectsRead.readAt ? projectsRead.planning : null, trees: projectsRead.trees });
 let projectsRead = (() => { try { return JSON.parse(readFileSync(PROJECTS_CACHE, 'utf8')); } catch { return { planning: [], trees: {}, readAt: null }; } })();
 // Worker hosts (Alex, 11-04): disk readings, cycles under way or failed, and the streams draining for one.
 const RC = { enabled: false, threshold: 0.75, hardStop: 0.9, host: 'sbx', healthMs: 300000, ...config.recycle };
@@ -528,7 +530,7 @@ http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, gh: DRY ? 
   const git = await mainGit(repo);
   return !git || git('cat-file', '-e', `origin/main:${path}`).then(() => true, () => false);
 }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ specs: () => ({ ...specView(store.state.work, { planning: projectsRead.readAt ? projectsRead.planning : null, trees: projectsRead.trees }), readAt: projectsRead.readAt }), projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin }), readAt: projectsRead.readAt, me: config.githubLogin }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
+  observed: () => ({ specs: () => ({ ...specView(store.state, specRead()), readAt: projectsRead.readAt }), projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin }), readAt: projectsRead.readAt, me: config.githubLogin }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 
 // The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never
@@ -577,7 +579,8 @@ async function manifestTick() {
   if (DRY) return;
   await captureManifests(store, { root: ARTIFACTS, now, home: homedir(), factoryVersion: FACTORY_VERSION, config: readFileSync(join(ROOT, 'config.json'), 'utf8'),
     instructions: Object.fromEntries(Object.entries(INSTRUCTIONS).map(([k, p]) => [k, p.replace(/^~/, homedir())])), read: p => readFile(p),
-    harness: stream => { const w = fleet?.units.find(u => u.supervisor?.label === stream)?.worker; return { agent: config.routing.supervisors[stream]?.agent || (w ? 'claude' : null), sandbox: w?.sandbox || null, model: tuned[stream]?.model ?? null, effort: tuned[stream]?.effort ?? null }; } });
+    harness: stream => { const w = fleet?.units.find(u => u.supervisor?.label === stream)?.worker; return { agent: config.routing.supervisors[stream]?.agent || (w ? 'claude' : null), sandbox: w?.sandbox || null, model: tuned[stream]?.model ?? null, effort: tuned[stream]?.effort ?? null }; },
+    spec: w => resolveSpec(w, specRead()) });
 }
 
 // A verified backup of the log and artifacts, one folder per day; config.backup sets folder, interval, days kept, or off.

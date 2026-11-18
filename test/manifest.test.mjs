@@ -81,3 +81,28 @@ test("a cold reader sees a run's manifest on the board, next to its artifacts", 
   assert.equal(r.manifests[0].key, 'W-1/R1/1');
   assert.match(r.manifests[0].instructions.find(i => i.name === 'brief').url, /^\/api\/artifacts\/[0-9a-f]{64}$/);
 });
+
+// Phase 2 step 2: each run records the spec it started against; the first attempt's is the assignment's contract.
+test("a run's manifest records its spec resolution; the first attempt's stays the assignment's contract after a resume", async () => {
+  const { pinnedSpec } = await import('../core/manifest.mjs');
+  const store = started();
+  const pin = v => ({ status: 'resolved', slug: 'p', commit: `c${v}`, specBlob: `b${v}`, tasks: ['111'], reqs: { 'REQ-001': { text: `v${v}`, removed: false } } });
+  let v = 1;
+  const withSpec = root => ({ ...io(root), spec: w => (assert.equal(w.id, 'W-1'), pin(v)) });
+  await captureManifests(store, withSpec(tmpdir()));
+  assert.deepEqual(store.state.manifests['W-1/R1/1'].spec, pin(1));
+  // Parked, then resumed after the spec moved on: the resume records what it saw, the contract doesn't move.
+  const a = store.state.work['W-1'].assignments[0];
+  a.history.push({ status: 'blocked', at: T }, { status: 'started', at: '2026-11-14T00:00:00.000Z' });
+  v = 2;
+  await captureManifests(store, withSpec(tmpdir()));
+  assert.equal(store.state.manifests['W-1/R1/2'].spec.commit, 'c2');
+  assert.equal(pinnedSpec(store.state, 'W-1', 'R1').commit, 'c1');
+  assert.equal(pinnedSpec(store.state, 'W-1', 'R9'), null, 'no manifest, no pin');
+});
+
+test('a manifest written without a spec reader has no spec field, as before', async () => {
+  const store = started();
+  await captureManifests(store, io(tmpdir()));
+  assert.ok(!('spec' in store.state.manifests['W-1/R1/1']));
+});

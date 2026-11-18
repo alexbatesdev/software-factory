@@ -77,8 +77,11 @@ test('a leaf with no test plan is listed as untested, so zero requirements never
 
 test('the spec view lists every open record with its resolution and counts each status', async () => {
   const { specView } = await import('../core/projects.mjs');
-  const v = specView({ a: { ...W('111'), id: 'W-1', phase: 'ready' }, b: { id: 'W-2', phase: 'done', source: {} }, c: { id: 'W-3', phase: 'ready', source: {} } }, read());
+  const work = { a: { ...W('111'), id: 'W-1', phase: 'fixes', assignments: [{ id: 'R2', kind: 'fixes' }] }, b: { id: 'W-2', phase: 'done', source: {} }, c: { id: 'W-3', phase: 'ready', source: {} } };
+  const manifests = { 'W-1/R2/1': { spec: { status: 'resolved', commit: 'c0', specBlob: 'b0', reqs: { 'REQ-001': {} } } } };
+  const v = specView({ work, manifests }, read());
   assert.deepEqual([v.counts, v.rows.map(r => [r.id, r.status])], [{ resolved: 1, 'no spec': 1 }, [['W-1', 'resolved'], ['W-3', 'no spec']]]);
+  assert.deepEqual(v.rows[0].pinned, { assignment: 'R2', status: 'resolved', commit: 'c0', specBlob: 'b0', reqs: ['REQ-001'] }, 'the pin its work round started with');
 });
 
 test("a project's Teamwork roots come from its README or its spec, so a spec-only root's tree is read too", async () => {

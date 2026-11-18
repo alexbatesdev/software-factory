@@ -28,7 +28,7 @@ export function manifestsDue(state) {
 
 /**
  * io: {root, now(), home, factoryVersion, config (text), instructions {name: path}, read(path) → Buffer,
- *      harness(stream) → {agent, sandbox, model, effort} | null}
+ *      harness(stream) → {agent, sandbox, model, effort} | null, spec?(work) → resolveSpec result (phase 2)}
  */
 export async function captureManifests(store, io) {
   for (const { w, a, attempt, key } of manifestsDue(store.state)) {
@@ -48,6 +48,9 @@ export async function captureManifests(store, io) {
       config: createHash('sha256').update(io.config).digest('hex'),
       harness: { agent: h.agent || UNAVAILABLE, sandbox: h.sandbox || null,
         model: { requested: h.model ?? null, observed: UNAVAILABLE }, effort: { requested: h.effort ?? null, observed: UNAVAILABLE } },
-      instructions } }, { now: io.now(), by: 'factory (manifest)' });
+      instructions, ...(io.spec ? { spec: io.spec(w) } : {}) } }, { now: io.now(), by: 'factory (manifest)' });
   }
 }
+
+/** The spec an assignment is built against: what its first attempt started with. A resume never re-pins (phase 2). */
+export const pinnedSpec = (state, work, assignment) => state.manifests?.[`${work}/${assignment}/1`]?.spec ?? null;
