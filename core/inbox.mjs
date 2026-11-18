@@ -82,6 +82,13 @@ export function inboxCommands(state, cfg, fleet = null) {
     for (const u of fleet.units) {
       const why = drain.get(u.supervisor?.label), key = `${u.worker?.label}/${u.worker?.sandbox || u.worker?.ref}`;
       if (why && u.worker && !told.has(`recycle:${key}`)) cmds.push(msg(u.supervisor.label, null, { recycle: key }, `${why}. Finish the running job, then start nothing new: the factory recycles the worker between tasks and tells you when the fresh one is up.`));
+      // A drain that lifts without a recycle is withdrawn, or the supervisor holds its queue for a recycle that won't come (W-537).
+      if (why || !u.worker || !fleet.drainRead) continue;
+      const to = u.supervisor.label, mine = Object.values(state.messages).filter(m => m.to === to && (!cfg.drainLiftSince || m.at >= cfg.drainLiftSince));
+      const last = mine.filter(m => m.about?.recycle === key).at(-1);
+      if (!last || told.has(`drainLifted:${last.id}`) || mine.some(m => m.about?.recycled && m.at >= last.at)) continue;
+      const pct = fleet.health?.[u.id]?.diskPct;
+      cmds.push(msg(to, null, { drainLifted: last.id }, `The drain on ${u.worker.label} (${last.id}) is over without a recycle: its disk ${pct == null ? 'has no fresh reading yet' : `reads ${Math.round(pct * 100)}% now`}, under the recycle threshold. Take queued work again.`));
     }
     const idle = planIdleQueues({ units: fleet.units.filter(u => !drain.has(u.supervisor?.label)), works: state.work, watch: watches.idleQueues, sent, now: fleet.now, supervisors: cfg.supervisors });
     for (const d of idle.due) cmds.push(msg(d.to, d.work, { idleQueue: d.key }, `Your stream is free and ${d.work} ${d.assignment} (${d.kind}) is queued on it: start it.`));

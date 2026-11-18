@@ -125,6 +125,29 @@ test('a draining stream tells its supervisor once per sandbox, and gets no idle-
   assert.deepEqual(inboxCommands(s.state, cfg, fleet(10 * 60000)).cmds, [], 'no repeat, and no idle-queue wake while draining');
 });
 
+test('a drain lifted without a recycle is withdrawn to its supervisor once, with the disk reading now (W-537)', () => {
+  const s = store({ work: { 'W-1': work({ phase: 'fixes', requests: [], assignments: [{ id: 'R2', kind: 'fixes', status: 'queued', version: 1 }] }) } });
+  const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'idle', sandbox: 'box-1' } };
+  const drained = { units: [unit], now: 0, watches: {}, drainRead: true, drain: new Map([[S1, 'sbx: stream-1 disk at 75%: recycled after its running job']]) };
+  s.append(inboxCommands(s.state, cfg, drained).cmds[0], ctx('board'));
+  const lifted = now => ({ units: [unit], now, watches: {}, drainRead: true, drain: new Map(), health: { u1: { diskPct: 0.62 } } });
+  const lift = inboxCommands(s.state, cfg, lifted(0)).cmds.filter(c => c.payload.about.drainLifted);
+  assert.equal(lift.length, 1);
+  assert.equal(lift[0].payload.to, S1);
+  assert.match(lift[0].payload.text, /drain.*over.*62%/i);
+  s.append(lift[0], ctx('board'));
+  assert.deepEqual(inboxCommands(s.state, cfg, lifted(60000)).cmds.filter(c => c.payload.about.drainLifted), [], 'told once');
+  assert.deepEqual(inboxCommands(s.state, cfg, { ...lifted(0), drainRead: false }).cmds.filter(c => c.payload.about.drainLifted).length, 0);
+});
+
+test('a drain that ended in a recycle gets no lift notice: the recycled message said it (W-537)', () => {
+  const s = store({ work: {} });
+  const unit = { id: 'u1', supervisor: { label: S1, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'idle', sandbox: 'box-1' } };
+  s.append(inboxCommands(s.state, cfg, { units: [unit], now: 0, watches: {}, drainRead: true, drain: new Map([[S1, 'disk at 80%']]) }).cmds[0], ctx('board'));
+  s.append({ kind: 'message', payload: { to: S1, about: { recycled: 'box-1/t' }, text: 'recycled' } }, { now: '2026-10-30T19:05:00.000Z', by: 'factory' });
+  assert.deepEqual(inboxCommands(s.state, cfg, { units: [unit], now: 0, watches: {}, drainRead: true, drain: new Map() }).cmds.filter(c => c.payload.about.drainLifted), []);
+});
+
 test('an idle non-stream seat that owns ready records gets a nudge from the inbox planner', async () => {
   const { inboxCommands } = await import('../core/inbox.mjs');
   const state = { work: { 'W-9': { id: 'W-9', title: 'Fix it', phase: 'ready', stream: 'dev', requests: [] } }, questions: {}, messages: {}, notifications: {} };

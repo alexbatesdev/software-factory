@@ -96,7 +96,7 @@ let projectsRead = (() => { try { return JSON.parse(readFileSync(PROJECTS_CACHE,
 // Worker hosts (Alex, 11-04): disk readings, cycles under way or failed, and the streams draining for one.
 const RC = { enabled: false, threshold: 0.75, host: 'sbx', healthMs: 300000, ...config.recycle };
 const host = RC.enabled ? await import(`../hosts/${RC.host}.mjs`) : null;
-let health = {}, recycling = {}, drain = new Map(), restartFailedAt = {};
+let health = {}, recycling = {}, drain = new Map(), drainRead = false, restartFailedAt = {};
 // Each sbx worker's model and effort (deep-model, Alex 11-11): what it was last started with, and restarts a record asked for.
 const TUNED = join(dirname(DB), 'worker-tuning.json');
 const tuned = (() => { try { return JSON.parse(readFileSync(TUNED, 'utf8')); } catch { return {}; } })();
@@ -180,8 +180,8 @@ async function inboxTick() {
   const workers = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.worker).map(([sup, s]) => [s.worker, sup]));
   const developer = Object.entries(config.roles || {}).find(([, r]) => r === DEVELOPER_ROLE)?.[0];
   const hostHowTo = Object.fromEntries(Object.entries(config.routing.supervisors).filter(([, s]) => s.howTo).map(([l, s]) => [l, s.howTo]));
-  const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs, heldRequests, projectNotes },
-    fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain });
+  const plan = inboxCommands(store.state, { ...skipped(), supervisors, seats, workers, hostHowTo, developer, developerSince: '2026-11-05T22:40:00.000Z', now: now(), workerSilentSince: '2026-11-06T17:45:00.000Z', workerSilentMs: config.notify?.workerSilentMs, router: config.routing.questionsRouter, cutoff: since, answersSince: config.notify?.answersSince || since, checkIn, triage, quietMs: config.notify?.quietWorkerMs, heldRequests, projectNotes, drainLiftSince: '2026-11-18T00:10:00.000Z' },
+    fleet && { units: fleet.units, others: fleet.others, now: Date.now(), watches, quiet, drain, drainRead, health });
   watches = plan.watches;
   for (const c of plan.cmds) { store.append(c, by('factory')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
   const sessions = Object.fromEntries([...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => [a.label, a.session]));
@@ -596,7 +596,7 @@ async function recycleTick() {
   // When each worker's agent session started, read inside its sandbox with the disk check.
   const sessions = Object.fromEntries(Object.entries(health).filter(([, h]) => h?.agentSince).map(([k, h]) => [k, h.agentSince]));
   const plan = planRecycles({ units: fleet.units, health, works: store.state.work, threshold: RC.threshold, recycling, supervisors, sessions, restartStale: !!RC.restartStale });
-  drain = plan.drain;
+  drain = plan.drain; drainRead = true;
   // A record's model or effort: restart its stream's free worker with them, then the next dispatch tick sends it.
   for (const [to, p] of retune) {
     const u = fleet.units.find(x => x.supervisor?.label === to);
