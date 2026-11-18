@@ -704,7 +704,7 @@ if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config
 every(60000, seatRestartTick);
 // W-561: each finished worker job's tokens, read in its sandbox before a recycle can take them; and which Claude sessions
 // each supervisor seat has had, so the weekly report can total a seat's tokens.
-const USAGE_FROM = '2026-11-18T21:00:00.000Z', SEAT_SESSIONS = join(dirname(DB), 'seat-sessions.json');
+const USAGE_FROM = '2026-11-18T19:50:00.000Z', SEAT_SESSIONS = join(dirname(DB), 'seat-sessions.json');
 const seatSessions = (() => { try { return JSON.parse(readFileSync(SEAT_SESSIONS, 'utf8')); } catch { return {}; } })();
 every(300000, async function usageTick() {
   if (DRY || !fleet) return;
