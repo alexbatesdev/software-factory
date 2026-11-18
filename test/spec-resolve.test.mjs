@@ -160,3 +160,12 @@ test("the removal question quotes the requirement's pinned text, so it can be an
   const [ask] = specFollowUps({ work, manifests, messages: {} }, read([P({ specBlob: 'b9', spec: { teamworkTask: '100', reqs: { 'REQ-001': { text: 'One.', removed: true } } } }), Q]), { slugs: ['p-end-date'] });
   assert.match(ask.payload.promptedBy, /REQ-001 was: "One\."/);
 });
+
+test("a project task's dispatch note names the plan, its test plan and the requirements it is built against (phase 2 step 4)", async () => {
+  const { projectNote } = await import('../core/projects.mjs');
+  const r = { status: 'resolved', slug: 'p', commit: 'abcdef1234', reqs: { 'REQ-001': { removed: false }, 'REQ-003': { removed: true } } };
+  const n = projectNote({ slug: 'p' }, { testPlanPath: 'projects/p/test-plans/111-x.md' }, r);
+  assert.match(n, /projects\/p\/factory\/implementation-plan\.md.*projects\/p\/test-plans\/111-x\.md/);
+  assert.match(n, /Requirements: REQ-001 \(projects\/p\/spec\.md at abcdef1\)\. REQ-003 was removed from the spec: don't build it\./);
+  assert.match(projectNote({ slug: 'p' }, {}, { status: 'ambiguous', reason: 'two projects' }), /Spec: ambiguous \(two projects\): build from the task and ask your supervisor/);
+});

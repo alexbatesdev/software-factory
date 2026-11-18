@@ -202,3 +202,11 @@ export function specFollowUps(state, read, { slugs = [] } = {}) {
   }
   return out;
 }
+
+/** A project task's dispatch note: the plan and test plan to build to, and the requirements its job is pinned against. */
+export function projectNote(p, leaf, r) {
+  const base = `Project ${p.slug}: build to projects/${p.slug}/factory/implementation-plan.md${leaf.testPlanPath ? ` and test against ${leaf.testPlanPath}` : ''} (project-planning origin/main); put both paths in the brief.`;
+  if (r?.status !== 'resolved') return `${base} Spec: ${r?.status || 'unknown'}${r?.reason ? ` (${r.reason})` : ''}: build from the task and ask your supervisor before guessing at requirements.`;
+  const ids = Object.entries(r.reqs || {}), live = ids.filter(([, x]) => !x.removed).map(([id]) => id), gone = ids.filter(([, x]) => x.removed).map(([id]) => id);
+  return `${base} Requirements: ${live.join(', ') || 'none named by the test plan'} (projects/${p.slug}/spec.md at ${String(r.commit).slice(0, 7)}).${gone.length ? ` ${gone.join(', ')} ${gone.length > 1 ? 'were' : 'was'} removed from the spec: don't build ${gone.length > 1 ? 'them' : 'it'}.` : ''}`;
+}
