@@ -230,3 +230,10 @@ test('a seat start herdr reports failed counts as started when the agent is runn
   const none = async (...a) => { if (a[1] === 'start') throw new Error('Command failed'); return { process_info: { foreground_processes: [{ argv: ['zsh'] }] } }; };
   await assert.rejects(startSeat({ label: 'router', kind: 'codex', role: 'questions-router' }, 'p1', none), /Command failed/);
 });
+
+test("a seat's agent comes from its seat: a Codex supervisor or router is woken as Codex, a worker as its sandbox's agent (W-565)", async () => {
+  const { seatAgent } = await import('../fleet/factory.mjs');
+  const cfg = { routing: { supervisors: { 'sup: s1': { workspace: 'S1', worker: 'sbx: s1' }, 'sup: s2': { workspace: 'S2', worker: 'sbx: s2', agent: 'codex', supervisorKind: 'codex' } } },
+    factory: { seats: [{ label: 'router', kind: 'codex', role: 'questions-router', workspace: 'M', tab: 'A' }, { label: 'lead', kind: 'claude', role: 'factory-lead', workspace: 'M', tab: 'A' }] } };
+  assert.deepEqual(['sup: s1', 'sup: s2', 'sbx: s1', 'sbx: s2', 'router', 'lead', 'nobody'].map(l => seatAgent(cfg, l)), ['claude', 'codex', 'claude', 'codex', 'codex', 'claude', 'claude']);
+});

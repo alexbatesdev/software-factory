@@ -56,7 +56,7 @@ import { ROLES } from '../core/capabilities.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
 import { rerequestPlan } from '../core/rerequest.mjs';
 import { syncStandards } from '../hosts/standards.mjs';
-import { agentOf } from '../fleet/factory.mjs';
+import { agentOf, seatAgent } from '../fleet/factory.mjs';
 
 // Dry run (FACTORY_DRY=1, FACTORY_DB=<a copy of data/factory.db>): reads are real, nothing is typed, marked or moved.
 const DRY = process.env.FACTORY_DRY === '1';
@@ -193,8 +193,9 @@ async function inboxTick() {
   for (const c of plan.cmds) { store.append(c, by('factory')); log(`message -> ${c.payload.to}: ${JSON.stringify(c.payload.about)}`); }
   const sessions = Object.fromEntries([...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].map(a => [a.label, a.session]));
   for (const w of wakePlan(store.state, woken, Date.now(), config.notify?.reminderMs, sessions)) {
-    const r = await wake({ ...w, agent: agentOf(config, w.seat) }).catch(e => ({ ok: false, reason: e.message }));
+    const r = await wake({ ...w, agent: seatAgent(config, w.seat) }).catch(e => ({ ok: false, reason: e.message }));
     if (r.ok) { woken[w.seat] = { at: Date.now(), ids: w.ids, reminded: w.reminder, session: r.session }; log(`woke ${w.seat}${w.reminder ? ' (reminder)' : ''}`); }
+    else if (!/ is (working|blocked|unknown|not interactive-ready)/.test(r.reason || '')) once(`wake ${w.seat} refused: ${r.reason}`); // a busy seat retries quietly; anything else is named (W-565)
   }
 }
 
