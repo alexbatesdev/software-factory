@@ -625,6 +625,7 @@ async function recycleTick() {
     if (unretainedStreams(store.state).has(d.to)) { once(`recycle ${d.worker.label}: waiting to copy its review reports`); continue; }
     const found = releaseFinished(await host.preflight(d.worker).catch(e => [{ path: '(preflight)', problem: e.message, blocking: true }]), store.state.work);
     const problems = found.filter(p => p.blocking), dropped = found.filter(p => !p.blocking).map(p => `${p.path}: ${p.problem}`).join('; ');
+    if (problems.some(p => p.unknown)) { once(`recycle ${d.worker.label}: GitHub unreachable, push state unknown; retrying at the next disk check`); continue; }
     if (problems.length) {
       const key = blockKey(d.worker.sandbox, problems), list = problems.map(p => `${p.path}: ${p.problem}`).join('; ');
       if (!Object.values(store.state.messages).some(m => m.about?.recycleBlocked === key))

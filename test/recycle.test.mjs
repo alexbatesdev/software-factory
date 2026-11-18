@@ -62,7 +62,23 @@ test('the sbx preflight names an unpushed HEAD and its remote, and the host sett
   const held = await settleOnGitHub(rows, async (url, sha) => (asked.push(sha), true));
   assert.deepEqual([held.map(r => r.problem), asked], [['1 untracked file(s)'], [head]]);
   assert.equal((await settleOnGitHub(rows, async () => false)).filter(r => r.blocking).length, 1, 'a commit GitHub lacks still blocks');
-  assert.equal((await settleOnGitHub(rows, async () => { throw new Error('gh down'); })).filter(r => r.blocking).length, 1, 'no answer is no proof');
+  const offline = (await settleOnGitHub(rows, async () => { throw new Error('gh down'); })).filter(r => r.blocking);
+  assert.deepEqual(offline.map(r => [r.problem, r.unknown]), [["GitHub couldn't be asked whether it has these commits", true]], 'no answer is no proof either way (W-549)');
+});
+
+test('a sandbox that cannot reach GitHub reports its push state unknown, not unpushed (W-549)', async () => {
+  const { PREFLIGHT, parsePreflight } = await import('../hosts/sbx.mjs');
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(`${tmpdir()}/spamton-preflight-`), sh = c => execFileSync('bash', ['-c', c], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  sh(`git init -q --bare -b main origin.git
+    git clone -q origin.git repo 2>/dev/null && cd repo && git commit -q --allow-empty -m base && git push -q origin main
+    git checkout -q -b feat && git commit -q --allow-empty -m feature && git checkout -q main && git worktree add -q ../wt feat
+    git remote set-url origin ${dir}/missing.git`);
+  writeFileSync(`${dir}/pf.sh`, PREFLIGHT);
+  const rows = parsePreflight(sh(`WORKSPACE_DIR=${dir}/repo bash pf.sh`)).filter(r => r.path.endsWith('/wt'));
+  assert.deepEqual(rows.map(r => [r.problem, r.blocking, r.unknown]), [["GitHub couldn't be asked whether it has these commits", true, true]]);
 });
 
 test('a recycle block is told again when what blocks it changes, even at the same count (W-543)', async () => {
