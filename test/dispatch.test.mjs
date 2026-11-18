@@ -354,3 +354,10 @@ test('a job prefers the agent that fits its type, and takes any free stream once
   const scout = loose('W-60', { kind: 'scout', phase: 'done', owner: null });
   assert.equal(at([scout, loose('W-61', { owner: null, proposedFrom: 'W-60', createdAt: '2026-11-18T18:59:00.000Z' })])['W-61'].to, S2);
 });
+
+test("a GitHub fixes round reaches its stream while the record is parked on a question too; other waits still hold it (W-566)", () => {
+  const gh = (id, waitingOn, by = 'github') => fixesWaiting(id, { waitingOn, requests: [{ id: 'R5', type: 'fixes', by, ack: null, head: 'h1', delivery: 'pending' }] });
+  assert.equal(plan([gh('W-77', { who: 'TB-256', what: 'product call' })])['W-77'].action, 'deliver');
+  assert.equal(plan([gh('W-78', { who: 'TB-256', what: 'product call' }, 'sup: s1')])['W-78'].action, null, 'a round nobody outside asked for still waits');
+  assert.equal(plan([gh('W-79', { who: 'Casey', what: 'QA sign-off' })])['W-79'].action, null, 'a hold on a person still holds');
+});

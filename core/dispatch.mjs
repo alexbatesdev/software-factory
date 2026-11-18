@@ -109,11 +109,12 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     // A project's task starts only once the project is ready for it (projects phase B, Alex 11-16).
     if (!job && w.projectGate && !w.projectGate.ready) { wait(`project ${w.projectGate.slug} isn't ready for it: ${w.projectGate.reasons.join('; ')}`); return; }
     if (w.owner && terminals.includes(w.owner)) { wait(`owner ${w.owner} runs in Terminals`); return; }
-    // A waiting round's derived wait names its stream picking it up, which is this queue, not a blocker.
-    if (w.waitingOn && !(job && (labels.includes(w.waitingOn.who) || workers.has(w.waitingOn.who)))) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); return; }
+    // GitHub's fixes round (CI red, changes requested) reaches its supervisor anyway; it parks on a question if it needs one (W-544, W-566).
+    const githubRound = job?.type === 'fixes' && job.by === 'github';
+    // A waiting round's derived wait names its stream picking it up, which is this queue, not a blocker; a question doesn't hold GitHub's round.
+    if (w.waitingOn && !(job && (labels.includes(w.waitingOn.who) || workers.has(w.waitingOn.who))) && !(githubRound && /^TB-\d+$/.test(w.waitingOn.who))) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); return; }
     if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner)) { wait(`owned by ${w.owner}, not a stream`); return; }
-    // GitHub's fixes round (CI red, changes requested) reaches its supervisor anyway; it parks on a question if it needs one (W-544).
-    if (w.openQuestions > 0 && !(job?.type === 'fixes' && job.by === 'github')) { wait(`${w.openQuestions} open question(s)`); return; }
+    if (w.openQuestions > 0 && !githubRound) { wait(`${w.openQuestions} open question(s)`); return; }
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); return; }
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); return; }
     if (needsPrApproval(w, cfg.prApproval)) { wait("needs Alex's go to open a new PR (dashboard: New PRs)"); return; }
