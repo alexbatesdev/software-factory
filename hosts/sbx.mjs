@@ -27,30 +27,33 @@ export const parseDf = out => { const m = String(out).trim().split('\n').at(-1)?
  */
 const STALE_DAYS = 3;
 export function parsePreflight(out) {
-  return String(out).split('\n').filter(Boolean).map(l => l.split('\t')).flatMap(([path, dirty, state, age]) => [
+  return String(out).split('\n').filter(Boolean).map(l => l.split('\t')).flatMap(([path, dirty, state, age, untracked]) => [
     ...(Number(dirty) > 0 ? [{ path, problem: `${dirty} uncommitted change(s)`, blocking: true }] : []),
+    ...(Number(untracked) > 0 ? [{ path, problem: `${untracked} untracked file(s)`, blocking: false }] : []),
     ...(state === 'unpushed' ? [{ path, problem: `commits GitHub doesn't have (${age} day(s) old)`, blocking: Number(age) < STALE_DAYS }] : []),
     ...(state === 'replaced' ? [{ path, problem: `replaced on GitHub by a newer push (${age} day(s) old)`, blocking: Number(age) < STALE_DAYS }] : []),
   ]);
 }
 
 // Workers push by HTTPS URL (SSH is blocked in the VM), which never updates origin/* refs, so "pushed" is asked of GitHub:
-// HEAD is a branch tip there, inside its branch, or inside main (merged, branch deleted). Build output and spamton-* don't count.
-// Prints `<path>\t<dirty>\t<ok|replaced|unpushed>\t<days since HEAD's commit>` per worktree.
+// HEAD is a branch tip there, inside its branch, inside main, or a commit GitHub still serves by SHA (a deleted branch its PR keeps, W-542).
+// Build output and spamton-* don't count. Prints `<path>\t<tracked changes>\t<ok|replaced|unpushed>\t<days since HEAD's commit>\t<untracked files>`.
 const BUILT_RAILS_SBX = '/Users/alex.bates/Code/repos/built-rails-a';
-const PREFLIGHT = `cd "$WORKSPACE_DIR" 2>/dev/null || cd ${BUILT_RAILS_SBX}
+export const PREFLIGHT = `cd "$WORKSPACE_DIR" 2>/dev/null || cd ${BUILT_RAILS_SBX}
 url=$(git remote get-url origin | sed -E 's#^git@github.com:#https://github.com/#')
 heads=$(git ls-remote --heads "$url" 2>/dev/null)
 git fetch -q "$url" main:refs/factory/main </dev/null 2>/dev/null
 git worktree list --porcelain | sed -n 's/^worktree //p' | while read -r d; do
-  dirty=$(git -C "$d" status --porcelain 2>/dev/null | grep -vE ' public/javascripts/| spamton-' | wc -l | tr -d ' ')
+  st=$(git -C "$d" status --porcelain 2>/dev/null | grep -vE ' public/javascripts/| spamton-')
+  dirty=$(printf '%s\\n' "$st" | grep -v '^??' | grep -c . ); untracked=$(printf '%s\\n' "$st" | grep -c '^??')
   head=$(git -C "$d" rev-parse HEAD); branch=$(git -C "$d" symbolic-ref --short -q HEAD)
   age=$(( ( $(date +%s) - $(git -C "$d" log -1 --format=%ct) ) / 86400 ))
   if printf '%s\\n' "$heads" | cut -f1 | grep -qx "$head" || git -C "$d" merge-base --is-ancestor "$head" refs/factory/main 2>/dev/null; then state=ok
   elif [ -n "$branch" ] && printf '%s\\n' "$heads" | grep -q "refs/heads/$branch$"; then
     if git -C "$d" fetch -q "$url" "$branch" </dev/null 2>/dev/null && git -C "$d" merge-base --is-ancestor "$head" FETCH_HEAD; then state=ok; else state=replaced; fi
-  else state=unpushed; fi
-  printf '%s\\t%s\\t%s\\t%s\\n' "$d" "$dirty" "$state" "$age"
+  elif probe=$(mktemp -d) && git init -q "$probe" && git -C "$probe" fetch -q --depth=1 --filter=tree:0 "$url" "$head" </dev/null 2>/dev/null; then state=ok; rm -rf "$probe"
+  else state=unpushed; rm -rf "$probe"; fi
+  printf '%s\\t%s\\t%s\\t%s\\t%s\\n' "$d" "$dirty" "$state" "$age" "$untracked"
 done`;
 
 /** `df -P /`, then `--`, then the agent's elapsed seconds (none when no agent runs), as {diskPct, agentSince (epoch ms)}. */

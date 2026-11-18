@@ -43,6 +43,23 @@ test('the sbx adapter reads disk use and finds work that would die with the sand
   assert.deepEqual(p.map(x => [x.path, x.blocking]), [['/b', true], ['/c', true], ['/d', false], ['/e', false], ['/f', true]]);
 });
 
+test('the sbx preflight counts a HEAD GitHub still holds (a deleted branch kept by its PR) as pushed, and an untracked file as non-blocking (W-542)', async () => {
+  const { PREFLIGHT, parsePreflight } = await import('../hosts/sbx.mjs');
+  const { execFileSync } = await import('node:child_process');
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const dir = mkdtempSync(`${tmpdir()}/spamton-preflight-`), sh = c => execFileSync('bash', ['-c', c], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } });
+  sh(`git init -q --bare -b main origin.git && git -C origin.git config uploadpack.allowReachableSHA1InWant true && git -C origin.git config uploadpack.allowFilter true
+    git clone -q origin.git repo 2>/dev/null && cd repo && git commit -q --allow-empty -m base && git push -q origin main
+    git checkout -q -b gone && git commit -q --allow-empty -m feature && git push -q origin gone && git push -q origin HEAD:refs/pull/1/head && git push -q origin :gone
+    git checkout -q main && git worktree add -q ../wt gone && echo probe > ../wt/spamton-no.txt && echo x > ../wt/probe_spec.rb
+    git worktree add -q -b local ../wt2 main && cd ../wt2 && git commit -q --allow-empty -m local-only`);
+  writeFileSync(`${dir}/pf.sh`, PREFLIGHT);
+  const rows = parsePreflight(sh(`WORKSPACE_DIR=${dir}/repo bash pf.sh`));
+  assert.deepEqual(rows.filter(r => r.path.endsWith('/wt')).map(r => [r.problem, r.blocking]), [['1 untracked file(s)', false]]);
+  assert.deepEqual(rows.filter(r => r.path.endsWith('/wt2')).map(r => r.blocking), [true], 'a commit GitHub never got still blocks');
+});
+
 test('only configured streams are ever drained or recycled (Mutation is Alex own)', () => {
   const mut = { id: 'm', supervisor: { label: 'sup: mutation-tester', status: 'idle' }, worker: { label: 'sbx: mutation-tester', status: 'idle', sandbox: 'box-m' } };
   const p = planRecycles({ units: [mut], health: { m: { diskPct: 0.99 } }, works: {}, supervisors: [S] });
