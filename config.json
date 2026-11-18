@@ -10,7 +10,8 @@
       "sup: stream-2": {
         "workspace": "Stream 2",
         "worker": "sbx: stream-2",
-        "agent": "codex"
+        "agent": "codex",
+        "agentSince": "2026-11-09T18:41:56Z"
       },
       "sup: host": {
         "workspace": "Host",

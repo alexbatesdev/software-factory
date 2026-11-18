@@ -47,6 +47,7 @@ import { readFile } from 'node:fs/promises';
 import { backup, backupPlan, verifyBackup } from './backup.mjs';
 import { createRuntimeLog } from '../core/runtime-log.mjs';
 import { captureManifests, manifestsDue } from '../core/manifest.mjs';
+import { outcomes, outcomesMarkdown, codexSinceOf } from '../core/outcomes.mjs';
 import { checkConfig } from '../core/preflight.mjs';
 import { ROLES } from '../core/capabilities.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
@@ -586,7 +587,7 @@ async function manifestTick() {
   if (manifestsDue(store.state).length) try { projectsRead = { ...projectsRead, planning: await readPlanning(), readAt: now() }; } catch (e) { once(`planning read for a pin: ${e.message}`); }
   await captureManifests(store, { root: ARTIFACTS, now, home: homedir(), factoryVersion: FACTORY_VERSION, config: readFileSync(join(ROOT, 'config.json'), 'utf8'),
     instructions: Object.fromEntries(Object.entries(INSTRUCTIONS).map(([k, p]) => [k, p.replace(/^~/, homedir())])), read: p => readFile(p),
-    harness: stream => { const w = fleet?.units.find(u => u.supervisor?.label === stream)?.worker; return { agent: config.routing.supervisors[stream]?.agent || (w ? 'claude' : null), sandbox: w?.sandbox || null, model: tuned[stream]?.model ?? null, effort: tuned[stream]?.effort ?? null }; },
+    harness: stream => { const w = fleet?.units.find(u => u.supervisor?.label === stream)?.worker; return { agent: config.routing.supervisors[stream]?.agent || (w || config.routing.supervisors[stream] ? 'claude' : null), sandbox: w?.sandbox || null, model: tuned[stream]?.model ?? null, effort: tuned[stream]?.effort ?? null }; },
     spec: w => resolveSpec(w, specRead()) });
 }
 
@@ -698,3 +699,12 @@ every(60000, duplicateTick);
 every(60000, manifestTick);
 if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config.backup.enabled is false)');
 every(60000, seatRestartTick);
+// W-558: the weekly outcomes-by-agent report, Mondays from 10:00 UTC, over the 7 days before; local-head brings it to Alex.
+every(3600000, function outcomesTick() {
+  const t = new Date(), day = now().slice(0, 10);
+  if (DRY || t.getUTCDay() !== 1 || t.getUTCHours() < 10 || Object.values(store.state.messages).some(m => m.about?.outcomesReport === day)) return;
+  const cfg = { since: new Date(Date.parse(`${day}T00:00:00Z`) - 7 * 86400000).toISOString(), until: `${day}T00:00:00.000Z`, codexSince: codexSinceOf(config) };
+  const out = join(homedir(), 'Code/plans', `factory-outcomes-${day}.md`);
+  writeFileSync(out, outcomesMarkdown(outcomes(store.state, cfg), cfg));
+  apply([{ kind: 'message', payload: { to: 'local-head', about: { outcomesReport: day }, text: `[software factory, automated, not Alex] This week's outcomes by agent (Claude vs Codex, W-558): ${out}. Give Alex the headline numbers.` } }], 'factory (outcomes)');
+});
