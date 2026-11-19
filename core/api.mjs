@@ -1,3 +1,4 @@
+import { projectFor } from '../hosts/megamap.mjs';
 // The factory's HTTP API: every write is a board action, checked against the caller's role, appended atomically.
 // The caller's seat comes from the x-seat header, which the MCP server fills from its pane. ponytail: trusted because
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
@@ -27,7 +28,7 @@ export const roleOf = (config, seat) => config.roles?.[seat] || (seat in (config
  * @param readOnly the shadow runner serves the page and reads only; every write is refused
  * @param observed () => {units, prs} from the latest fleet and GitHub reads, for the views
  */
-export function createApi({ store, config, gh = null, tw = null, awsHost = null, onMain = null, onMainFile = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}), artifactRoot = null }) {
+export function createApi({ store, config, gh = null, tw = null, awsHost = null, onMain = null, onMainFile = null, readPr = async () => null, now = () => new Date().toISOString(), readOnly = false, observed = () => ({}), artifactRoot = null, mounts = [] }) {
   const send = (res, code, body) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
   const readBody = req => new Promise((ok, bad) => { let b = ''; req.on('data', c => { b += c; if (b.length > 1e6) bad(new Error('Body too large.')); }); req.on('end', () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error('Body is not JSON.')); } }); });
 
@@ -134,6 +135,8 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     try {
       const url = new URL(req.url, 'http://127.0.0.1');
       if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(req.headers.host || '')) return send(res, 403, { error: 'Local requests only.' });
+      // Mounted local tools (W-574: megamap at /megamap/) answer their own prefix first; anything else falls through.
+      for (const m of mounts) if (m && await m.handle(req, res)) return;
       const seat = req.headers['x-seat'];
       if (req.method === 'GET' && url.pathname === '/api/state') { const { work, questions, messages, seq, artifacts = {}, manifests = {}, deliverables = {} } = store.state; return send(res, 200, { work, questions, messages, seq, artifacts, manifests, deliverables }); }
       const art = req.method === 'GET' && /^\/api\/artifacts\/([0-9a-f]{64})$/.exec(url.pathname)?.[1];
@@ -157,7 +160,8 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
           awsRequests: Object.values(s.awsRequests || {}).filter(r => ['requested', 'approved', 'failed'].includes(r.status)).map(r => ({ ...r, title: s.work[r.work]?.title || null, support: supportOf(s, r.work) })),
           taskRequests: Object.values(s.taskRequests || {}).filter(t => ['requested', 'approved', 'failed'].includes(t.status)).map(t => ({ ...t, stuck: t.status === 'approved' && Date.parse(now()) - Date.parse(t.approvedAt) > STUCK_MS, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           threads: Object.values(s.threads || {}).filter(t => !['resolved', 'dismissed'].includes(t.status)).map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
-          drain: Object.fromEntries(o.drain || []), disk, supportPause: s.supportPause || null, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o }) });
+          drain: Object.fromEntries(o.drain || []), disk, supportPause: s.supportPause || null, megamap: !!config.megamap, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o })
+            .map(c => ({ ...c, map: (p => p ? `/megamap/?project=${encodeURIComponent(p.id)}` : null)(projectFor(config.megamap, s.work[c.id] || {})) })) });
       }
       if (req.method === 'GET' && url.pathname === '/api/escapes') {
         const items = Object.values(store.state.work).flatMap(escapes), count = k => items.reduce((m, e) => ({ ...m, [e[k]]: (m[e[k]] || 0) + 1 }), {});

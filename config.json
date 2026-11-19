@@ -221,6 +221,17 @@
     "_enabled": "Alex 11-18: \"auto-merge is on\" (the rule text is in ~/.claude/CLAUDE.md, ~/Code/CLAUDE.md and local-head.md).",
     "repos": ["built-rails"]
   },
+  "megamap": {
+    "_doc": "W-574 (Alex 11-19, \"megamap yes\"): the megamap web viewer at /megamap/ on this origin. Stable installed paths only, never a worktree. Projects are trusted ids mapped to local roots; no path comes from HTTP. Capture stays off. If the module or binary is missing, /megamap/ says so and the factory runs anyway.",
+    "module": "~/Code/tools/code-map-viewer/code-map/web/server.mjs",
+    "binary": "~/Code/tools/code-map-viewer/code-map/target/release/megamap-data",
+    "allowCapture": false,
+    "projects": [
+      { "id": "built-rails", "label": "built-rails (built-rails-a)", "root": "~/Code/repos/built-rails-a", "repo": "built-rails" },
+      { "id": "built-customer-implementations", "label": "built-customer-implementations", "root": "~/Code/repos/built-customer-implementations", "repo": "built-customer-implementations" },
+      { "id": "software-factory", "label": "software-factory", "root": "~/Code/repos/software-factory", "repo": "software-factory" }
+    ]
+  },
   "prices": {
     "_doc": "W-561: US$ per million tokens, Anthropic first-party rates from the claude-api skill (model table cached 2026-11-03; cache writes 1.25x input for 5 min, 2x for 1 h). A model not listed has no cost in the outcomes report (tokens only), never zero.",
     "claude-opus-5-5": { "input": 4, "output": 20, "cacheWrite5m": 5, "cacheWrite1h": 8, "cacheRead": 0.2 },

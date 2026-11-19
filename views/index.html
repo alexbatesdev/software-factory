@@ -103,7 +103,7 @@ button:disabled { opacity: .5; cursor: default; }
 <script src="/vendor/purify-3.1.6.min.js"></script>
 </head>
 <body>
-<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="supportBtn" title="Pause: the factory leaves every support task alone (no dispatch, notices, auto-ready or reviewer re-requests) so you can work them with your own agent.">Pause support</button><button id="deliverablesBtn">Deliverables</button> <button id="approvalsBtn">Approvals</button><a href="/projects">Projects</a> <a href="/queue">Queue</a></header>
+<header><h1>Software Factory</h1><span class="mute" id="meta">loading…</span><button id="supportBtn" title="Pause: the factory leaves every support task alone (no dispatch, notices, auto-ready or reviewer re-requests) so you can work them with your own agent.">Pause support</button><button id="deliverablesBtn">Deliverables</button> <button id="approvalsBtn">Approvals</button><a href="/projects">Projects</a> <a href="/queue">Queue</a> <a href="/megamap/" id="megamapLink" target="_blank" hidden>Megamap</a></header>
 <section class="you" id="you" hidden>
   <div class="head"><span class="big" id="youCount"></span><h2>waiting on you</h2><span class="mute" style="margin-left:10px">Ask local-head "what's waiting on me" to answer them.</span></div>
   <div class="groups" id="youGroups"></div>
@@ -145,6 +145,8 @@ function cardEl(c, labels) {
   meta.append(el('span', 'tag', labels[c.category] || (c.category === 'in-unit' ? 'Part of a PR' : c.category)));
   if (c.stream) meta.append(el('span', null, c.stream.replace(/^sup: /, '') + ' '));
   if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', null, `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; meta.append(a); }
+  // W-574: the code map of the record's repo, served by the factory at /megamap/.
+  if (c.map) { const m = el('a', null, 'map'); m.href = c.map; m.target = '_blank'; m.title = 'Open this repo in Megamap'; meta.append(m); }
   d.append(meta);
   if (c.waiting) d.append(el('div', 'w', c.waiting.text));
   if (c.approval) { const a = el('div', 'appr', `In Approvals: ${c.approval}`); a.onclick = () => { document.getElementById('side').hidden = false; }; d.append(a); }
@@ -179,6 +181,7 @@ function factoryLanes(cards, labels, b) {
 async function render() {
   let b; try { b = await (await fetch('/api/board')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
   document.getElementById('meta').textContent = `${b.mode} · log seq ${b.seq} · ${new Date().toLocaleTimeString()}`;
+  document.getElementById('megamapLink').hidden = !b.megamap;
   const byId = new Map(b.cards.map(c => [c.id, c]));
 
   // Questions grouped by the record's project; records don't carry one yet, so they land in one group.
