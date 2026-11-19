@@ -23,6 +23,11 @@ export function toldKeys(state, v1Before = null) {
   return told;
 }
 
+// W-594: a restricted field reaching several shared surfaces gets its design settled before code, not across review rounds.
+const DESIGN_NOTE = {
+  dispatch: ' Design check (W-594): before any code, the worker writes a short design note and you file it with deliver (title starting "Design note"): each surface the restricted field reaches; where masking happens and the single place its read and write rule is decided; where ability checks run, per row or batched; what non-readers see. A design question that needs a product call is an ask now, before the build. Implementation done needs the note delivered.',
+  review: ' Design check (W-594): the reviewer checks the PR against its design note (deliverables tool, this record) and flags every surface, mask or ability check that departs from it.',
+};
 const msg = (to, work, about, text) => ({ kind: 'message', payload: { to, work, about, text: `${PREFIX} ${text}` } });
 const quote = t => `"${String(t).replace(/["\n]/g, "'").slice(0, 60)}"`;
 
@@ -50,7 +55,7 @@ export function inboxCommands(state, cfg, fleet = null) {
   for (const e of eligibleRequests(state.work, cfg.cutoff, cfg.supervisors)) {
     // A round the dispatch plan holds in the factory queue (W-505) is told to a stream only once one is free for it.
     if (!e.to || told.has(`requests:${e.key}`) || cfg.heldRequests?.has(e.key)) continue;
-    cmds.push(msg(e.to, e.work, { requests: e.key }, `${e.key} ${e.type}${e.synthetic ? ' [SYNTHETIC]' : ''} ${quote(e.title)}: read the record and handle it per your role; ack the request when you have.${e.type === 'fixes' ? ' Same class (W-596): for each finding, have the worker name the pattern behind it in one line, search the PR\'s diff and the code paths it touches for every other instance (and say how: the grep or query), fix them all or list each one left with why, and report "F-n same class: N instances, fixed X, left Y (why)"; done needs that line per reviewer finding (report.sameClass).' : ''}${cfg.hostHowTo?.[e.to] ? ` Host stream: spawn this job's worker per ${cfg.hostHowTo[e.to]}.` : ''}${cfg.projectNotes?.[e.work] ? ` ${cfg.projectNotes[e.work]}` : ''}`));
+    cmds.push(msg(e.to, e.work, { requests: e.key }, `${e.key} ${e.type}${e.synthetic ? ' [SYNTHETIC]' : ''} ${quote(e.title)}: read the record and handle it per your role; ack the request when you have.${state.work[e.work]?.designCheck ? DESIGN_NOTE[e.type] || '' : ''}${e.type === 'fixes' ? ' Same class (W-596): for each finding, have the worker name the pattern behind it in one line, search the PR\'s diff and the code paths it touches for every other instance (and say how: the grep or query), fix them all or list each one left with why, and report "F-n same class: N instances, fixed X, left Y (why)"; done needs that line per reviewer finding (report.sameClass).' : ''}${cfg.hostHowTo?.[e.to] ? ` Host stream: spawn this job's worker per ${cfg.hostHowTo[e.to]}.` : ''}${cfg.projectNotes?.[e.work] ? ` ${cfg.projectNotes[e.work]}` : ''}`));
   }
   for (const [id, q] of Object.entries(state.questions)) {
     if (q.status !== 'answered' || !q.answer || told.has(`answers:${id}`) || q.answer.sentTo || (cfg.answersSince && q.answer.at < cfg.answersSince)) continue;

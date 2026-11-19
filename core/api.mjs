@@ -78,6 +78,10 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       const miss = ['changed', 'proven', 'unverified', 'risk'].filter(k => !args.report?.[k]);
       if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
     }
+    // W-594: a design-checked record's implementation round finishes only with its design note delivered.
+    const dw = action === 'done' && !args.noChange && s.work[args.work];
+    if (dw?.designCheck && dw.assignments?.find(x => x.id === args.assignmentId)?.kind === 'implementation' && !Object.values(s.deliverables || {}).some(d => d.work === args.work && !d.archived && /^design note/i.test(d.title)))
+      return [400, { error: `${args.work} is design-checked (W-594): deliver its design note first (deliver, title starting "Design note": the surfaces the restricted field reaches, where masking and the read/write rule live, where ability checks run, what non-readers see).` }];
     // W-596: each reviewer finding a fixes round was handed gets its same-class line before done.
     const missingClass = action === 'done' && !args.noChange && s.work[args.work] ? sameClassMissing(s.work[args.work], args.assignmentId, args.report) : [];
     if (missingClass.length) return [400, { error: `A fixes round fixes the whole class of each finding (W-596). Pass report.sameClass with one line per finding: "<F-n> same class: <pattern>; N instances (found with <grep or query>), fixed X, left Y (why)". Missing: ${missingClass.join(', ')}. If the worker's report lacks them, brief it to search for the other instances first.` }];

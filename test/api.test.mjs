@@ -555,3 +555,25 @@ test('an MCP session older than a read tool still gets it: the server answers re
     assert.equal((await f.act('some pane', 'deliverables', {}))[0], 403, 'a seat without the tool is refused');
   } finally { f.close(); }
 });
+
+// W-594 (#8245 settled its end-date permission model over ~9 human review rounds): design before code.
+test('a record flagged for a design check gets its design note asked for, checked in review, and needed before done (W-594)', async () => {
+  const f = await serveWith({ readPr: async url => ({ url, head: 'bbb2222', state: 'OPEN', isDraft: true }) });
+  try {
+    started(f);
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'ready', note: 'end date reaches GraphQL and exports', designCheck: true }))[0], 200);
+    assert.equal(f.store.state.work['W-1'].designCheck, true);
+    const { inboxCommands } = await import('../core/inbox.mjs');
+    const rec = { ...f.store.state.work['W-1'], phase: 'queued', requests: [{ id: 'R1', type: 'dispatch', ack: null }] };
+    const [m] = inboxCommands({ work: { 'W-1': rec }, questions: {}, messages: {}, notifications: {} }, { supervisors: [S1], seats: [] }, null).cmds;
+    assert.match(m.payload.text, /Design check \(W-594\).*before any code/);
+    const rv = { ...rec, phase: 'review', head: 'h1', requests: [{ id: 'R3', type: 'review', head: 'h1', ack: null }] };
+    assert.match(inboxCommands({ work: { 'W-1': rv }, questions: {}, messages: {}, notifications: {} }, { supervisors: [S1], seats: [] }, null).cmds[0].payload.text, /against its design note/);
+    const a = f.store.state.work['W-1'].assignments.find(x => x.status === 'started');
+    const done = () => f.act(S1, 'done', { work: 'W-1', assignmentId: a.id, expectedVersion: a.version, head: 'bbb2222', report: REPORT });
+    const [code, body] = await done();
+    assert.equal(code, 400); assert.match(body.error, /design note/);
+    await f.act(S1, 'deliver', { work: 'W-1', title: 'Design note: end date permissions', text: '# Surfaces\n…' });
+    assert.equal((await done())[0], 200);
+  } finally { f.close(); }
+});
