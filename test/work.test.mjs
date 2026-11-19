@@ -722,6 +722,25 @@ test('one internal review per PR: a push that descends from the reviewed head ke
   assert.equal(observeHead(ready, { sha: 'bbb2222', via: 'github', isDraft: true, ancestry: { base: 'aaa1111', status: 'ahead' } }, ctx()).phase, 'rereview');
 });
 
+// W-593 (Alex 11-19): a descending head re-reviews once the PR grew past min(30% of its size at the reviewed head, 1,000 lines).
+const grownHead = (w, sha, grown, size, base = 'aaa1111') => observeHead(w, { sha, via: 'github', isDraft: true, ancestry: { base, status: 'ahead', grown, size, limit: Math.min(Math.ceil(size * 0.3), 1000) } }, capCtx({ by: 'github' }));
+test('a descending push re-reviews once the PR has grown past 30% of its reviewed size or 1,000 lines, and a clean review moves the baseline (W-593)', () => {
+  const ready = reviewedAt('clean');
+  assert.equal(grownHead(ready, 'bbb2222', 299, 1000).phase, 'ready_for_human', 'under the threshold: no new review');
+  const over = grownHead(ready, 'bbb2222', 300, 1000);
+  assert.equal(over.phase, 'rereview', '30% of a 1,000-line PR');
+  assert.match(over.updates.at(-1).text, /grew 300 lines, 30% since the reviewed aaa1111/);
+  assert.match(gate(over).reasons.join(' '), /No independent review at bbb2222/);
+  assert.equal(grownHead(ready, 'bbb2222', 1000, 100000).phase, 'rereview', '1,000 lines on a 100k-line PR');
+  assert.equal(grownHead(ready, 'bbb2222', 999, 100000).phase, 'ready_for_human');
+  const rereviewed = capRun(over, { type: 'review', head: 'bbb2222', by: 'reviewer', result: 'clean' });
+  assert.equal(rereviewed.phase, 'ready_for_human');
+  assert.equal(grownHead(rereviewed, 'ccc3333', 200, 1300, 'bbb2222').phase, 'ready_for_human', 'growth counts from the new reviewed head');
+  // A head the worker reported first is assumed to descend; GitHub's read of its growth still sends it back.
+  const reported = capRun(ready, { type: 'head', sha: 'bbb2222' });
+  assert.equal(grownHead(reported, 'bbb2222', 400, 1000).phase, 'rereview');
+});
+
 test('a reported head is assumed to descend until GitHub shows otherwise', () => {
   const ready = reviewedAt('clean');
   const reported = capRun(ready, { type: 'head', sha: 'bbb2222' });

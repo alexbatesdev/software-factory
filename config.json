@@ -215,6 +215,7 @@
     "enabled": false,
     "maxAgeDays": 7
   },
+  "internalReview": { "regrow": { "pct": 30, "lines": 1000 } },
   "autoMerge": {
     "_doc": "W-564 (Alex 11-18): GitHub auto-merge (merge commit) for small, quick fixes (at most 10 files and 300 changed lines), e.g. security fixes, where one approval is enough: our PRs on main, ready after the internal review, with no project and no hold. GitHub's ruleset decides when they merge; enabling auto-merge is not a merge. Turned off again when a hold or a changes request arrives. Off until Alex runs ~/Code/plans/spamton-alex-edits-w564.sh and says go; while off, the server logs what it would do.",
     "enabled": true,

@@ -400,3 +400,15 @@ test("a check whose comparison is still running opens nothing yet: neither the P
   const [c] = healthCommands({ work: { 'W-264': pr } }, health, { owner: OWNER, now: ctx.now, mainFailing: new Map([['app', []]]), ciCompare });
   assert.deepEqual([c.payload.failing, c.payload.inherited ?? []], [['ci/circleci: test'], []]);
 });
+
+test('growth since the reviewed head counts the PR\'s own files only, so merging main in is not growth (W-593)', async () => {
+  const { readGrowth } = await import('../sources/github.mjs');
+  const pages = {
+    'main...new': { status: 'ahead', files: [{ f: 'app/a.rb', n: 500 }, { f: 'app/b.rb', n: 700 }] },
+    'main...old': { status: 'ahead', files: [{ f: 'app/a.rb', n: 1000 }] },
+    'old...new': { status: 'ahead', files: [{ f: 'app/a.rb', n: 100 }, { f: 'app/b.rb', n: 200 }, { f: 'lib/from_main.rb', n: 5000 }] },
+  };
+  const run = async (cmd, args) => ({ stdout: JSON.stringify(pages[args[1].split('/compare/')[1]]) });
+  assert.deepEqual(await readGrowth('o', 'app', 'main', 'old', 'new', { pct: 30, lines: 1000 }, run), { status: 'ahead', grown: 300, size: 1000, limit: 300 });
+  assert.equal((await readGrowth('o', 'app', 'main', 'old', 'new', { pct: 30, lines: 200 }, run)).limit, 200, 'the line cap when it is smaller');
+});

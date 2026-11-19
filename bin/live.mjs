@@ -22,7 +22,7 @@ import { autoDispatchPlan, busyStreams } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
 import { mergeCloses, holdReleases, closedPrWithdrawals, questionHolds, watchedPrs, reviewsDue, contradictions } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
-import { readPrLines, readPrHealth, readPrs, readMain, readCompare, readOpenPrFiles, readTeamPrs } from '../sources/github.mjs';
+import { readPrLines, readPrHealth, readPrs, readMain, readCompare, readGrowth, readOpenPrFiles, readTeamPrs } from '../sources/github.mjs';
 import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.mjs';
 import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask, readTree } from '../sources/teamwork.mjs';
 import { readPlanning } from '../sources/planning.mjs';
@@ -364,7 +364,11 @@ async function githubTick() {
     await compareAudit(health, ciCompare);
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
-    if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try { ancestry.set(a.id, { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) }); } catch (e) { once(`compare ${a.id}: ${e.message}`); }
+    if (now() >= REVIEW_CAP_FROM) for (const a of ancestryWanted(s, heads, owner)) try {
+      // W-593: with the PR's base known, the read also measures growth since the reviewed head (limits from config.internalReview).
+      const prBase = prs.get(recordPrKey(s.work[a.id], owner)?.replace(':', '-'))?.base;
+      ancestry.set(a.id, prBase ? { base: a.base, ...await readGrowth(owner, a.repo, prBase, a.base, a.head, config.internalReview?.regrow) } : { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) });
+    } catch (e) { once(`compare ${a.id}: ${e.message}`); }
     apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, ciCompare, subtasks: subtasksOf(projectsRead.trees), branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, skipped()), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the factory developer hears of it.

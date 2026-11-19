@@ -27,6 +27,19 @@ export async function readCompare(owner, repo, base, head, run = exec) {
   return (await run('gh', ['api', `repos/${owner}/${repo}/compare/${base}...${head}`, '--jq', '.status'], { timeout: 30000 })).stdout.trim();
 }
 
+/**
+ * W-593: how far a PR grew since its reviewed head, and its size then. Growth is the reviewed...head diff over files in the PR's
+ * own diff at head, so a merge of main into the branch isn't counted. limit = min(pct% of size, lines).
+ * ponytail: GitHub's compare lists at most 300 files per diff; a PR past that undercounts, which lowers the limit (more re-reviews).
+ */
+export async function readGrowth(owner, repo, prBase, reviewed, head, { pct = 30, lines = 1000 } = {}, run = exec) {
+  const cmp = async (a, b) => JSON.parse((await run('gh', ['api', `repos/${owner}/${repo}/compare/${a}...${b}`, '--jq', '{status, files: [.files[]? | {f: .filename, n: (.additions + .deletions)}]}'], { timeout: 60000, maxBuffer: 1 << 24 })).stdout);
+  const [now, then, step] = [await cmp(prBase, head), await cmp(prBase, reviewed), await cmp(reviewed, head)];
+  const own = new Set(now.files.map(x => x.f)), sum = fs => fs.reduce((n, x) => n + x.n, 0);
+  const size = sum(then.files), grown = sum(step.files.filter(x => own.has(x.f)));
+  return { status: step.status, grown, size, limit: Math.min(Math.ceil(size * pct / 100), lines) };
+}
+
 export async function readPrs(urls, run = exec) {
   const out = [];
   for (let i = 0; i < urls.length; i += 40) {

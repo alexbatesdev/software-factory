@@ -214,7 +214,7 @@ function setHead(w, sha, ctx, via = 'report', ancestry = null) {
     // A GitHub read can overturn a reported head's assumed lineage.
     if (ctx.now >= REVIEW_CAP_FROM && ancestry && !trace(w, ancestry, w.head, ctx) && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
       w.phase = 'rereview';
-      note(w, ctx, `GitHub shows ${w.head} does not descend from the reviewed ${w.lineage.reviewed} (rebased or force pushed): it needs a new internal review.`);
+      note(w, ctx, outgrown(w) || `GitHub shows ${w.head} does not descend from the reviewed ${w.lineage.reviewed} (rebased or force pushed): it needs a new internal review.`);
     }
     return;
   }
@@ -232,13 +232,14 @@ function setHead(w, sha, ctx, via = 'report', ancestry = null) {
   if (kept) note(w, ctx, `New commit ${sha} descends from the reviewed ${w.lineage.reviewed}: no new internal review (one per PR unless rebased or force pushed).`);
   else if (had && [...REVIEWING, 'ready_for_human', 'awaiting_human_approval'].includes(w.phase)) {
     w.phase = 'rereview';
-    note(w, ctx, `New commit ${sha} replaces ${had}; review, checks and criteria from ${had} no longer count.`);
+    note(w, ctx, outgrown(w) || `New commit ${sha} replaces ${had}; review, checks and criteria from ${had} no longer count.`);
   }
 }
 
 // Alex, 2026-11-09: one internal review per PR; a later head counts as reviewed while it descends from the reviewed one.
 export const REVIEW_CAP_FROM = '2026-11-09T20:10:00.000Z';
 const DESCENDS = ['ahead', 'identical', 'assumed'];
+const outgrown = w => { const l = w.lineage; return l?.status === 'outgrown' && sameSha(l.head, w.head) ? `${w.head} grew ${l.grown} lines, ${l.size ? Math.round(100 * l.grown / l.size) : 100}% since the reviewed ${l.reviewed} (a ${l.size}-line PR then): it needs a new internal review of the whole PR.` : null; };
 const lastReview = w => (w.reviews || []).filter(r => !r.forAlex).at(-1);
 /** The internal review the current head inherits through a descending push, if any. Lineage is only set from REVIEW_CAP_FROM. */
 const inherited = w => { const r = lastReview(w), l = w.lineage; return r && l && sameSha(l.reviewed, r.head) && sameSha(l.head, w.head) && DESCENDS.includes(l.status) ? r : null; };
@@ -257,8 +258,10 @@ function trace(w, ancestry, had, ctx) {
   const otherPr = ctx.now >= PR_SWAP_FROM && r.pr && w.links?.pr && r.pr !== w.links.pr;
   const status = otherPr ? 'other-pr' : ancestry && sameSha(ancestry.base, r.head) ? ancestry.status
     : sameSha(r.head, had) || (l && sameSha(l.reviewed, r.head) && sameSha(l.head, had) && DESCENDS.includes(l.status)) ? 'assumed' : 'unknown';
-  w.lineage = { reviewed: r.head, head: w.head, status };
-  return DESCENDS.includes(status);
+  // W-593 (Alex 11-19): a descending head re-reviews once the PR grew past its limit since the reviewed head (read with the ancestry).
+  const grew = status === 'ahead' && ancestry?.limit != null && sameSha(ancestry.base, r.head) && ancestry.grown >= ancestry.limit;
+  w.lineage = { reviewed: r.head, head: w.head, status: grew ? 'outgrown' : status, ...(grew ? { grown: ancestry.grown, size: ancestry.size } : {}) };
+  return DESCENDS.includes(w.lineage.status);
 }
 /** Under the cap, the current head is internally reviewed (at it, or inherited) so no other review is asked for. */
 const capped = (w, ctx) => ctx.now >= REVIEW_CAP_FROM && isPr(w) && (w.reviews.some(r => !r.forAlex && sameSha(r.head, w.head)) || !!inherited(w));
