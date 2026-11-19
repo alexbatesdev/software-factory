@@ -44,7 +44,8 @@ export function scoutPlan(works, plan, cfg, now) {
   const last = scouts.map(w => w.completion?.at || w.updatedAt).sort().at(-1);
   if (last && Date.parse(now) - Date.parse(last) < sc.gapHours * 3600000) return { reason: `the last scout closed at ${last}` };
   const ids = new Set(scouts.map(w => w.id));
-  const untriaged = works.filter(w => ids.has(w.proposedFrom) && ['intake', 'proposed'].includes(w.phase)).length;
+  // Only proposals nobody has triaged yet: one the factory lead triaged into intake has had its look (W-577).
+  const untriaged = works.filter(w => ids.has(w.proposedFrom) && ['intake', 'proposed'].includes(w.phase) && !w.triage).length;
   if (untriaged >= sc.maxUntriaged) return { reason: `${untriaged} scout proposals wait for triage` };
   // canTake with no repo: a built-rails job, so host streams never scout.
   const busy = busyStreams(works, cfg), to = Object.keys(cfg.supervisors).find(l => !busy.has(l) && canTake({}, l, cfg.supervisors));

@@ -361,3 +361,11 @@ test("a GitHub fixes round reaches its stream while the record is parked on a qu
   assert.equal(plan([gh('W-78', { who: 'TB-256', what: 'product call' }, 'sup: s1')])['W-78'].action, null, 'a round nobody outside asked for still waits');
   assert.equal(plan([gh('W-79', { who: 'Casey', what: 'QA sign-off' })])['W-79'].action, null, 'a hold on a person still holds');
 });
+
+test('a scout proposal the factory lead already triaged into intake no longer pauses the scout (W-577)', () => {
+  const none = works => scoutPlan(works, autoDispatchPlan(works, scfg), scfg, NOW).to;
+  const triaged = n => Array.from({ length: n }, (_, i) => loose(`W-${i + 2}`, { owner: null, phase: 'intake', proposedFrom: 'W-1', triage: { bucket: 'intake', by: 'factory lead', note: 'not reproduced' } }));
+  assert.equal(none([scout('W-1'), ...triaged(6)]), S1, 'six triaged into intake: the scout runs');
+  const untouched = loose('W-9', { owner: null, phase: 'proposed', proposedFrom: 'W-1' });
+  assert.equal(none([scout('W-1'), ...triaged(4), untouched]), S1, 'one untriaged is under the limit');
+});
