@@ -7,74 +7,172 @@
 <style>
 :root {
   --bg: #f4f4f1; --card: #fff; --ink: #1d1d1b; --mute: #6b6b66; --line: #e2e1dc; --link: #1a5fd0;
-  --done: #2e7d32; --done-bg: #e8f5e9; --wait: #9a6200; --wait-bg: #fdf3e1; --work: #3d6b8f; --work-bg: #eef3f7; --idle: #8a8a84; --idle-bg: #f0efeb; --warn: #c2261b;
+  --done: #2e7d32; --done-bg: #e8f5e9; --wait: #9a6200; --wait-bg: #fdf3e1; --work: #3d6b8f; --work-bg: #eef3f7; --idle: #8a8a84; --idle-bg: #f0efeb; --warn: #c2261b; --sel: #1a5fd0;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #161615; --card: #22221f; --ink: #ecebe6; --mute: #9b9a94; --line: #34332f; --link: #7fb0ff;
-  --done: #81c784; --done-bg: #1b2e1c; --wait: #e9b65c; --wait-bg: #33291a; --work: #8fb6d6; --work-bg: #1c262e; --idle: #77766f; --idle-bg: #2a2a27; --warn: #ff8a7e;
+  --done: #81c784; --done-bg: #1b2e1c; --wait: #e9b65c; --wait-bg: #33291a; --work: #8fb6d6; --work-bg: #1c262e; --idle: #77766f; --idle-bg: #2a2a27; --warn: #ff8a7e; --sel: #7fb0ff;
 } }
 * { box-sizing: border-box; }
-body { margin: 0; padding: 16px; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+body { margin: 0; padding: 16px 24px; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
 a { color: var(--link); }
-header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 14px; }
-h1 { font-size: 18px; margin: 0; } h2 { font-size: 15px; margin: 0; } .mute { color: var(--mute); font-size: 12px; }
-.project { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
-.top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-.tag { font-size: 11px; font-weight: 600; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; color: var(--mute); }
-.facts { display: flex; gap: 16px; font-size: 12px; color: var(--mute); margin: 6px 0 8px; } .facts .warn { color: var(--warn); font-weight: 600; }
-.bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--idle-bg); margin: 4px 0 10px; }
-.bar span { display: block; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
-td.state { width: 140px; } td.pr { width: 260px; } td.tp { width: 70px; text-align: center; }
-.pill { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 10px; padding: 1px 8px; }
-.s-done { color: var(--done); background: var(--done-bg); } .s-approval, .s-review { color: var(--wait); background: var(--wait-bg); }
-.s-building, .s-queued, .s-pr { color: var(--work); background: var(--work-bg); } .s-none { color: var(--idle); background: var(--idle-bg); }
-.stack { font-size: 12px; color: var(--mute); }
-.gate { font-size: 12px; color: var(--warn); margin-top: 2px; }
-details > summary { cursor: pointer; }
+header { display: flex; gap: 14px; align-items: baseline; margin-bottom: 14px; }
+h1 { font-size: 18px; margin: 0; } .mute { color: var(--mute); font-size: 12px; }
+.legend { display: flex; gap: 12px; margin-left: auto; font-size: 12px; color: var(--mute); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 14px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.top { display: flex; gap: 8px; align-items: baseline; }
+.top h2 { font-size: 15px; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chip { font-size: 11px; font-weight: 600; border-radius: 4px; padding: 0 5px; border: 1px solid var(--line); color: var(--mute); white-space: nowrap; }
+.chip.warn { color: var(--warn); border-color: var(--warn); }
+.count { margin-left: auto; font-size: 12px; color: var(--mute); white-space: nowrap; }
+.bar { height: 4px; border-radius: 2px; background: var(--idle-bg); margin: 8px 0 6px; overflow: hidden; } .bar span { display: block; height: 100%; background: var(--done); }
+.alerts { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+svg { display: block; overflow: visible; }
+svg .node { cursor: pointer; } svg .node rect { stroke-width: 1.5; } svg .node.sel rect { stroke: var(--sel); stroke-width: 3; }
+svg text { font: 600 12px system-ui, sans-serif; fill: var(--ink); pointer-events: none; } svg text.sub { font-weight: 400; font-size: 10px; fill: var(--mute); }
+svg line { stroke: var(--mute); stroke-width: 2; opacity: .55; }
+.quiet { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin-top: 14px; }
+.quiet summary { cursor: pointer; font-weight: 600; } .quiet .row { display: flex; gap: 10px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 13px; }
+#panel { position: fixed; top: 0; right: 0; bottom: 0; width: 460px; overflow-y: auto; background: var(--card); border-left: 1px solid var(--line); box-shadow: -4px 0 16px rgba(0,0,0,.15); padding: 14px 16px; z-index: 10; }
+#panel h3 { margin: 0 0 4px; font-size: 16px; } #panel .x { float: right; }
+#panel ul { padding-left: 18px; margin: 6px 0; } #panel li { margin: 4px 0; font-size: 13px; }
+.gate { color: var(--warn); font-size: 12px; }
 </style>
 </head>
 <body>
-<header><h1>Projects</h1><span class="mute" id="meta">loading…</span><a href="/" class="mute">Board</a> <a href="/queue" class="mute">Queue</a></header>
-<div id="projects"></div>
-<section class="project"><h2>Your other open PRs</h2><div class="mute">Open PRs on no project's task.</div><table id="loose"></table></section>
-<section class="project"><h2>The team's open PRs <span class="mute" id="teamN"></span></h2><div class="mute">Everyone else's open PRs in the team repos, read-only, by author.</div><div id="team"></div></section>
+<header><h1>Projects</h1><span class="mute" id="meta">loading…</span><a href="/" class="mute">Board</a> <a href="/queue" class="mute">Queue</a>
+  <span class="legend"><span><i style="background:var(--done)"></i>approval</span><span><i style="background:var(--wait)"></i>in review</span><span><i style="background:var(--work)"></i>building / open</span><span><i style="border:1.5px dashed var(--mute)"></i>draft</span></span></header>
+<div class="grid" id="projects"></div>
+<div id="quiet"></div>
+<aside id="panel" hidden></aside>
 <script>
+// At a glance (Alex 11-19): one card per active project, its open PRs as a small graph of stacks; everything else is a click away.
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const KIND = { done: 'done', 'awaiting approval': 'approval', 'in review': 'review', building: 'building', queued: 'queued', 'PR open': 'pr', 'not started': 'none', cancelled: 'none' };
-const COLOR = { done: 'var(--done)', approval: 'var(--wait)', review: 'var(--wait)', building: 'var(--work)', queued: 'var(--work)', pr: 'var(--work)' };
 const ACTIVE = ['Development', 'Design', 'Requirements', 'Discovery'];
 const rank = p => (i => i < 0 ? ACTIVE.length : i)(ACTIVE.indexOf(p.stage));
-let me = null;
-const prCell = pr => pr ? `<a href="${esc(pr.url)}">#${pr.number}</a>${pr.draft ? ' <span class="tag">draft</span>' : ''}${pr.stackedOn ? ` <span class="stack">stacked on #${pr.stackedOn}</span>` : ''}${pr.author && pr.author !== me ? ` <span class="stack">by ${esc(pr.author)}</span>` : ''}` : '';
-const recordCell = id => id ? `<a href="/#${esc(id)}">${esc(id)}</a>` : '';
-function bar(leaves) {
-  const n = {}; for (const l of leaves) { const k = KIND[l.state] || 'none'; n[k] = (n[k] || 0) + 1; }
-  return `<div class="bar">${['done', 'approval', 'review', 'building', 'pr', 'queued'].filter(k => n[k]).map(k => `<span title="${n[k]} ${k}" style="width:${100 * n[k] / leaves.length}%;background:${COLOR[k]}"></span>`).join('')}</div>`;
+// A PR's colour comes from its furthest-along task: approval, then review, then building or just open.
+const TONE = { 'awaiting approval': ['var(--done)', 'var(--done-bg)', 3], 'in review': ['var(--wait)', 'var(--wait-bg)', 2], building: ['var(--work)', 'var(--work-bg)', 1], queued: ['var(--work)', 'var(--work-bg)', 1], 'PR open': ['var(--work)', 'var(--work-bg)', 0] };
+const tone = s => TONE[s] || TONE['PR open'];
+let data = null, sel = null;
+
+/** One project's open PRs (several tasks can share one), with the stack edges between them. */
+function prsOf(p) {
+  const by = new Map();
+  for (const l of p.leaves.filter(l => l.pr)) {
+    const n = by.get(l.pr.number) || { ...l.pr, tasks: [], state: 'PR open' };
+    n.tasks.push(l);
+    if (tone(l.state)[2] > tone(n.state)[2]) n.state = l.state;
+    by.set(l.pr.number, n);
+  }
+  return by;
 }
-function project(p) {
-  const planned = p.leaves.filter(l => l.testPlan).length;
-  return `<section class="project"><div class="top"><h2>${esc(p.title || p.slug)}</h2><span class="tag">${esc(p.stage || 'no stage')}</span><span class="tag">${esc(p.status || 'no status')}</span>
-    <span class="mute">${esc(p.owner || '')}</span><span class="mute" style="margin-left:auto"><b>${p.progress.done}/${p.progress.total}</b> tasks done</span></div>
-    <div class="facts"><span class="${p.factoryPlan ? '' : 'warn'}">${p.factoryPlan ? 'factory plan on main' : 'no factory plan yet'}</span><span>${p.reqs} requirements</span><span>test plans for ${planned}/${p.leaves.length} tasks</span><span class="${p.openDecisions ? 'warn' : ''}" title="${esc((p.decisions || []).map(d => `${d.id} ${d.title}`).join('\n'))}">${p.openDecisions} open decision(s)</span>
-    ${p.teamworkTask ? `<a href="https://builtforteams.teamwork.com/app/tasks/${esc(p.teamworkTask)}">Teamwork</a>` : ''}<span class="mute">${esc(p.slug)}</span></div>
-    ${p.treeRead ? (p.leaves.length ? bar(p.leaves) : '') : '<div class="mute">Teamwork tree not read yet.</div>'}
-    ${p.leaves.length ? `<details ${p.leaves.some(l => !['done', 'not started'].includes(l.state)) ? 'open' : ''}><summary class="mute">Tasks</summary><table>${p.leaves.map(l => `<tr>
-      <td><a href="https://builtforteams.teamwork.com/app/tasks/${esc(l.task)}">${esc(l.path)}</a>${l.gate && !l.gate.ready && !l.pr && !['done', 'cancelled'].includes(l.state) ? `<div class="gate">Can't start yet: ${esc(l.gate.reasons.join('; '))}</div>` : ''}</td>
-      <td class="state"><span class="pill s-${KIND[l.state] || 'none'}">${esc(l.state)}</span></td>
-      <td class="pr">${prCell(l.pr)} ${recordCell(l.work)}</td><td class="tp mute">${l.testPlan ? 'test plan' : ''}</td></tr>`).join('')}</table></details>` : ''}</section>`;
+
+/** Stacks laid out as trees: each root's descendants below it, roots side by side. Returns nodes with x/y and edges. */
+function layout(by) {
+  const kids = new Map(), roots = [];
+  for (const n of by.values()) (by.has(n.stackedOn) ? (kids.get(n.stackedOn) || kids.set(n.stackedOn, []).get(n.stackedOn)).push(n) : roots.push(n));
+  let col = 0; const placed = [], edges = [];
+  const walk = (n, depth) => {
+    const cs = (kids.get(n.number) || []).sort((a, b) => a.number - b.number);
+    const start = col;
+    if (!cs.length) col++;
+    for (const c of cs) { edges.push([n, c]); walk(c, depth + 1); }
+    n.x = cs.length ? (start + col - 1) / 2 : start; n.y = depth; placed.push(n);
+  };
+  for (const r of roots.sort((a, b) => a.number - b.number)) walk(r, 0);
+  return { nodes: placed, edges, cols: col, rows: Math.max(0, ...placed.map(n => n.y)) + 1 };
 }
-async function render() {
-  let d; try { d = await (await fetch('/api/projects')).json(); me = d.me || null; } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
-  const shown = d.projects.filter(p => p.teamworkTask && !['Archived', 'Complete'].includes(p.status))
+
+const W = 108, H = 38, GX = 14, GY = 18;
+function graph(p) {
+  const by = prsOf(p), { nodes, edges, cols, rows } = layout(by);
+  const waiting = p.leaves.filter(l => !l.pr && !['done', 'cancelled'].includes(l.state));
+  const extra = waiting.length ? 1 : 0;
+  if (!nodes.length && !extra) return '';
+  const width = (cols + extra) * (W + GX), height = Math.max(rows, 1) * (H + GY);
+  const cx = n => n.x * (W + GX), cy = n => n.y * (H + GY);
+  const parts = edges.map(([a, b]) => `<line x1="${cx(a) + W / 2}" y1="${cy(a) + H}" x2="${cx(b) + W / 2}" y2="${cy(b)}"/>`);
+  for (const n of nodes) {
+    const [fg, bg] = tone(n.state), id = `${p.slug}|${n.number}`;
+    parts.push(`<g class="node${sel === id ? ' sel' : ''}" data-id="${esc(id)}" transform="translate(${cx(n)},${cy(n)})"><title>${esc(n.title)}</title>
+      <rect width="${W}" height="${H}" rx="8" fill="${bg}" stroke="${fg}"${n.draft ? ' stroke-dasharray="5 3"' : ''}/>
+      <text x="10" y="16">#${n.number}</text><text class="sub" x="10" y="30">${n.tasks.length} task${n.tasks.length > 1 ? 's' : ''}${n.author && n.author !== data.me ? ` · ${esc(n.author.split(/[-_]/)[0].slice(0, 8))}` : ''}</text></g>`);
+  }
+  if (extra) {
+    const id = `${p.slug}|waiting`, x = cols * (W + GX);
+    parts.push(`<g class="node${sel === id ? ' sel' : ''}" data-id="${esc(id)}" transform="translate(${x},0)"><title>Tasks with no PR yet</title>
+      <rect width="${W}" height="${H}" rx="8" fill="var(--idle-bg)" stroke="var(--idle)" stroke-dasharray="2 3"/>
+      <text x="10" y="16">${waiting.length} task${waiting.length > 1 ? 's' : ''}</text><text class="sub" x="10" y="30">no PR yet</text></g>`);
+  }
+  return `<svg width="${width}" height="${height}">${parts.join('')}</svg>`;
+}
+
+function card(p) {
+  // The factory's own gate (plan, tasks it can't start) matters only where the factory builds; open decisions always do.
+  const ours = p.leaves.some(l => l.work);
+  const blocked = ours ? p.leaves.filter(l => !l.pr && l.gate && !l.gate.ready && !['done', 'cancelled'].includes(l.state)).length : 0;
+  const alerts = [ours && !p.factoryPlan && 'no factory plan', p.openDecisions && `${p.openDecisions} open decision${p.openDecisions > 1 ? 's' : ''}`, blocked && `${blocked} can't start`].filter(Boolean);
+  const pct = p.progress.total ? Math.round(100 * p.progress.done / p.progress.total) : 0;
+  return `<section class="card"><div class="top"><h2 title="${esc(p.title || p.slug)}">${esc(p.title || p.slug)}</h2><span class="chip">${esc(p.stage || 'no stage')}</span>
+    <span class="count">${p.progress.done}/${p.progress.total} done</span></div>
+    <div class="bar"><span style="width:${pct}%"></span></div>
+    ${alerts.length ? `<div class="alerts">${alerts.map(a => `<span class="chip warn" data-id="${esc(p.slug)}|project">${esc(a)}</span>`).join('')}</div>` : ''}
+    ${graph(p)}</section>`;
+}
+
+/** The side panel: everything about one PR (or the tasks with no PR, or the project's warnings). */
+function panel(id) {
+  const [slug, what] = id.split('|'), p = data.projects.find(x => x.slug === slug), el = document.getElementById('panel');
+  if (!p) { el.hidden = true; return; }
+  const tw = t => `https://builtforteams.teamwork.com/app/tasks/${esc(t)}`;
+  const task = l => `<li><a href="${tw(l.task)}">${esc(l.name)}</a> <span class="mute">${esc(l.state)}${l.work ? ` · <a href="/#${esc(l.work)}">${esc(l.work)}</a>` : ''}</span>${l.gate && !l.gate.ready && !l.pr ? `<div class="gate">${esc(l.gate.reasons.join('; '))}</div>` : ''}</li>`;
+  let body;
+  if (what === 'waiting') body = `<h3>${esc(p.title)}: tasks with no PR</h3><ul>${p.leaves.filter(l => !l.pr && !['done', 'cancelled'].includes(l.state)).map(task).join('')}</ul>`;
+  else if (what === 'project') body = `<h3>${esc(p.title)}</h3><div class="mute">${esc(p.stage || '')} · ${esc(p.status || '')} · ${esc(p.owner || '')} · ${p.reqs} requirements · <a href="https://builtforteams.teamwork.com/app/tasks/${esc(p.teamworkTask)}">Teamwork</a></div>
+    ${!p.factoryPlan ? '<p class="gate">No factory implementation plan on project-planning main yet.</p>' : ''}
+    ${(p.decisions || []).length ? `<p><b>Open decisions</b></p><ul>${p.decisions.map(d => `<li>${esc(d.id)} ${esc(d.title)}</li>`).join('')}</ul>` : ''}
+    <p><b>All tasks</b></p><ul>${p.leaves.map(task).join('')}</ul>`;
+  else {
+    const n = prsOf(p).get(Number(what));
+    if (!n) { el.hidden = true; return; }
+    body = `<h3><a href="${esc(n.url)}">#${n.number}</a> ${esc(n.title)}</h3>
+      <div class="mute">${esc(n.state)}${n.draft ? ' · draft' : ''} · by ${esc(n.author || data.me)}${n.stackedOn ? ` · stacked on #${n.stackedOn}` : ' · on main'}</div>
+      <p><b>${n.tasks.length} task${n.tasks.length > 1 ? 's' : ''}</b></p><ul>${n.tasks.map(task).join('')}</ul>`;
+  }
+  el.innerHTML = `<button class="x" id="px">Close</button>${body}`;
+  el.hidden = false;
+  document.getElementById('px').onclick = () => { sel = null; el.hidden = true; draw(); };
+}
+
+function draw() {
+  const live = data.projects.filter(p => p.teamworkTask && !['Archived', 'Complete'].includes(p.status));
+  const busy = live.filter(p => p.leaves.some(l => l.pr) || (p.progress.done && p.progress.done < p.progress.total))
     .sort((a, b) => rank(a) - rank(b) || b.leaves.filter(l => l.pr).length - a.leaves.filter(l => l.pr).length);
-  document.getElementById('meta').textContent = `${shown.length} active projects · planning and Teamwork read ${d.readAt ? new Date(d.readAt).toLocaleTimeString() : 'not yet'} (every 30 min)`;
-  document.getElementById('projects').innerHTML = shown.map(project).join('');
-  const by = {}; for (const pr of d.team || []) (by[pr.author] ||= []).push(pr);
-  document.getElementById('teamN').textContent = `${(d.team || []).length} PRs`;
-  document.getElementById('team').innerHTML = Object.entries(by).map(([a, ps]) => `<details><summary><b>${esc(a)}</b> <span class="mute">${ps.length}</span></summary><table>${ps.map(pr => `<tr><td>${esc(pr.title)}</td><td class="pr">${prCell(pr)}</td></tr>`).join('')}</table></details>`).join('') || '<div class="mute">none read yet</div>';
-  document.getElementById('loose').innerHTML = d.loose.map(pr => `<tr><td>${esc(pr.title)}</td><td class="pr">${prCell(pr)}</td></tr>`).join('') || '<tr><td class="mute">none</td></tr>';
+  const idle = live.filter(p => !busy.includes(p));
+  const prs = new Set(busy.flatMap(p => p.leaves.filter(l => l.pr).map(l => l.pr.number)));
+  document.getElementById('meta').textContent = `${busy.length} projects with open work · ${prs.size} open PRs · read ${data.readAt ? new Date(data.readAt).toLocaleTimeString() : 'not yet'}`;
+  document.getElementById('projects').innerHTML = busy.map(card).join('');
+  const row = (a, b) => `<div class="row"><span>${a}</span><span class="mute">${b}</span></div>`;
+  const prRow = pr => row(`<a href="${esc(pr.url)}">#${pr.number}</a> ${esc(pr.title)}`, `${pr.draft ? 'draft · ' : ''}${esc(pr.author || '')}`);
+  const byAuthor = {}; for (const pr of data.team || []) (byAuthor[pr.author] ||= []).push(pr);
+  document.getElementById('quiet').innerHTML = [
+    idle.length && `<details class="quiet"><summary>${idle.length} projects with nothing open</summary>${idle.map(p => row(`<a href="#" data-id="${esc(p.slug)}|project">${esc(p.title || p.slug)}</a>`, `${esc(p.stage || 'no stage')} · ${p.progress.done}/${p.progress.total} done`)).join('')}</details>`,
+    (data.loose || []).length && `<details class="quiet"><summary>Your other open PRs (${data.loose.length})</summary>${data.loose.map(prRow).join('')}</details>`,
+    (data.team || []).length && `<details class="quiet"><summary>The team's open PRs (${data.team.length})</summary>${Object.entries(byAuthor).map(([a, ps]) => `<div class="row"><b>${esc(a)}</b><span class="mute">${ps.length}</span></div>${ps.map(prRow).join('')}`).join('')}</details>`,
+  ].filter(Boolean).join('');
+  if (sel) panel(sel);
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-id]');
+  if (!t) return;
+  e.preventDefault(); sel = t.dataset.id; draw();
+});
+async function render() {
+  try { data = await (await fetch('/api/projects')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
+  data.me ??= null; draw();
 }
 render(); setInterval(render, 60000);
 </script>
