@@ -1,5 +1,5 @@
-// A stand-in for megamap's web/server.mjs (contract v1): answers under its prefix with the options it was given.
-export function createMegamapHandler(opts) {
+// A stand-in for megamap's web/server.mjs (contract v1): async like the real one, answers under its prefix with the options it was given.
+export async function createMegamapHandler(opts) {
   let closed = false;
   return {
     async handle(req, res) {

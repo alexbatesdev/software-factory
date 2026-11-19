@@ -38,7 +38,7 @@ export async function megamapMount(raw, { exists = existsSync, load = p => impor
     ...(!cfg.module || !exists(cfg.module) ? [`module: nothing at ${cfg.module}`] : []), ...(!cfg.binary || !exists(cfg.binary) ? [`binary: nothing at ${cfg.binary}`] : [])];
   if (!cfg.module || !exists(cfg.module) || !cfg.binary || !exists(cfg.binary) || !projects.length) return unavailable(prefix, missing.length ? missing : ['no project root exists']);
   try {
-    const h = (await load(cfg.module)).createMegamapHandler({ prefix, projects: projects.map(({ id, label, root }) => ({ id, label, root })), binary: cfg.binary, allowCapture: !!cfg.allowCapture });
+    const h = await (await load(cfg.module)).createMegamapHandler({ prefix, projects: projects.map(({ id, label, root }) => ({ id, label, root })), binary: cfg.binary, allowCapture: !!cfg.allowCapture });
     return { available: true, missing, projects, handle: (req, res) => h.handle(req, res), close: () => h.close() };
   } catch (e) { return unavailable(prefix, [...missing, `module failed to load: ${e.message}`]); }
 }
