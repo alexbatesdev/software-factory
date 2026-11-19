@@ -525,3 +525,17 @@ test('the deliverable inbox: a seat delivers, the dashboard lists it with its re
     assert.equal(f.store.state.deliverables['D-1'].archived.by, 'Alex (dashboard)');
   } finally { f.close(); }
 });
+
+test('a duplicate close never targets a record already closed or cancelled, so one of the pair stays open (W-576)', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'A' });
+    await f.act('local-head', 'create', { title: 'B' });
+    const [ok] = await f.act('triage board worker', 'absorb', { work: 'W-2', into: 'W-1' });
+    assert.equal(ok, 200);
+    const [code, body] = await f.act('triage board worker', 'absorb', { work: 'W-1', into: 'W-2' });
+    assert.equal(code, 409);
+    assert.match(body.error, /W-2 is cancelled/);
+    assert.equal(f.store.state.work['W-1'].phase !== 'cancelled', true, 'W-1 stays open');
+  } finally { f.close(); }
+});

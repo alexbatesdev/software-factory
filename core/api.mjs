@@ -13,7 +13,7 @@ import { reachesAlex } from './derive.mjs';
 import { supportOf, prGateView } from './store.mjs';
 import { decideTaskRequests, STUCK_MS } from './task-requests.mjs';
 import { decideAwsRequests } from './aws-access.mjs';
-import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval, DEFAULT_REPO } from './work.mjs';
+import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval, DEFAULT_REPO, TERMINAL } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor } from '../mcp/server.mjs';
 
@@ -98,6 +98,11 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     // An ack or a create names the calling seat, never a claimed name.
     if (['ack', 'create'].includes(action)) args = { ...args, by: seat };
     let cmds = commandsFor(action, args);
+    // A duplicate close points at a record that stays open: two seats closing a pair into each other cancelled both (W-576).
+    for (const c of cmds) {
+      const into = c.payload?.type === 'absorb' ? c.payload.into : c.payload?.type === 'withdraw' ? c.payload.duplicateOf : null;
+      if (into && TERMINAL.includes(s.work[into]?.phase)) return [409, { error: `${into} is ${s.work[into].phase}, so ${c.target} can't be closed as its duplicate. If ${c.target} carries the work, keep it open (and close ${into}'s duplicate the other way if needed).` }];
+    }
     // A ready triage is the review a "review by" hold asked for, so it settles it (W-539); a new reviewBy keeps one.
     if (tw && !args.reviewBy) cmds = [...cmds, ...(tw.externalDeps || []).filter(d => d.review && d.text !== args.releaseHold).map(d => ({ kind: 'event', target: args.work, payload: { type: 'hold_released', text: d.text } }))];
     // Acking a request also closes the seat's inbox message about it.
