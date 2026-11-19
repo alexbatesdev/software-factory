@@ -42,7 +42,7 @@ svg line { stroke: var(--mute); stroke-width: 2; opacity: .55; }
 </style>
 </head>
 <body>
-<header><h1>Projects</h1><span class="mute" id="meta">loading…</span><a href="/" class="mute">Board</a> <a href="/queue" class="mute">Queue</a>
+<header><h1>Projects</h1><label class="mute"><input type="checkbox" id="mineOnly"> just mine</label><span class="mute" id="meta">loading…</span><a href="/" class="mute">Board</a> <a href="/queue" class="mute">Queue</a>
   <span class="legend"><span><i style="background:var(--done)"></i>approval</span><span><i style="background:var(--wait)"></i>in review</span><span><i style="background:var(--work)"></i>building / open</span><span><i style="border:1.5px dashed var(--mute)"></i>draft</span></span></header>
 <div class="grid" id="projects"></div>
 <div id="quiet"></div>
@@ -147,20 +147,21 @@ function panel(id) {
 }
 
 function draw() {
-  const live = data.projects.filter(p => p.teamworkTask && !['Archived', 'Complete'].includes(p.status));
+  const mineOnly = document.getElementById('mineOnly').checked;
+  const live = data.projects.filter(p => p.teamworkTask && !['Archived', 'Complete'].includes(p.status) && (!mineOnly || p.mine));
   const busy = live.filter(p => p.leaves.some(l => l.pr) || (p.progress.done && p.progress.done < p.progress.total))
     .sort((a, b) => rank(a) - rank(b) || b.leaves.filter(l => l.pr).length - a.leaves.filter(l => l.pr).length);
   const idle = live.filter(p => !busy.includes(p));
   const prs = new Set(busy.flatMap(p => p.leaves.filter(l => l.pr).map(l => l.pr.number)));
-  document.getElementById('meta').textContent = `${busy.length} projects with open work · ${prs.size} open PRs · read ${data.readAt ? new Date(data.readAt).toLocaleTimeString() : 'not yet'}`;
+  document.getElementById('meta').textContent = `${mineOnly ? 'yours: ' : ''}${busy.length} project${busy.length === 1 ? '' : 's'} with open work · ${prs.size} open PR${prs.size === 1 ? '' : 's'} · read ${data.readAt ? new Date(data.readAt).toLocaleTimeString() : 'not yet'}`;
   document.getElementById('projects').innerHTML = busy.map(card).join('');
   const row = (a, b) => `<div class="row"><span>${a}</span><span class="mute">${b}</span></div>`;
   const prRow = pr => row(`<a href="${esc(pr.url)}">#${pr.number}</a> ${esc(pr.title)}`, `${pr.draft ? 'draft · ' : ''}${esc(pr.author || '')}`);
   const byAuthor = {}; for (const pr of data.team || []) (byAuthor[pr.author] ||= []).push(pr);
   document.getElementById('quiet').innerHTML = [
-    idle.length && `<details class="quiet"><summary>${idle.length} projects with nothing open</summary>${idle.map(p => row(`<a href="#" data-id="${esc(p.slug)}|project">${esc(p.title || p.slug)}</a>`, `${esc(p.stage || 'no stage')} · ${p.progress.done}/${p.progress.total} done`)).join('')}</details>`,
+    idle.length && `<details class="quiet"><summary>${idle.length} project${idle.length === 1 ? '' : 's'} with nothing open</summary>${idle.map(p => row(`<a href="#" data-id="${esc(p.slug)}|project">${esc(p.title || p.slug)}</a>`, `${esc(p.stage || 'no stage')} · ${p.progress.done}/${p.progress.total} done`)).join('')}</details>`,
     (data.loose || []).length && `<details class="quiet"><summary>Your other open PRs (${data.loose.length})</summary>${data.loose.map(prRow).join('')}</details>`,
-    (data.team || []).length && `<details class="quiet"><summary>The team's open PRs (${data.team.length})</summary>${Object.entries(byAuthor).map(([a, ps]) => `<div class="row"><b>${esc(a)}</b><span class="mute">${ps.length}</span></div>${ps.map(prRow).join('')}`).join('')}</details>`,
+    !mineOnly && (data.team || []).length && `<details class="quiet"><summary>The team's open PRs (${data.team.length})</summary>${Object.entries(byAuthor).map(([a, ps]) => `<div class="row"><b>${esc(a)}</b><span class="mute">${ps.length}</span></div>${ps.map(prRow).join('')}`).join('')}</details>`,
   ].filter(Boolean).join('');
   if (sel) panel(sel);
 }
@@ -174,6 +175,10 @@ async function render() {
   try { data = await (await fetch('/api/projects')).json(); } catch { document.getElementById('meta').textContent = 'factory unreachable; retrying'; return; }
   data.me ??= null; draw();
 }
+// "Just mine" is on unless this browser turned it off (a per-viewer convenience; storage can be unavailable).
+const mineBox = document.getElementById('mineOnly');
+try { mineBox.checked = localStorage.getItem('projects.mineOnly') !== 'false'; } catch { mineBox.checked = true; }
+mineBox.onchange = () => { try { localStorage.setItem('projects.mineOnly', String(mineBox.checked)); } catch {} if (data) draw(); };
 render(); setInterval(render, 60000);
 </script>
 </body>

@@ -153,3 +153,14 @@ test("a team PR read keeps author, branch, base and the Teamwork tasks its branc
   const [p] = await readTeamPrs(['app'], 'acme-org', async () => ({ stdout: JSON.stringify(rows) }));
   assert.deepEqual(p, { repo: 'app', url: PR(20), number: 20, title: 'Report column', author: 'casey-c', branch: 'casey/tw-111-reports', base: 'main', isDraft: false, tasks: ['111', '112'] });
 });
+
+test("a project is Alex's when he has a PR on it, the factory builds one of its tasks, or he owns it or is assigned to one of its tasks", () => {
+  const P = (over = {}) => ({ ...planning[0], ...over });
+  const tree = TREE.map(n => ({ ...n, assignees: ['Casey Example'] }));
+  const mine = (pl, ws = {}, pr = new Map(), t = tree) => buildProjects({ planning: [pl], trees: { 100: t }, works: ws, prs: pr, me: 'alex-gh', meName: 'Alex Example' }).projects[0].mine;
+  assert.equal(mine(P()), false, "someone else's project");
+  assert.equal(mine(P(), works), true, 'the factory has a record on one of its tasks');
+  assert.equal(mine(P(), {}, new Map([['app-8', { url: PR(8), number: 8, title: 't', branch: 'alex/tw-112-x', base: 'main', isDraft: false }]])), true, 'his own PR on a task');
+  assert.equal(mine(P(), {}, new Map(), TREE.map(n => ({ ...n, assignees: n.id === '102' ? ['Alex Example'] : [] }))), true, 'assigned to a task');
+  assert.equal(mine(P({ readme: { ...planning[0].readme, owner: 'Alex Example' } })), true, 'he owns it');
+});

@@ -137,7 +137,7 @@ function autoDispatchTick() {
   const s = store.state;
   const prs = { owner: config.githubOwner, prState: u => openPrs.get(u)?.state || null };
   // Projects phase B: a project's task carries whether its project is ready for it.
-  const built = buildProjects({ ...projectsRead, works: s.work, prs: ownPrs, me: config.githubLogin }).projects;
+  const built = buildProjects({ ...projectsRead, works: s.work, prs: ownPrs, me: config.githubLogin, meName: config.teamworkName }).projects;
   const gates = new Map(built.flatMap(p => p.leaves.filter(l => l.work).map(l => [l.work, { slug: p.slug, ...l.gate }])));
   // Phase C: a project task's notices point its supervisor at the plan the worker follows and the task's test plan.
   projectNotes = Object.fromEntries(built.flatMap(p => p.leaves.filter(l => l.work && p.factoryPlan).map(l => [l.work, projectNote(p, l, resolveSpec(s.work[l.work], specRead()))])));
@@ -235,7 +235,7 @@ async function projectsTick() {
   const teamPrs = await readTeamPrs(config.projects?.teamRepos || ['built-rails'], config.githubOwner).catch(e => { once(`team PRs: ${e.message}`); return projectsRead.teamPrs || []; });
   projectsRead = { planning, trees, teamPrs, readAt: now() };
   // Phase C: a planning job for each project the factory is about to work that has no plan on main yet.
-  if (config.projects?.planningJobs) for (const c of triageCreates(buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin }).projects, store.state.work, config.projects))
+  if (config.projects?.planningJobs) for (const c of triageCreates(buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin, meName: config.teamworkName }).projects, store.state.work, config.projects))
     try { const { id } = store.append({ kind: 'create', payload: c }, by('factory (projects)')); log(`planning job ${id}: ${c.title}`); } catch (e) { log(`planning job refused: ${e.message}`); }
   writeFileSync(PROJECTS_CACHE, JSON.stringify(projectsRead));
   log(`projects: ${planning.length} read, ${Object.keys(trees).length} trees`);
@@ -546,7 +546,7 @@ http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, gh: DRY ? 
   const git = await mainGit(repo);
   return !git || git('cat-file', '-e', `origin/main:${path}`).then(() => true, () => false);
 }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
-  observed: () => ({ specs: () => ({ ...specView(store.state, specRead()), readAt: projectsRead.readAt }), projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin }), readAt: projectsRead.readAt, me: config.githubLogin }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
+  observed: () => ({ specs: () => ({ ...specView(store.state, specRead()), readAt: projectsRead.readAt }), projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin, meName: config.teamworkName }), readAt: projectsRead.readAt, me: config.githubLogin }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
   .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
 
 // The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never

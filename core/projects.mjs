@@ -32,7 +32,7 @@ const stateOf = w => w.phase === 'done' ? 'done' : w.phase === 'cancelled' ? 'ca
  * @param prs Map(id → {url, number, title, branch, base, isDraft}) Alex's open PRs
  * @returns {projects, loose} loose: open PRs on no project's leaf
  */
-export function buildProjects({ planning, trees, works, prs, teamPrs = [], me = null }) {
+export function buildProjects({ planning, trees, works, prs, teamPrs = [], me = null, meName = null }) {
   const byTask = new Map(), byPr = new Map();
   for (const w of Object.values(works)) { const t = taskOf(w); if (t && !byTask.has(t)) byTask.set(t, w); if (w.links?.pr) byPr.set(w.links.pr, w); }
   const open = [...prs.values()], others = teamPrs.filter(p => p.author !== me && !open.some(o => o.url === p.url));
@@ -52,9 +52,13 @@ export function buildProjects({ planning, trees, works, prs, teamPrs = [], me = 
         work: w?.id || null, pr: prView(pr), testPlan: (pl.testPlans || []).includes(n.id), testPlanPath: pl.testPlanFiles?.[n.id] || null, gate: leafGate(pl, n.id) });
     } };
     if (tree) walk(root, []);
-    return { slug: pl.slug, title: pl.readme.title, stage: pl.readme.stage, status: pl.readme.status, owner: pl.readme.owner, teamworkTask: root,
+    const out = { slug: pl.slug, title: pl.readme.title, stage: pl.readme.stage, status: pl.readme.status, owner: pl.readme.owner, teamworkTask: root,
       reqs: pl.reqs, openDecisions: pl.openDecisions, decisions: (pl.decisions || []).map(d => ({ id: d.id, title: d.title })), treeRead: !!tree, factoryPlan: !!pl.factoryPlan,
       developers: [...new Set((tree || []).filter(n => !kids.has(n.id)).flatMap(n => n.assignees || []))], leaves, progress: { done: leaves.filter(l => l.state === 'done').length, total: leaves.length } };
+    // Alex's project (11-19, the page's "just mine"): his PR on a task, a factory record on one, or he owns it or is assigned.
+    const devs = new Set((tree || []).flatMap(n => n.assignees || []));
+    out.mine = leaves.some(l => l.work || (l.pr && l.pr.author === me)) || (!!meName && (pl.readme.owner === meName || devs.has(meName)));
+    return out;
   });
   // Phase D: the team's open PRs (not Alex's), by author, with their stacks. Read-only.
   const team = others.map(prView).sort((a, b) => a.author.localeCompare(b.author) || a.number - b.number);
