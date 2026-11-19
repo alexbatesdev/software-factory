@@ -69,7 +69,7 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
   const out = new Map();
   for (let i = 0; i < specs.length; i += 30) {
     const chunk = specs.slice(i, i + 30).map(x => x.split(':'));
-    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid body reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} refs: timelineItems(last:50,itemTypes:[CROSS_REFERENCED_EVENT]){nodes{... on CrossReferencedEvent{source{... on Issue{${ISSUE} subIssues(first:50){nodes{${ISSUE}}}}}}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url author{login}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state ${CONTEXTS}}}}}}}`).join(' ')}}`;
+    const q = `query{${chunk.map(([repo, n], j) => `p${j}: repository(owner:"${owner}",name:"${repo}"){pullRequest(number:${n}){baseRefName mergeable headRefOid body reviews(last:20,states:[CHANGES_REQUESTED]){nodes{id url author{login} commit{oid}}} comments(last:30){nodes{id url createdAt body author{login __typename}}} summaries: reviews(last:20,states:[COMMENTED]){nodes{id url submittedAt body author{login __typename}}} refs: timelineItems(last:50,itemTypes:[CROSS_REFERENCED_EVENT]){nodes{... on CrossReferencedEvent{source{... on Issue{${ISSUE} subIssues(first:50){nodes{${ISSUE}}}}}}}} reviewThreads(first:100){nodes{id isResolved comments(first:1){nodes{url body author{login __typename}}} last:comments(last:1){nodes{author{login}}}}} commits(last:1){nodes{commit{statusCheckRollup{state ${CONTEXTS}}}}}}}`).join(' ')}}`;
     const { data } = JSON.parse((await run('gh', ['api', 'graphql', '-f', `query=${q}`], { timeout: 30000, maxBuffer: 1 << 23 })).stdout);
     chunk.forEach(([repo, n], j) => {
       const p = data?.[`p${j}`]?.pullRequest; if (!p) return;
@@ -81,7 +81,7 @@ export async function readPrHealth(specs, owner, run = exec, me = null, since = 
       // unresolved thread whose last word isn't Alex's (workers reply from his account; only he resolves).
       const changesRequested = (p.reviews?.nodes || []).filter(r => by(r) !== me && r.commit?.oid === p.headRefOid).map(r => ({ id: r.id, by: by(r), url: r.url }));
       const threads = (p.reviewThreads?.nodes || []).filter(t => !t.isResolved && by(t.comments?.nodes?.[0]) !== me && by(t.last?.nodes?.[0]) !== me)
-        .map(t => ({ id: t.id, by: by(t.comments.nodes[0]), url: t.comments.nodes[0]?.url }));
+        .map(t => ({ id: t.id, by: by(t.comments.nodes[0]), url: t.comments.nodes[0]?.url, bot: isBot({ ...t.comments.nodes[0], body: t.comments.nodes[0]?.body || '' }) }));
       // Conversation comments and review summaries can't be resolved: anything another person (or a codex finding) said after
       // Alex last spoke counts. `since` keeps the first read from reopening records on old comments.
       const lastMine = [since, ...(p.comments?.nodes || []).filter(c => by(c) === me).map(c => c.createdAt)].sort().at(-1) || '';

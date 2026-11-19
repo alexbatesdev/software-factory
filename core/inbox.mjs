@@ -67,6 +67,12 @@ export function inboxCommands(state, cfg, fleet = null) {
     const own = rec && [rec.stream, rec.owner].find(x => x && x !== to && cfg.seats.includes(x));
     if (own) cmds.push(msg(own, q.work, { answers: id }, text));
   }
+  // W-595: a reviewer's blocker that joined a running round: its supervisor hears once, to fold it in now.
+  for (const w of Object.values(state.work)) for (const f of (w.findings || []).filter(f => f.status === 'open' && f.source?.joins)) {
+    const a = (w.assignments || []).find(x => x.id === f.source.joins), to = routeOf(w, cfg.supervisors), key = `${w.id}/${f.id}`;
+    if (!to || !a || !LIVE_ASSIGNMENT.includes(a.status) || told.has(`blocker:${key}`)) continue;
+    cmds.push(msg(to, w.id, { blocker: key }, `${w.id} ${a.id}: a reviewer's blocker ${f.id} arrived while ${a.id} runs: ${String(f.text).slice(0, 300)} Brief your worker to fold it into ${a.id} now. Its report answers ${f.id}, fixed or not, with the commit; settle ${f.id} (settle_finding) before recording ${a.id} done, since the factory refuses done while it's open.`));
+  }
   // The deliverable inbox (Alex 11-18): local-head hears of each new item once, so it can bring it to Alex.
   for (const d of Object.values(state.deliverables || {})) if (!d.archived && !told.has(`deliverable:${d.id}`))
     cmds.push(msg('local-head', d.work, { deliverable: d.id }, `New deliverable ${d.id} "${d.title}" from ${d.from} on ${d.work}: read it with the deliverables tool (id: ${d.id}) and tell Alex what it says; it's on the dashboard's Deliverables panel.`));

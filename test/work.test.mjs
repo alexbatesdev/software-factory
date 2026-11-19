@@ -909,3 +909,36 @@ test('a fixes job queued on a built PR waiting for approval moves it to fixes an
   const before = run({ ...readyPr(), phase: 'awaiting_human_approval' }, { type: 'assign', assignmentId: 'R9', kind: 'fixes', status: 'queued', evidence: 'x', ctx: { now: '2026-11-17T21:00:00.000Z', by: 'local-head' } });
   assert.deepEqual([before.phase === 'fixes', before.requests.filter(r => r.type === 'fixes').length], [false, 0], 'replayed from before the change: no round opened');
 });
+
+// W-595 (#8245): a reviewer's blocker arrived while R22/R23 ran on the record and waited ~19 h for R24.
+test("a reviewer's blocker joins the record's running round now, and that round can't be recorded done while it's open (W-595)", async () => {
+  const LATE = { now: '2026-11-20T01:00:00.000Z' }, H = 'aaa1111';
+  const found = reviewedAt('findings', [{ text: 'nil guard' }]);
+  const running = capRun(found, { type: 'assign', assignmentId: 'A1', kind: 'fixes', owner: 'sup: x', status: 'started', evidence: 'x', ctx: LATE });
+  const read = over => ({ head: H, conflict: false, failing: [], changesRequested: [], threads: [], ...over });
+  const blocked = observeHealth(running, read({ changesRequested: [{ id: 'PRR_9', by: 'jmcdonald-ut', url: 'u9' }] }), capCtx(LATE));
+  const f = blocked.findings.at(-1);
+  assert.equal(f.source.joins, 'A1', 'it joins the running round');
+  assert.match(blocked.updates.at(-1).text, new RegExp(`${f.id} joins the running A1`));
+  const a = blocked.assignments.at(-1);
+  assert.throws(() => capRun(blocked, { type: 'assignment_done', assignmentId: 'A1', expectedVersion: a.version, head: H, ctx: LATE }), new RegExp(`${f.id}.*open`));
+  const settled = capRun(blocked, { type: 'finding', findingId: f.id, status: 'resolved', note: 'fixed in bbb2222', ctx: LATE });
+  assert.doesNotThrow(() => capRun(settled, { type: 'assignment_done', assignmentId: 'A1', expectedVersion: a.version, head: H, ctx: LATE }));
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const told = inboxCommands({ work: { 'W-1': { ...blocked, stream: 'sup: x' } }, questions: {}, messages: {}, notifications: {} }, { supervisors: ['sup: x'], seats: [] }, null).cmds
+    .filter(c => c.payload.about?.blocker);
+  assert.deepEqual(told.map(c => [c.payload.to, c.payload.about.blocker]), [['sup: x', `W-1/${f.id}`]]);
+  assert.match(told[0].payload.text, /fold it into A1 now/);
+  // Not blockers: a bot's thread, CI, and anything from before the rule.
+  assert.equal(observeHealth(running, read({ threads: [{ id: 'T9', by: 'chatgpt-codex-connector', url: 'u', bot: true }] }), capCtx(LATE)).findings.at(-1).source.joins, undefined);
+  assert.equal(observeHealth(running, read({ failing: ['rspec'] }), capCtx(LATE)).findings.at(-1).source.joins, undefined);
+  assert.equal(observeHealth(running, read({ changesRequested: [{ id: 'PRR_9', by: 'x', url: 'u' }] }), capCtx()).findings.at(-1).source.joins, undefined);
+});
+
+test("a record with a reviewer's open blocker goes ahead of ordinary work, after hotfixes (W-595)", async () => {
+  const { queueOrder } = await import('../core/work.mjs');
+  const blocker = { status: 'open', source: { type: 'changes_requested', at: '2026-11-20T01:00:00.000Z' } };
+  const order = [{ id: 'W-1', priority: 3 }, { id: 'W-9', priority: 3, findings: [blocker] }, { id: 'W-12', priority: 3, links: { branch: 'hotfix/x' } }].sort(queueOrder).map(w => w.id);
+  assert.deepEqual(order, ['W-12', 'W-9', 'W-1']);
+  assert.deepEqual([{ id: 'W-1' }, { id: 'W-9', findings: [{ ...blocker, status: 'resolved' }] }].sort(queueOrder).map(w => w.id), ['W-1', 'W-9'], 'a settled blocker no longer counts');
+});

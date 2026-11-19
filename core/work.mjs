@@ -67,8 +67,12 @@ export function skipNotes(works, cfg = {}) {
 // Support work goes ahead of ordinary work (Alex, 11-09); priority 1 still cuts in first.
 // A production hotfix and its rounds go ahead of everything waiting, priority 1 included (W-591).
 // A hotfix: its PR targets production (w.hotfix, from the PR read), or before the PR, its branch is hotfix/….
+// W-595 (Alex 11-19): a human reviewer's blocker (changes requested, or a person's unresolved thread) joins the record's
+// running round, or puts the record ahead of ordinary work. Findings from before the rule never count.
+export const BLOCKER_FROM = '2026-11-20T00:00:00.000Z';
+export const isBlocker = f => f.status === 'open' && f.source?.at >= BLOCKER_FROM && (f.source.type === 'changes_requested' || (f.source.type === 'threads' && !!f.source.human));
 export const isHotfix = w => !!w.hotfix || /^hotfix\//.test(w.links?.branch || '');
-const rank = w => isHotfix(w) ? 0 : Math.min(w.priority ?? 3, w.support ? 2 : 3);
+const rank = w => isHotfix(w) ? 0 : (w.findings || []).some(isBlocker) ? 1 : Math.min(w.priority ?? 3, w.support ? 2 : 3);
 export const queueOrder = (a, b) => rank(a) - rank(b) || (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2));
 // A dependency counts as finished once its work is through internal review.
 export const SATISFIES_DEPS = ['ready_for_human', 'awaiting_human_approval', 'done'];
@@ -699,6 +703,8 @@ export function applyEvent(work, e, ctx) {
     }
     case 'assignment_done': {
       const a = currentAssignment(w, e.assignmentId, e.expectedVersion);
+      const held = w.findings.filter(f => f.status === 'open' && f.source?.joins === a.id);
+      if (held.length) fail(`${held.map(f => f.id).join(', ')} joined ${a.id} and ${held.length > 1 ? 'are' : 'is'} still open: answer each (settle_finding, resolved with the commit or accepted with why) before recording ${a.id} done (W-595).`);
       if (e.noChange) {
         // A regular check with no code deliverable finishes without an internal code review.
         if (!e.noChange.verifiedOn || !e.noChange.evidence) fail('A no-change close needs --verified-on <sha> and --evidence.');
@@ -978,7 +984,7 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
   for (const type of fresh) w.findings.push({ id: nextId(w.findings, 'F'), text: `${HEALTH_TEXT[type](head, failing, base)}${type === 'ci' && compared(failing) ? ` Compared with main test by test: ${compared(failing)}` : ''}`, severity: null, status: 'open', reviewHead: null, note: null, source: { type, head } });
   if (reviews.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.changes_requested(reviews), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'changes_requested', head, ids: reviews.map(r => r.id), at: ctx.now } });
   if (newComments.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.comments(newComments), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'comments', head, ids: newComments.map(c => c.id), at: ctx.now, quoted: newComments.some(c => c.text) || undefined } });
-  if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id), at: ctx.now } });
+  if (newThreads.length) w.findings.push({ id: nextId(w.findings, 'F'), text: FEEDBACK_TEXT.threads(newThreads), severity: null, status: 'open', reviewHead: null, note: null, source: { type: 'threads', head, ids: newThreads.map(t => t.id), at: ctx.now, human: newThreads.some(t => !t.bot) } });
   const said = [...fresh.map(t => t === 'ci' ? `CI red (${failing.join(', ')})` : `conflicts with ${base || 'main'}`),
     ...(mergeMain ? ['main is green again: merge it in'] : []), ...(bodyNew ? [`the PR body links Teamwork task(s) it doesn't complete (${foreign.join(', ')})`] : []), ...(reviews.length ? [`changes requested by ${[...new Set(reviews.map(r => r.by))].join(', ')}`] : []), ...(newThreads.length ? [`${newThreads.length} new unresolved thread(s)`] : []), ...(newComments.length ? [`${newComments.length} new comment(s)`] : [])];
   note(w, ctx, `GitHub at ${head.slice(0, 7)}: ${said.join('; ')}.`);
@@ -989,6 +995,11 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
     // A parked fixes job never reports done, so the open-findings request on done can't tell the supervisor (W-454).
     const live = liveAssignment(w);
     if (!live || parked(live)) requestFixes(w, { ...ctx, by: ctx.by || 'github' });
+  }
+  const running = liveAssignment(w);
+  if (running && !parked(running) && ['implementation', 'fixes'].includes(running.kind)) for (const f of w.findings.filter(f => isBlocker(f) && f.source.at === ctx.now && !f.source.joins)) {
+    f.source.joins = running.id;
+    note(w, ctx, `${f.id} joins the running ${running.id}: a reviewer's blocker. Its supervisor is told to fold it in now, and ${running.id} can't be recorded done while ${f.id} is open.`);
   }
   return normalize(w, ctx);
 }
