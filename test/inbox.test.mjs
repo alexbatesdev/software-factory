@@ -380,3 +380,16 @@ test("a hard stop tells the supervisor to park its running job at the next check
   s.append({ kind: 'message', payload: { to: S1, about: { recycled: 'box-1/t' }, text: 'recycled' } }, { now: '2026-11-18T01:00:00.000Z', by: 'factory' });
   assert.equal(stops().length, 1, 'told again on the next crossing');
 });
+
+test('a week-old message to a seat that is neither configured nor running expires, so it stops waking a seat that is gone (W-578)', async () => {
+  const { expiredMessages } = await import('../core/inbox.mjs');
+  const s = store({ work: {} }), old = { now: '2026-11-04T18:40:00.000Z', by: 'factory' };
+  s.append({ kind: 'message', payload: { to: 'Codex review dispatcher 2026-11-04', text: 'x' } }, old);
+  s.append({ kind: 'message', payload: { to: 'sup: s1', text: 'y' } }, old);
+  s.append({ kind: 'message', payload: { to: 'pr-1-trusted', text: 'z' } }, { now: '2026-11-19T18:00:00.000Z', by: 'factory' });
+  const ids = expiredMessages(s.state, { known: new Set(['sup: s1']), running: new Set(), nowMs: Date.parse('2026-11-19T20:00:00Z') });
+  assert.deepEqual(ids.map(id => s.state.messages[id].to), ['Codex review dispatcher 2026-11-04'], 'configured seats and fresh messages are left alone');
+  s.append({ kind: 'ack_message', target: ids[0], payload: { outcome: 'expired' } }, { now: '2026-11-19T20:00:00Z', by: 'factory (expired)' });
+  assert.equal(s.state.messages[ids[0]].outcome, 'expired');
+  assert.throws(() => s.append({ kind: 'ack_message', target: 'M-2', payload: { outcome: 'received' } }, { now: '2026-11-19T20:00:00Z', by: 'factory (expired)' }), /only that seat acks it/, 'the factory only expires, it never acks for a seat');
+});

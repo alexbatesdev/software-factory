@@ -201,3 +201,8 @@ export function inboxCommands(state, cfg, fleet = null) {
   if (hour && changed && !told.has(`checkIn:${hour}`)) cmds.push(msg(cfg.checkIn.seat, null, { checkIn: hour }, `Hourly check-in ${hour}:00Z: run your role file's check-in, file what you find as factory records, then ack this message.`));
   return { cmds, watches };
 }
+
+/** Unacked messages over `days` old to a seat neither configured nor running: retired seats, so they expire (W-578). */
+export function expiredMessages(state, { known, running, nowMs, days = 7 }) {
+  return Object.values(state.messages).filter(m => !m.ackedAt && !known.has(m.to) && !running.has(m.to) && nowMs - Date.parse(m.at) > days * 86400000).map(m => m.id);
+}

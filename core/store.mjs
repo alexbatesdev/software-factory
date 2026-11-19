@@ -95,7 +95,8 @@ function foldMessage(state, { kind, target, payload, ctx }) {
     return id;
   }
   const m = state.messages[target] || (() => { throw new Error(`There is no message ${target}.`); })();
-  if (ctx.by !== m.to) throw new Error(`${target} is addressed to ${m.to}; only that seat acks it.`);
+  // The factory may only expire a message to a seat that is gone (W-578); every real ack is the addressee's.
+  if (ctx.by !== m.to && !(ctx.by === 'factory (expired)' && payload.outcome === 'expired')) throw new Error(`${target} is addressed to ${m.to}; only that seat acks it.`);
   if (!m.ackedAt) state.messages[target] = { ...m, ackedAt: ctx.now, ackedBy: ctx.by, outcome: payload.outcome || 'received' };
   return target;
 }

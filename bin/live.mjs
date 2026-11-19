@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto';
 import { projectPrs, projectTasks, headCommands, ancestryWanted, healthCommands, recordPrKey, taskIdOf, projectCommands, auditMissed } from '../core/observe.mjs';
 import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
-import { inboxCommands } from '../core/inbox.mjs';
+import { inboxCommands, expiredMessages } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan, busyStreams } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
@@ -183,6 +183,9 @@ async function inboxTick() {
   ingestInbox();
   autoDispatchTick();
   const seats = [...supervisors, config.routing.questionsRouter, ...Object.keys(config.roles || {}), ...(config.factory?.seats || []).map(s => s.label)];
+  // W-578: a week-old message to a seat that is neither configured nor running (a retired pane) expires instead of waking it forever.
+  if (fleet) for (const id of expiredMessages(store.state, { known: new Set([...seats, ...seatsOf(config).map(x => x.label), LEAD]), running: new Set([...(fleet.others || []), ...fleet.units.flatMap(u => [u.supervisor, u.worker])].filter(Boolean).map(a => a.label)), nowMs: Date.now() }))
+    try { store.append({ kind: 'ack_message', target: id, payload: { outcome: 'expired' } }, by('factory (expired)')); log(`expired ${id} (to ${store.state.messages[id].to}): that seat is gone`); } catch (e) { once(`expire ${id}: ${e.message}`); }
   const since = store.state.legacy.notifier?.activatedAt;
   const checkIn = config.boardLead?.checkIn !== false ? { seat: LEAD, now: now() } : null;
   const triage = { seat: LEAD, since: LIVE_SINCE };
