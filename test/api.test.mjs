@@ -539,3 +539,19 @@ test('a duplicate close never targets a record already closed or cancelled, so o
     assert.equal(f.store.state.work['W-1'].phase !== 'cancelled', true, 'W-1 stays open');
   } finally { f.close(); }
 });
+
+test('an MCP session older than a read tool still gets it: the server answers read tools posted as actions (W-585)', async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'Look into the gap' });
+    await f.act(S1, 'deliver', { work: 'W-1', title: 'Findings', text: '# Gap\nIt is the import.' });
+    for (const seat of ['local-head', S1]) {
+      const [code, list] = await f.act(seat, 'deliverables', { work: 'W-1' });
+      assert.equal(code, 200, `${seat}: ${JSON.stringify(list)}`);
+      assert.deepEqual(list.map(d => [d.id, d.title, d.chars]), [['D-1', 'Findings', 23]]);
+      assert.equal((await f.act(seat, 'deliverables', { id: 'D-1' }))[1].text, '# Gap\nIt is the import.');
+      assert.equal((await f.act(seat, 'read', { work: 'W-1' }))[1].title, 'Look into the gap');
+    }
+    assert.equal((await f.act('some pane', 'deliverables', {}))[0], 403, 'a seat without the tool is refused');
+  } finally { f.close(); }
+});

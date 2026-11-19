@@ -15,7 +15,7 @@ import { decideTaskRequests, STUCK_MS } from './task-requests.mjs';
 import { decideAwsRequests } from './aws-access.mjs';
 import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval, DEFAULT_REPO, TERMINAL } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
-import { toolsFor } from '../mcp/server.mjs';
+import { toolsFor, readTool, READ_TOOLS } from '../mcp/server.mjs';
 
 const PAGE = new URL('../views/index.html', import.meta.url), PROJECTS_PAGE = new URL('../views/projects.html', import.meta.url), QUEUE_PAGE = new URL('../views/queue.html', import.meta.url);
 const VENDOR = ['marked-12.0.2.min.js', 'purify-3.1.6.min.js'];
@@ -244,6 +244,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
         if (req.headers['x-factory'] !== '1') return send(res, 403, { error: 'Missing x-factory header.' });
         if (readOnly) return send(res, 405, { error: 'This factory is read-only (shadow mode).' });
         const { action, args = {} } = await readBody(req);
+        if (READ_TOOLS.includes(action)) return toolsFor(roleOf(config, seat)).some(t => t.name === action) ? send(res, 200, readTool(store.state, action, args)) : send(res, 403, { error: `${seat} has no ${action} tool.` });
         return send(res, ...await act(seat, action, args));
       }
       return send(res, 404, { error: 'not found' });

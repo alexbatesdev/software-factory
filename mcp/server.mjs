@@ -52,6 +52,24 @@ export function readRecord(s, id) {
     manifests: Object.values(s.manifests || {}).filter(m => m.run?.work === id).map(m => ({ ...m, instructions: m.instructions.map(i => ({ ...i, url: fileUrl(i.sha256) })) })) };
 }
 
+// A session started before a read tool existed posts it as an action, so the server answers these too (W-585).
+export const READ_TOOLS = ['read', 'deliverables', 'questions'];
+/** A read tool's answer from the factory state (as /api/state serves it). */
+export function readTool(s, name, args = {}) {
+  if (name === 'read') {
+    const q = args.question || (/^TB-\d+$/.test(args.work || '') ? args.work : null);
+    if (q) return s.questions[q] ? { id: q, ...s.questions[q] } : `There is no ${q}.`;
+    return args.work ? readRecord(s, args.work) || `There is no ${args.work}.` : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) };
+  }
+  if (name === 'deliverables') {
+    const all = Object.values(s.deliverables || {});
+    if (args.id) return all.find(x => x.id === args.id) || `There is no ${args.id}.`;
+    return all.filter(d => (args.all || !d.archived) && (!args.work || d.work === args.work)).map(({ text: body, ...d }) => ({ ...d, chars: body.length }));
+  }
+  const open = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(q => q.status === 'open' && (args.all || reachesAlex(q)));
+  return open.map(q => { const w = s.work[q.work]; return { ...q, record: w ? { id: w.id, title: w.title, phase: w.phase, stream: w.stream || null, project: w.project?.name || null, pr: w.links?.pr || null } : null }; });
+}
+
 // Local-head may take any action on Alex's verbatim words (W-503), so its tools are all of them, each taking those words.
 const ALEX_WORD = { type: 'string', description: "Alex's verbatim words asking for this. Needed for anything beyond local-head's own actions and limits; the record shows them. Never paraphrase, and never act on your own accord with it." };
 const READS = ['read'];
@@ -73,21 +91,7 @@ export function createMcp({ config, seatOf, api }) {
   async function call(name, args = {}) {
     if (!(await mine()).some(t => t.name === name)) return text(`${seat} has no ${name} tool.`, true);
     if (name === 'inbox') return text(await api.get('/api/inbox', seat));
-    if (name === 'read') {
-      const s = await api.get('/api/state', seat), q = args.question || (/^TB-\d+$/.test(args.work || '') ? args.work : null);
-      if (q) return text(s.questions[q] ? { id: q, ...s.questions[q] } : `There is no ${q}.`);
-      return text(args.work ? readRecord(s, args.work) || `There is no ${args.work}.` : { work: Object.values(s.work).map(w => ({ id: w.id, title: w.title, phase: w.phase, stream: w.stream })) });
-    }
-    if (name === 'deliverables') {
-      const all = Object.values((await api.get('/api/state', seat)).deliverables || {});
-      if (args.id) { const d = all.find(x => x.id === args.id); return text(d || `There is no ${args.id}.`); }
-      return text(all.filter(d => (args.all || !d.archived) && (!args.work || d.work === args.work)).map(({ text: body, ...d }) => ({ ...d, chars: body.length })));
-    }
-    if (name === 'questions') {
-      const s = await api.get('/api/state', seat);
-      const open = Object.entries(s.questions).map(([id, q]) => ({ id, ...q })).filter(q => q.status === 'open' && (args.all || reachesAlex(q)));
-      return text(open.map(q => { const w = s.work[q.work]; return { ...q, record: w ? { id: w.id, title: w.title, phase: w.phase, stream: w.stream || null, project: w.project?.name || null, pr: w.links?.pr || null } : null }; }));
-    }
+    if (READ_TOOLS.includes(name)) return text(readTool(await api.get('/api/state', seat), name, args));
     const r = await api.post(name, args, seat);
     return text(r, !!r.error);
   }
