@@ -45,3 +45,17 @@ export async function megamapMount(raw, { exists = existsSync, load = p => impor
 
 /** The configured megamap project for a record's repo (no repo: the default one), or null. */
 export const projectFor = (cfg, w, defaultRepo = 'built-rails') => (cfg?.projects || []).find(p => p.repo === (w.repo || defaultRepo)) || null;
+
+/** A mount that, while unavailable, tries again on a /megamap/ request at most every `everyMs`, so installing needs no restart. */
+export async function retryingMount(raw, { mount = megamapMount, clock = Date.now, everyMs = 30000, log = () => {} } = {}) {
+  let m = await mount(raw), at = clock();
+  const prefix = raw?.prefix || PREFIX;
+  return {
+    get available() { return !!m?.available; }, get missing() { return m?.missing || []; }, get projects() { return m?.projects || []; },
+    async handle(req, res) {
+      if (m && !m.available && under(req, prefix) && clock() - at >= everyMs) { at = clock(); m = await mount(raw); if (m?.available) log(`megamap: mounted at ${prefix}/ (${m.projects.map(p => p.id).join(', ')})`); }
+      return m ? m.handle(req, res) : false;
+    },
+    async close() { await m?.close(); },
+  };
+}

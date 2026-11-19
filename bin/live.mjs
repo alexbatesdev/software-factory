@@ -52,7 +52,7 @@ import { usageDue, costOf, sumTokens } from '../core/usage.mjs';
 import { autoMergePlan } from '../core/automerge.mjs';
 import { readHostUsage } from '../hosts/usage.mjs';
 import { missedMs, freshPool } from '../hosts/net.mjs';
-import { megamapMount } from '../hosts/megamap.mjs';
+import { retryingMount } from '../hosts/megamap.mjs';
 import { checkConfig } from '../core/preflight.mjs';
 import { ROLES } from '../core/capabilities.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
@@ -537,7 +537,7 @@ async function mainGit(repo) {
 }
 
 // W-574: the megamap viewer, optional; a missing install is an "unavailable" page, never a failed boot.
-const megamap = await megamapMount(config.megamap).catch(e => { log(`megamap: ${e.message}`); return null; });
+const megamap = config.megamap ? await retryingMount(config.megamap, { log }).catch(e => { log(`megamap: ${e.message}`); return null; }) : null;
 if (megamap) log(`megamap: ${megamap.available ? `mounted at /megamap/ (${megamap.projects.map(p => p.id).join(', ')})` : `unavailable: ${megamap.missing.join('; ')}`}`);
 http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, mounts: [megamap].filter(Boolean), gh: DRY ? null : liveGh, tw: DRY ? null : { createTask, getTask, findTask }, onMain: async (repo, m) => {
   // W-435: is this line of code in this file at this commit, and is that commit on origin/main?

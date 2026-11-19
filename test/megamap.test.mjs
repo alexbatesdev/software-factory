@@ -82,3 +82,19 @@ test('configured paths may start with ~/, expanded on this host', async () => {
   const m = await megamapMount({ module: '~/definitely-not-here/server.mjs', binary: bin, projects: [{ id: 'app', label: 'App', root: dir, repo: 'app' }] });
   assert.match(m.missing.join(), new RegExp(`module: nothing at ${homedir()}/definitely-not-here/server.mjs`));
 });
+
+test('an unavailable mount picks the module up once it is installed, on a later request, with no factory restart', async () => {
+  const { retryingMount } = await import('../hosts/megamap.mjs');
+  let now = 0, installed = false;
+  const mount = async () => installed ? megamapMount(cfg()) : megamapMount(cfg({ module: `${dir}/not-yet.mjs` }));
+  const r = await retryingMount(cfg(), { mount, clock: () => now, everyMs: 30000 });
+  const f = await serve(r);
+  try {
+    assert.equal((await fetch(`${f.base}/megamap/`)).status, 503);
+    installed = true;
+    assert.equal((await fetch(`${f.base}/megamap/`)).status, 503, 'not re-checked within 30 s');
+    now = 31000;
+    assert.equal((await fetch(`${f.base}/megamap/api/config`)).status, 200, 'mounted once installed');
+    assert.equal(r.available, true);
+  } finally { f.close(); await r.close(); }
+});
