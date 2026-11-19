@@ -51,6 +51,7 @@ import { outcomes, outcomesMarkdown, codexSinceOf } from '../core/outcomes.mjs';
 import { usageDue, costOf, sumTokens } from '../core/usage.mjs';
 import { autoMergePlan } from '../core/automerge.mjs';
 import { readHostUsage } from '../hosts/usage.mjs';
+import { missedMs, freshPool } from '../hosts/net.mjs';
 import { checkConfig } from '../core/preflight.mjs';
 import { ROLES } from '../core/capabilities.mjs';
 import { gh as liveGh, reviewState, requestReview } from '../effects/github.mjs';
@@ -704,6 +705,12 @@ every(60000, duplicateTick);
 every(60000, manifestTick);
 if (BACKUP) every(BACKUP.everyMs, backupTick); else log('backups are off (config.backup.enabled is false)');
 every(60000, seatRestartTick);
+// W-568: a heartbeat far past due means the Mac slept; its pooled connections are dead, so the server takes a fresh pool.
+let beatAt = Date.now();
+setInterval(() => {
+  const n = Date.now(), gap = missedMs(beatAt, n, 30000); beatAt = n;
+  if (gap) log(`the Mac was asleep about ${Math.round(gap / 60000)} min; ${freshPool() ? 'fresh network pool taken' : 'no network pool to refresh'} (W-568)`);
+}, 30000);
 // W-564: GitHub auto-merge for small, quick fixes: our PRs on main with no project or hold, ready after the internal review.
 // GitHub's ruleset decides when they merge. Off in config until Alex's rule text lands; until then decisions log as "would".
 const AM = { enabled: false, repos: ['built-rails'], ...config.autoMerge };
