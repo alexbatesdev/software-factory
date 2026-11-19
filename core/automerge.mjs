@@ -5,6 +5,8 @@
 // Alex's usual two-approval merge.
 import { sameSha } from './work.mjs';
 
+export const MAX_FILES = 10, MAX_LINES = 300;
+
 /** Why this record's PR doesn't get auto-merge, or null when it does. */
 function blocker(w, p, { me, spec }) {
   if (p.state !== 'OPEN') return 'not open';
@@ -17,6 +19,9 @@ function blocker(w, p, { me, spec }) {
   if (s.status !== 'no spec') return s.slug ? `tied to project ${s.slug}` : `its project is ${s.status}`;
   if (w.waitingOn || (w.externalDeps || []).length) return 'a hold is on the record';
   if (p.reviewDecision === 'CHANGES_REQUESTED') return 'changes requested';
+  // Small means at most 10 files and 300 changed lines (additions plus deletions), Alex 11-18; bigger keeps the usual merge.
+  const lines = (p.additions || 0) + (p.deletions || 0);
+  if (p.changedFiles > MAX_FILES || lines > MAX_LINES) return `larger than a small fix (${p.changedFiles} files, ${lines} changed lines; the limit is ${MAX_FILES} and ${MAX_LINES}): it keeps the usual merge`;
   return null;
 }
 

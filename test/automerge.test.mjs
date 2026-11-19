@@ -60,3 +60,13 @@ test("auto-merge someone else turned off stays off: the factory turned it on onc
   const off = { at: '2026-11-18T22:25:00Z', by: 'factory (auto-merge)', text: `GitHub auto-merge turned off for ${URL}: a hold is on the record (W-564).` };
   assert.equal(plan(rec({ updates: [on, off] }), pr())[0].action, 'enable', 'after the factory itself turned it off, it may turn it on again');
 });
+
+test('only a small fix gets auto-merge: over 10 files or 300 changed lines keeps the usual merge, and loses auto-merge if it has it (Alex 11-18)', () => {
+  const x = plan(rec(), pr({ changedFiles: 8, additions: 400, deletions: 61 }));
+  assert.equal(x[0]?.action ?? 'none', 'none');
+  assert.match(x[0].reason, /461 changed lines/);
+  assert.match(plan(rec(), pr({ changedFiles: 11, additions: 10, deletions: 0 }))[0].reason, /11 files/);
+  assert.equal(plan(rec(), pr({ changedFiles: 10, additions: 200, deletions: 100 }))[0].action, 'enable', 'at the limit is small');
+  assert.equal(plan(rec(), pr({ changedFiles: 25, additions: 900, deletions: 117, autoMerge: true }))[0].action, 'disable');
+  assert.equal(plan(rec(), pr({}))[0].action, 'enable', 'a size not read yet does not hold it');
+});
