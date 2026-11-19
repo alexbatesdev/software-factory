@@ -14,7 +14,7 @@ export function parseFooter(text) {
 }
 
 // W-569: an agent whose login expired sits idle at this line, and every notice typed into it changes nothing.
-const LOGIN = /Please run \/login|Login reached its time limit|Opening browser to sign in|OAuth token (has )?expired|Invalid API key|Not logged in|sbx login|codex login/i;
+const LOGIN = /Please run \/login|Login reached its time limit|Opening browser to sign in|OAuth token (has )?expired|Invalid API key|Not logged in|sbx login|codex login|Sign in with ChatGPT|Welcome to Codex/i;
 /** The pane line asking for a login, or null. */
 export function loginPrompt(text) {
   return String(text || '').split('\n').map(l => l.trim()).filter(Boolean).reverse().find(l => LOGIN.test(l)) || null;

@@ -187,6 +187,20 @@ const sbxPut = sandbox => (path, text) => new Promise((resolve, reject) => {
   p.stdin.end(text);
 });
 
+// A credential file: written owner-only, its content over stdin so it never shows in a command line or a log.
+const sbxPutSecret = sandbox => (path, text) => new Promise((resolve, reject) => {
+  const p = execFile('sbx', ['exec', '-i', sandbox, 'sh', '-c', `umask 077 && mkdir -p "$(dirname ${path})" && cat > ${path}`], { timeout: 60000 }, e => e ? reject(e) : resolve());
+  p.stdin.end(text);
+});
+const CODEX_AUTH = '/home/agent/.codex/auth.json';
+/** W-570: a recycled Codex sandbox keeps its sign-in. `from` reads the old sandbox's auth (held in memory only), `to` writes it into the fresh one. */
+export async function carryCodexLogin(from, to) {
+  const auth = await from();
+  if (!String(auth || '').trim()) return false;
+  await to(auth);
+  return true;
+}
+
 const sbxRead = sandbox => path => run('sbx', ['exec', sandbox, 'cat', path], { timeout: 60000 }).then(r => r.stdout, () => '');
 
 /**
@@ -313,6 +327,8 @@ export async function restart(worker, want = null) {
 export async function recycle(worker, log = () => {}) {
   const line = await bridgeLine(worker);
   if (!(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit; nothing removed' };
+  // The old sandbox's own Codex sign-in, kept in memory across the rebuild (W-570).
+  const codexAuth = worker.agent === 'codex' ? await sbxRead(worker.sandbox)(CODEX_AUTH) : '';
   log(`recycle ${worker.label}: agent exited; removing ${worker.sandbox}`);
   await run('sbx', ['rm', '--force', worker.sandbox], { timeout: 300000 });
   await herdr('pane', 'run', worker.ref, line);
@@ -324,8 +340,9 @@ export async function recycle(worker, log = () => {}) {
     if (new RegExp(`^${worker.sandbox}\\s+\\S+\\s+running`, 'm').test(stdout) && !(await atShell(worker))) {
       // The fresh VM has no ~/.claude of Alex's; the running session picks the hook up from its settings file.
       const hook = await restoreBaseline(worker.sandbox, worker.agent).then(() => 'baseline restored', e => `baseline NOT restored: ${e.message}`);
-      // A fresh VM has no Codex login, and Codex reads its config only at start.
-      if (worker.agent === 'codex') return { ok: true, detail: `${worker.sandbox} recreated; ${hook}. Codex needs Alex: bin/sbx-codex-login ${worker.sandbox} from built-rails-a, then a restart to load its board tools` };
+      // A fresh VM has no Codex login: the old sandbox's carries over; without one, Alex signs it in (the login check raises it).
+      if (worker.agent === 'codex' && !(await carryCodexLogin(async () => codexAuth, auth => sbxPutSecret(worker.sandbox)(CODEX_AUTH, auth)).catch(() => false)))
+        return { ok: true, detail: `${worker.sandbox} recreated; ${hook}. Codex needs Alex: bin/sbx-codex-login ${worker.sandbox} from built-rails-a, then a restart to load its board tools` };
       // ...but its MCP servers and skills only at start, and this one started before the baseline went in (W-444).
       const fresh = await restart(worker).catch(e => ({ ok: false, detail: e.message }));
       return { ok: true, detail: `${worker.sandbox} recreated; ${hook}; ${fresh.ok ? 'agent restarted to load its board tools and skills' : `agent NOT restarted, so it has no board tools until its next restart: ${fresh.detail}`}` };

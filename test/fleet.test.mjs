@@ -78,3 +78,8 @@ test('local-head hears once a day which seat needs a login, with the line its pa
   for (const c of first) s.append(c, { now: '2026-11-19T04:00:00Z', by: 'factory' });
   assert.deepEqual(msgs(), []);
 });
+
+test("Codex's first-run sign-in screen counts as needing a login (W-570)", async () => {
+  const { loginPrompt } = await import('../fleet/status.mjs');
+  assert.match(loginPrompt('  Welcome to Codex\n  Choose how you want to use Codex.\n  1. Sign in with ChatGPT\n  2. Provide your own API key'), /Sign in with ChatGPT|Welcome to Codex/);
+});

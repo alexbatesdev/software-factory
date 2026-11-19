@@ -269,3 +269,12 @@ test('past the hard stop, a running job is named so its supervisor can park it a
   assert.equal(at(0.85).size, 0, 'between the thresholds only the drain applies');
   assert.equal(at(0.95, { 'W-9': { ...running['W-9'], assignments: [{ id: 'R3', status: 'blocked', waitingOn: 'disk' }] } }).size, 0, 'already parked');
 });
+
+test("a recycled Codex sandbox keeps its sign-in: the old sandbox's own auth goes into the fresh one, nowhere else (W-570)", async () => {
+  const { carryCodexLogin } = await import('../hosts/sbx.mjs');
+  const written = [];
+  assert.equal(await carryCodexLogin(async () => '{"tokens":"t"}', async text => written.push(text)), true);
+  assert.deepEqual(written, ['{"tokens":"t"}']);
+  assert.equal(await carryCodexLogin(async () => '', async text => written.push(text)), false, 'nothing to carry: Alex signs it in, and the login check raises it');
+  assert.equal(written.length, 1);
+});
