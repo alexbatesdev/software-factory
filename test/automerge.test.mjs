@@ -70,3 +70,26 @@ test('only a small fix gets auto-merge: over 10 files or 300 changed lines keeps
   assert.equal(plan(rec(), pr({ changedFiles: 25, additions: 900, deletions: 117, autoMerge: true }))[0].action, 'disable');
   assert.equal(plan(rec(), pr({}))[0].action, 'enable', 'a size not read yet does not hold it');
 });
+
+test("a merge hold (waiting on product's answer) keeps auto-merge off and turns it off if on, without holding the record's work (W-572)", async () => {
+  const held = rec({ mergeHold: { why: 'product question to Casey on the PR', at: 't', by: 'factory-developer' } });
+  assert.match(plan(held, pr())[0].reason, /merge hold: product question to Casey/);
+  assert.equal(plan(held, pr())[0].action, null);
+  assert.equal(plan(held, pr({ autoMerge: true }))[0].action, 'disable');
+  const { autoDispatchPlan } = await import('../core/dispatch.mjs');
+  const S = 'sup: s1', job = { id: 'W-1', title: 'x', phase: 'fixes', priority: 3, stream: S, owner: S, streamPin: { by: 't' }, openQuestions: 0, openDeps: [], externalDeps: [], links: {}, head: 'h1',
+    mergeHold: held.mergeHold, assignments: [{ id: 'R1', kind: 'implementation', status: 'done' }], requests: [{ id: 'R5', type: 'fixes', ack: null, head: 'h1', delivery: 'pending' }] };
+  assert.equal(autoDispatchPlan([job], { supervisors: { [S]: {} } })[0].action, 'deliver', 'its fixes round still goes out');
+});
+
+test('a merge hold is set and released by an event, each noted on the record (W-572)', async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const { commandsFor } = await import('../core/actions.mjs');
+  const s = openStore(':memory:', { supervisors: [] }), c = by => ({ now: '2026-11-19T18:30:00Z', by });
+  s.append({ kind: 'create', payload: { title: 'x' } }, c('t'));
+  for (const cmd of commandsFor('merge_hold', { work: 'W-1', why: 'waiting on product (Casey) on the PR' })) s.append(cmd, c('factory-developer'));
+  assert.equal(s.state.work['W-1'].mergeHold.why, 'waiting on product (Casey) on the PR');
+  for (const cmd of commandsFor('merge_hold', { work: 'W-1', why: 'Casey answered: ship it', release: true })) s.append(cmd, c('local-head'));
+  assert.equal(s.state.work['W-1'].mergeHold, null);
+  assert.match(s.state.work['W-1'].updates.at(-1).text, /Merge hold released: Casey answered/);
+});

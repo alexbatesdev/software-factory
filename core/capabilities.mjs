@@ -1,5 +1,5 @@
 // What each role may do on the board. Role files (~/Code/.claude/agents) say how to behave; this table decides what is allowed.
-export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws', 'approve_pr', 'deliver', 'archive_deliverable'];
+export const ACTIONS = ['read', 'ack', 'assign', 'progress', 'done', 'review', 'await_approval', 'ask', 'answer', 'route', 'create', 'set_owner', 'message', 'prioritize', 'triage', 'absorb', 'resolve', 'verify', 'cancel', 'settle_finding', 'withdraw', 'resolve_thread', 'propose_task', 'relate', 'request_aws', 'approve_pr', 'deliver', 'archive_deliverable', 'merge_hold'];
 
 /** The two factory roles other code names (Alex 11-17: the factory, not a board). */
 export const LEAD_ROLE = 'factory-lead', DEVELOPER_ROLE = 'factory-developer';

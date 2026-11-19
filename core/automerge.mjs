@@ -18,6 +18,7 @@ function blocker(w, p, { me, spec }) {
   const s = spec(w);
   if (s.status !== 'no spec') return s.slug ? `tied to project ${s.slug}` : `its project is ${s.status}`;
   if (w.waitingOn || (w.externalDeps || []).length) return 'a hold is on the record';
+  if (w.mergeHold) return `merge hold: ${w.mergeHold.why}`;
   if (p.reviewDecision === 'CHANGES_REQUESTED') return 'changes requested';
   // Small means at most 10 files and 300 changed lines (additions plus deletions), Alex 11-18; bigger keeps the usual merge.
   const lines = (p.additions || 0) + (p.deletions || 0);

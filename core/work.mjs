@@ -820,6 +820,14 @@ export function applyEvent(work, e, ctx) {
       note(w, ctx, `Related to ${e.to} (${e.kind || 'same-work'})${e.evidence ? `: ${e.evidence}` : ''}.`);
       break;
     }
+    case 'merge_hold': {
+      // A hold on merging only (W-572: waiting on product's answer): auto-merge stays off; the record's work still flows.
+      if (!e.why) fail('A merge hold names why (and, to release it, the answer).');
+      if (e.release) { if (!w.mergeHold) fail(`${w.id} has no merge hold.`); w.mergeHold = null; note(w, ctx, `Merge hold released: ${e.why}`); break; }
+      w.mergeHold = { why: e.why, at: ctx.now, by: ctx.by };
+      note(w, ctx, `Merge hold: ${e.why}. Auto-merge stays off until it is released.`);
+      break;
+    }
     case 'wait': {
       // Work that waits on someone outside this flow (e.g. a QA owner). Not an Alex decision, not done.
       if (e.clear) { if (!w.waitingOn) fail(`${w.id} isn't waiting on anyone.`); if (!e.evidence) fail('Clearing a wait needs evidence.'); note(w, ctx, `No longer waiting on ${w.waitingOn.who}. Evidence: ${e.evidence}.`); w.waitingOn = null; break; }
