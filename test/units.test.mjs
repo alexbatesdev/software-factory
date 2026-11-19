@@ -175,3 +175,45 @@ test('a record parked with waitingOn a PR is released when it merges and reporte
   assert.deepEqual(r.waitsMerged, [{ id: 'W-422', pr: '#8722', to: 'sup: stream-2' }]);
   assert.deepEqual(holdReleases(works, 'acme-org', u => u === url ? 'CLOSED' : null).waitsClosed, [{ id: 'W-422', pr: '#8722', to: 'sup: stream-2' }]);
 });
+
+test("a job parked for its stream's disk recycle clears once the recycled notice comes after the park, and resumes ahead of other parked work (W-571)", async () => {
+  const { autoDispatchPlan } = await import('../core/dispatch.mjs');
+  const S = 'sup: s2';
+  const job = (id, waitingOn, parkedAt) => ({ id, phase: 'fixes', stream: S, owner: S, streamPin: { by: 't' }, title: 'x', priority: 3, openQuestions: 0, openDeps: [], externalDeps: [], requests: [], links: {},
+    assignments: [{ id: 'R1', kind: 'fixes', status: 'blocked', version: 3, waitingOn, history: [{ status: 'started', at: parkedAt }] }] });
+  const state = msgs => ({ work: { 'W-77': job('W-77', 'worker startup sign-in and latest recycle clearance', '2026-11-19T17:14:40Z'), 'W-494': job('W-494', 'TB-255', '2026-11-19T10:00:00Z') },
+    questions: { 'TB-255': { status: 'answered' } }, messages: msgs });
+  const before = derivedCtx(state({}), 'W-77').parked[0];
+  assert.equal(before.cleared, false, 'no recycle yet');
+  const old = { m1: { to: S, about: { recycled: 'box/t0' }, at: '2026-11-19T17:13:46Z' } };
+  assert.equal(derivedCtx(state(old), 'W-77').parked[0].cleared, false, 'a recycle before the park does not count');
+  const done = { m2: { to: S, about: { recycled: 'box/t1' }, at: '2026-11-19T17:16:00Z' } };
+  const p = derivedCtx(state(done), 'W-77').parked[0];
+  assert.deepEqual([p.cleared, p.recycle], [true, true]);
+  const s = state(done), views = Object.values(s.work).map(w => ({ ...w, ...derivedCtx(s, w.id) }));
+  const plan = autoDispatchPlan(views, { supervisors: { [S]: {} } }).filter(x => x.action === 'resume');
+  assert.deepEqual(plan.map(x => x.id), ['W-77'], 'the recycled job takes the free stream; W-494 resumes next');
+});
+
+test('a record waiting for approval whose PR closed unmerged, with nothing running, leaves the wait: it is withdrawn naming the PR (W-571)', async () => {
+  const { closedPrWithdrawals } = await import('../core/units.mjs');
+  const { openStore } = await import('../core/store.mjs');
+  const url = 'https://github.com/acme-org/app/pull/7';
+  const rec = (over = {}) => ({ id: 'W-1', phase: 'awaiting_human_approval', links: { pr: url }, assignments: [{ id: 'R1', status: 'done' }], ...over });
+  const prs = state => new Map([[url, { url, state }]]);
+  assert.deepEqual(closedPrWithdrawals({ 'W-1': rec() }, prs('CLOSED')).map(x => x.work), ['W-1']);
+  assert.deepEqual(closedPrWithdrawals({ 'W-1': rec() }, prs('OPEN')), []);
+  assert.deepEqual(closedPrWithdrawals({ 'W-1': rec() }, prs('MERGED')), [], 'a merge closes it the merge way');
+  assert.deepEqual(closedPrWithdrawals({ 'W-1': rec({ assignments: [{ id: 'R2', status: 'started' }] }) }, prs('CLOSED')), [], 'a job still running is left alone');
+  assert.deepEqual(closedPrWithdrawals({ 'W-1': rec({ phase: 'fixes' }) }, prs('CLOSED')), [], 'only the approval wait');
+  assert.deepEqual(closedPrWithdrawals({ 'W-1': rec({ waitingOn: { who: 'the customer' } }) }, prs('CLOSED')), [], 'a record someone put on hold stays (W-440)');
+  assert.deepEqual(closedPrWithdrawals({ 'W-1': rec({ externalDeps: [{ text: 'hold' }] }) }, prs('CLOSED')), []);
+  // The reducer takes the withdraw on GitHub's closed read, as W-378 allows.
+  const s = openStore(':memory:', { supervisors: [] });
+  s.append({ kind: 'create', payload: { title: 'x' } }, { now: '2026-11-19T18:00:00Z', by: 't' });
+  Object.assign(s.state.work['W-1'], { phase: 'awaiting_human_approval', links: { pr: url }, assignments: [{ id: 'R1', status: 'done' }] });
+  const [x] = closedPrWithdrawals(s.state.work, prs('CLOSED'));
+  s.append(x.cmd, { now: '2026-11-19T18:01:00Z', by: 'factory (closed PR)', prState: { url, state: 'CLOSED' } });
+  assert.equal(s.state.work['W-1'].phase, 'cancelled');
+  assert.match(s.state.work['W-1'].completion.withdrawn, /#7 was closed on GitHub without merging/);
+});

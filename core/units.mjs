@@ -1,6 +1,6 @@
 // PR work units: once tasks are implemented in a PR, the PR's record is the unit that groups them, and follow-up
 // work hangs off it as children. Membership is derived from links, coverage and relations; nothing else stores it. Pure.
-import { TERMINAL, DEFAULT_REPO } from './work.mjs';
+import { TERMINAL, DEFAULT_REPO, LIVE_ASSIGNMENT } from './work.mjs';
 
 /** `repo-n` for a GitHub PR URL, the key the board files PRs under. */
 export const prKey = url => { const m = String(url || '').match(/github\.com\/[\w.-]+\/([\w.-]+)\/pull\/(\d+)/); return m ? `${m[1]}-${m[2]}` : null; };
@@ -116,4 +116,15 @@ export function contradictions(state, { prState = () => null, now }) {
       add(w.id, 'factory-fix-open', `a note names a commit ("${fix.text.slice(0, 80)}") and nothing has moved since ${w.updatedAt}`, 'resolve it with that commit, or say what is left');
   }
   return out;
+}
+
+/**
+ * W-571: a record waiting for approval whose own PR GitHub shows closed unmerged, with nothing running and no hold, leaves the wait:
+ * withdrawn, as W-378 allows for a closed PR. Reopening the record is the way back if the work still matters.
+ */
+export function closedPrWithdrawals(works, prs) {
+  return Object.values(works).filter(w => ['awaiting_human_approval', 'ready_for_human'].includes(w.phase) && w.links?.pr && prs.get(w.links.pr)?.state === 'CLOSED'
+    && !w.waitingOn && !(w.externalDeps || []).length && !(w.assignments || []).some(a => LIVE_ASSIGNMENT.includes(a.status)))
+    .map(w => ({ work: w.id, pr: w.links.pr, cmd: { kind: 'event', target: w.id, payload: { type: 'withdraw',
+      note: `its PR #${w.links.pr.split('/pull/')[1]} was closed on GitHub without merging, so it left the approval wait (W-571). If the work still matters, reopen the PR and the record.` } } }));
 }

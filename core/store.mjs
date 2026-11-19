@@ -52,8 +52,11 @@ export function derivedCtx(state, id, { prState = () => null, owner } = {}) {
     depWorkerDone: d => [...(rec(d)?.assignments || [])].reverse().find(a => a.kind !== 'review')?.status === 'done',
     parked: (w?.assignments || []).filter(W.parked).map(a => {
       const merged = PR_REF.test(a.waitingOn) && prState(prRefUrl(w, a.waitingOn, owner)) === 'MERGED';
-      return { assignmentId: a.id, version: a.version, waitingOn: a.waitingOn, ...(merged && { why: `${a.waitingOn} merged on GitHub` }),
-        cleared: /^TB-\d+$/.test(a.waitingOn) ? state.questions[a.waitingOn]?.status !== 'open' : /^W-\d+$/.test(a.waitingOn) ? W.SATISFIES_DEPS.includes(rec(a.waitingOn)?.phase) : merged };
+      // Parked for its stream's disk recycle (the hard stop, W-550): cleared by the recycled notice after the park (W-571).
+      const parkedAt = (a.history || []).at(-1)?.at || '';
+      const recycle = /recycle/i.test(a.waitingOn) && Object.values(state.messages || {}).some(m => m.to === w.stream && m.about?.recycled && m.at > parkedAt);
+      return { assignmentId: a.id, version: a.version, waitingOn: a.waitingOn, ...(merged && { why: `${a.waitingOn} merged on GitHub` }), ...(recycle && { recycle: true, why: 'its stream was recycled' }),
+        cleared: /^TB-\d+$/.test(a.waitingOn) ? state.questions[a.waitingOn]?.status !== 'open' : /^W-\d+$/.test(a.waitingOn) ? W.SATISFIES_DEPS.includes(rec(a.waitingOn)?.phase) : merged || recycle };
     }),
   };
 }

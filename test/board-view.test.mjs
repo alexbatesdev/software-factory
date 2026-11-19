@@ -306,3 +306,12 @@ test("a card reads unverified from the structured exit report first, and still r
   s.append({ kind: 'event', target: 'W-1', payload: { type: 'exit_report', changed: 'a', proven: 'b', unverified: 'Unverified: has a colon. Risk: inside the text', risk: 'low' } }, ctx());
   assert.equal(card(s, 'W-1').unverified, 'Unverified: has a colon. Risk: inside the text', 'the structured field, not a regex over prose');
 });
+
+test('a ready record parked on an event reads as waiting in its phase label too, never "Ready to start" (W-571)', () => {
+  const s = openStore(':memory:', { supervisors: [S1] });
+  s.append({ kind: 'create', payload: { title: 'T' } }, ctx());
+  s.append({ kind: 'event', target: 'W-1', payload: { type: 'transition', to: 'ready' } }, ctx());
+  assert.equal(card(s, 'W-1').phaseLabel, 'Ready to start');
+  s.append({ kind: 'event', target: 'W-1', payload: { type: 'wait', who: 'the trial report', what: 'about 11-25', evidence: 'trial running' } }, ctx());
+  assert.equal(card(s, 'W-1').phaseLabel, 'Waiting');
+});

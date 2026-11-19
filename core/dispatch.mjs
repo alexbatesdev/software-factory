@@ -167,7 +167,8 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   // Priority and support work go before any job not mid-flight, a parked job's resume included (Alex, 11-09).
   const first = w => w.priority === 1 || w.support;
   order.filter(first).forEach(place);
-  for (const w of works.filter(parkedOnly)) {
+  // A job the factory paused for a disk recycle resumes before other parked work (W-571): it was stopped mid-round.
+  for (const w of works.filter(parkedOnly).sort((a, b) => (b.parked || []).some(x => x.cleared && x.recycle) - (a.parked || []).some(x => x.cleared && x.recycle))) {
     const p = (w.parked || []).find(x => x.cleared), to = routeOf(w, labels);
     if (!p || !to) continue;
     if (busy.has(to)) { out.push({ id: w.id, action: null, reason: `${p.waitingOn} cleared; ${to} is busy with ${busy.get(to)}, resumes next` }); continue; }

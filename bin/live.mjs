@@ -20,7 +20,7 @@ import { inboxCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan, busyStreams } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
-import { mergeCloses, holdReleases, questionHolds, watchedPrs, reviewsDue, contradictions } from '../core/units.mjs';
+import { mergeCloses, holdReleases, closedPrWithdrawals, questionHolds, watchedPrs, reviewsDue, contradictions } from '../core/units.mjs';
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMain, readCompare, readOpenPrFiles, readTeamPrs } from '../sources/github.mjs';
 import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.mjs';
@@ -371,6 +371,11 @@ async function githubTick() {
     prsReadAt = Date.now();
     reviewTick();
     healTick();
+    // W-571: a PR closed unmerged takes its record out of the approval wait; the factory lead hears.
+    for (const x of closedPrWithdrawals(store.state.work, openPrs))
+      try { store.append(x.cmd, { ...by('factory (closed PR)'), prState: { url: x.pr, state: 'CLOSED' } }); log(`withdrew ${x.work}: its PR closed unmerged`);
+        apply([{ kind: 'message', payload: { to: LEAD, work: x.work, about: { closedPr: x.work }, text: `[software factory, automated, not Alex] ${x.work}: its PR ${x.pr} was closed on GitHub without merging, so the factory withdrew the record from the approval wait. Reopen it if the work still matters.` } }], 'factory'); }
+      catch (e) { once(`closed PR ${x.work}: ${e.message}`); }
     try { const n = syncStandards(); if (n.length) log(`standards mirrored: ${n.join(', ')}`); } catch (e) { log(`standards: ${e.message}`); }
     apply(skipNotes(store.state.work, skipped()), 'factory (skip)');
     await mergeTick();
