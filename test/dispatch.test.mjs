@@ -388,3 +388,16 @@ test("a supervisor's own queued round waiting behind another job on its stream i
   assert.equal(at([mine()], '2026-11-19T21:00:00.000Z')['W-494']?.action ?? null, null, 'its own stream is free: it stays');
   assert.equal(at([other, mine({ streamPin: { by: 'Alex' } })], '2026-11-19T21:00:00.000Z')['W-494']?.action ?? null, null, 'a stream Alex pinned keeps it');
 });
+
+// W-591: W-583's review (#8968 against production) waited an hour while priority-1 work took stream-1 first.
+test('a production hotfix and its rounds go first in the queue, ahead of priority-1 work (W-591)', () => {
+  const one = { ...cfg, supervisors: { [S1]: {} } };
+  const first = works => autoDispatchPlan(works, one).filter(p => p.action).map(p => p.id);
+  assert.deepEqual(first([loose('W-588', { priority: 1 }), loose('W-590', { hotfix: true })]), ['W-590'], 'a new hotfix');
+  const review = fixesWaiting('W-583', { phase: 'review', stream: S1, owner: S1, hotfix: true, requests: [{ id: 'R2', type: 'review', ack: null, head: 'h1', delivery: 'pending' }] });
+  assert.deepEqual(first([loose('W-588', { priority: 1 }), review]), ['W-583'], "a hotfix's review round");
+  const running = loose('W-1', { phase: 'implementation', stream: S1, owner: S1, assignments: [{ id: 'R9', kind: 'implementation', status: 'started' }] });
+  const waits = autoDispatchPlan([running, loose('W-590', { hotfix: true })], one).find(p => p.id === 'W-590');
+  assert.equal(waits.action, null, 'it never interrupts running work');
+  assert.match(waits.reason, /with W-1/);
+});

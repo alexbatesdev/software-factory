@@ -142,7 +142,7 @@ function autoDispatchTick() {
   const gates = new Map(built.flatMap(p => p.leaves.filter(l => l.work).map(l => [l.work, { slug: p.slug, ...l.gate }])));
   // Phase C: a project task's notices point its supervisor at the plan the worker follows and the task's test plan.
   projectNotes = Object.fromEntries(built.flatMap(p => p.leaves.filter(l => l.work && p.factoryPlan).map(l => [l.work, projectNote(p, l, resolveSpec(s.work[l.work], specRead()))])));
-  const views = Object.values(s.work).map(w => ({ ...prGateView(s, w), ...derivedCtx(s, w.id, prs), ...(gates.has(w.id) ? { projectGate: gates.get(w.id) } : {}) }));
+  const views = Object.values(s.work).map(w => ({ ...prGateView(s, w), ...derivedCtx(s, w.id, prs), ...(gates.has(w.id) ? { projectGate: gates.get(w.id) } : {}), hotfix: openPrs.get(w.links?.pr)?.base === 'production' }));
   const terminals = [...(fleet?.others || []), ...(fleet?.units || []).flatMap(u => [u.supervisor, u.worker].filter(Boolean))].filter(a => a.workspace === 'Terminals').map(a => a.label);
   const toldRequests = new Set(Object.values(s.messages).flatMap(m => [m.about?.requests].flat().filter(Boolean)));
   const plan = autoDispatchPlan(views, { supervisors: config.routing.supervisors, ...skipped(), drain, prApproval: config.prApproval, running: tuned, toldRequests, now: now(), agentFallbackMs: config.autoDispatch?.agentFallbackMs }, { terminals });
