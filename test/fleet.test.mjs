@@ -56,3 +56,25 @@ test("a stream worker's pane with no agent running still counts as the worker, s
   const panes = [{ pane_id: 'p1', label: 'sup: stream-2' }, { pane_id: 'p2', label: 'sbx: stream-2' }, { pane_id: 'p3', label: 'zsh' }];
   assert.deepEqual(seatPanes(panes, [{ pane_id: 'p1' }]).map(p => p.pane_id), ['p1', 'p2'], 'a plain shell pane is still ignored');
 });
+
+test('a pane asking its agent to log in is read as needing a login, with the line it shows (W-569)', async () => {
+  const { loginPrompt } = await import('../fleet/status.mjs');
+  assert.equal(loginPrompt('some output\n  Login reached its time limit · Please run /login\n❯'), 'Login reached its time limit · Please run /login');
+  assert.match(loginPrompt('Login\n Opening browser to sign in…\n Esc to cancel'), /Opening browser to sign in/);
+  assert.match(loginPrompt('Error: Not logged in to Docker. Run sbx login'), /sbx login/);
+  assert.equal(loginPrompt('  ⏵⏵ auto mode on · 1 shell'), null);
+});
+
+test('local-head hears once a day which seat needs a login, with the line its pane shows (W-569)', async () => {
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const { openStore } = await import('../core/store.mjs');
+  const s = openStore(':memory:', { supervisors: ['sup: s1'] });
+  const unit = { id: 'u1', supervisor: { label: 'sup: s1', status: 'idle', loginNeeded: 'Please run /login' }, worker: { label: 'sbx: s1', status: 'blocked', loginNeeded: 'Opening browser to sign in…' } };
+  const fleet = { units: [unit], others: [], now: Date.parse('2026-11-19T04:00:00Z'), watches: {} };
+  const msgs = () => inboxCommands(s.state, { supervisors: ['sup: s1'], seats: [] }, fleet).cmds.filter(c => c.payload.about?.loginNeeded);
+  const first = msgs();
+  assert.deepEqual(first.map(c => [c.payload.to, c.payload.about.loginNeeded]), [['local-head', 'sup: s1/2026-11-19'], ['local-head', 'sbx: s1/2026-11-19']]);
+  assert.match(first[0].payload.text, /sup: s1.*"Please run \/login".*Alex/);
+  for (const c of first) s.append(c, { now: '2026-11-19T04:00:00Z', by: 'factory' });
+  assert.deepEqual(msgs(), []);
+});

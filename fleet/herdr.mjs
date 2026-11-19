@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { parseFooter, layoutIssues, RESERVED, REVIEWS } from './status.mjs';
+import { parseFooter, loginPrompt, layoutIssues, RESERVED, REVIEWS } from './status.mjs';
 import { ORCHESTRATOR_TAB, WORKER_TAB as WORKER_TAB_LABEL } from './factory.mjs';
 
 /**
@@ -58,10 +58,11 @@ export async function list(pairs = {}) {
   });
   await Promise.all(all.map(async a => { a.sandbox = await sandboxOf(a.ref).catch(() => null); }));
   // A finished turn may still own a background job; only the pane's visible footer shows it.
-  await Promise.all(all.filter(a => ['done', 'idle'].includes(a.status)).map(async a => {
+  // A login prompt (W-569) parks a pane as idle, done or at a dialog, so those are read too.
+  await Promise.all(all.filter(a => ['done', 'idle', 'blocked'].includes(a.status)).map(async a => {
     try {
-      const { stdout } = await run('herdr', ['pane', 'read', a.ref, '--source', 'visible', '--lines', '6'], { timeout: 5000 });
-      Object.assign(a, parseFooter(stdout), { jobsSource: 'herdr pane read (visible footer)' });
+      const { stdout } = await run('herdr', ['pane', 'read', a.ref, '--source', 'visible', '--lines', '8'], { timeout: 5000 });
+      Object.assign(a, a.status === 'blocked' ? {} : { ...parseFooter(stdout), jobsSource: 'herdr pane read (visible footer)' }, { loginNeeded: loginPrompt(stdout) });
     } catch { a.jobs = null; }
   }));
   const byLabel = new Map(all.map(a => [a.label, a]));

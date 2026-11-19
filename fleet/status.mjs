@@ -13,6 +13,13 @@ export function parseFooter(text) {
   return { jobs: m ? Number(m[1]) : 0 };
 }
 
+// W-569: an agent whose login expired sits idle at this line, and every notice typed into it changes nothing.
+const LOGIN = /Please run \/login|Login reached its time limit|Opening browser to sign in|OAuth token (has )?expired|Invalid API key|Not logged in|sbx login|codex login/i;
+/** The pane line asking for a login, or null. */
+export function loginPrompt(text) {
+  return String(text || '').split('\n').map(l => l.trim()).filter(Boolean).reverse().find(l => LOGIN.test(l)) || null;
+}
+
 /**
  * The state to show, combining the native turn state with the board's record of the unit's active work.
  * Never reports a task as done: completion comes only from a `done` report on the work record.

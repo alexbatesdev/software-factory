@@ -72,6 +72,12 @@ export function inboxCommands(state, cfg, fleet = null) {
     cmds.push(msg('local-head', d.work, { deliverable: d.id }, `New deliverable ${d.id} "${d.title}" from ${d.from} on ${d.work}: read it with the deliverables tool (id: ${d.id}) and tell Alex what it says; it's on the dashboard's Deliverables panel.`));
   let watches = fleet?.watches || {};
   if (fleet) {
+    // W-569: a seat whose login expired takes no notices and says nothing; local-head hears once a day, for Alex.
+    const day = new Date(fleet.now || Date.now()).toISOString().slice(0, 10);
+    for (const a of [...(fleet.others || []), ...fleet.units.flatMap(u => [u.supervisor, u.worker])].filter(a => a?.loginNeeded)) {
+      const key = `${a.label}/${day}`;
+      if (!told.has(`loginNeeded:${key}`)) cmds.push(msg('local-head', null, { loginNeeded: key }, `${a.label} needs a login: its pane shows "${a.loginNeeded}". It takes no factory notices until then. Ask Alex to log it in (${/sbx|docker/i.test(a.loginNeeded) ? '`sbx login` on the host' : `/login in the ${a.label} pane`}).`));
+    }
     const stops = planWorkerStops({ units: fleet.units, others: fleet.others || [], works: state.work, watch: watches.workerStops, now: fleet.now, supervisors: cfg.supervisors });
     // The watch fires once per stop; a told-key check here would swallow a second stop on the same assignment.
     for (const d of stops.due)
