@@ -170,6 +170,12 @@ export function normalize(w, ctx = {}) {
     note(w, ctx, `Internal review passed at ${w.head} (reviewed once, findings settled). This is not merged, deployed or complete in Teamwork.`);
     return w;
   }
+  // W-593: a fixes round that outgrew the reviewed PR settles into a whole-PR review, not ready.
+  if (w.phase === 'fixes' && !liveAssignment(w) && outgrown(w) && !w.findings.some(f => f.status === 'open')) {
+    w.phase = 'rereview';
+    if (ctx.now) { note(w, ctx, outgrown(w)); requestRereview(w, ctx); }
+    return w;
+  }
   if (w.phase !== 'ready_for_human') return w;
   const g = gate(w, kept);
   if (g.ok) return w;

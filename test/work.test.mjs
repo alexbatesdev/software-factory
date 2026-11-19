@@ -741,6 +741,15 @@ test('a descending push re-reviews once the PR has grown past 30% of its reviewe
   assert.equal(grownHead(reported, 'bbb2222', 400, 1000).phase, 'rereview');
 });
 
+test('a fix round that outgrows the reviewed PR gets a new review once its findings settle (W-593, the #8245 shape)', () => {
+  const found = reviewedAt('findings', [{ text: 'nil guard' }]);
+  const grown = grownHead(capRun(found, { type: 'head', sha: 'bbb2222' }), 'bbb2222', 400, 1000);
+  assert.equal(grown.lineage.status, 'outgrown');
+  const settled = capRun(grown, { type: 'finding', findingId: 'F1', status: 'resolved', note: 'fixed in bbb2222' });
+  assert.notEqual(settled.phase, 'ready_for_human');
+  assert.equal(settled.requests.filter(r => r.type === 'review' && r.head === 'bbb2222').length, 1, 'a review of the grown head is requested');
+});
+
 test('a reported head is assumed to descend until GitHub shows otherwise', () => {
   const ready = reviewedAt('clean');
   const reported = capRun(ready, { type: 'head', sha: 'bbb2222' });
