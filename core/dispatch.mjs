@@ -176,5 +176,20 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     out.push({ id: w.id, action: 'resume', to, assignmentId: p.assignmentId, version: p.version, reason: `${p.why || `${p.waitingOn} cleared`}, ${to} is free` });
   }
   order.filter(w => !first(w)).forEach(place);
+  // W-582: a round a supervisor queued for its own worker, with no worker live on the record, while its stream runs another
+  // record's job: after the fallback wait it's offered to a free stream that can take it (reviews to Claude only, W-556).
+  const workerStream = new Map(Object.entries(cfg.supervisors || {}).filter(([, v]) => v?.worker).map(([l, v]) => [v.worker, l]));
+  const wait = cfg.agentFallbackMs ?? FALLBACK_MS, nowMs = cfg.now ? Date.parse(cfg.now) : null;
+  if (nowMs != null) for (const w of works) {
+    if (TERMINAL.includes(w.phase) || liveJob(w) || w.streamPin || out.some(x => x.id === w.id && x.action)) continue;
+    const a = (w.assignments || []).find(x => x.status === 'queued' && workerStream.get(x.owner) === w.stream);
+    const runner = a && works.find(o => o.id !== w.id && o.stream === w.stream && liveJob(o));
+    if (!runner || !(nowMs - Date.parse(a.at || 0) >= wait)) continue;
+    const to = labels.find(l => l !== w.stream && !busy.has(l) && canTake(w, l, cfg.supervisors) && !(a.kind === 'review' && cfg.supervisors[l]?.agent === 'codex') && !(w.model && cfg.supervisors[l]?.agent === 'codex'));
+    if (!to) continue;
+    busy.set(to, w.id);
+    out.push({ id: w.id, action: 'offer', to, from: w.stream, assignmentId: a.id, version: a.version, kind: a.kind, evidence: a.evidence || null,
+      reason: `${a.id} (${a.kind}) has waited since ${a.at} for ${a.owner}, and ${w.stream} is busy with ${runner.id}; ${to} is free` });
+  }
   return out;
 }

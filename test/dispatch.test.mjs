@@ -369,3 +369,22 @@ test('a scout proposal the factory lead already triaged into intake no longer pa
   const untouched = loose('W-9', { owner: null, phase: 'proposed', proposedFrom: 'W-1' });
   assert.equal(none([scout('W-1'), ...triaged(4), untouched]), S1, 'one untriaged is under the limit');
 });
+
+// W-582: a round a supervisor queued for its own worker, with no worker live on the record, while that stream runs another
+// record's job: after the fallback wait it's offered to a free stream that can take it (reviews to Claude only, W-556).
+test("a supervisor's own queued round waiting behind another job on its stream is offered to a free stream after a while (W-582)", () => {
+  const S3 = 'sup: stream-3';
+  const mixed = { ...cfg, supervisors: { [S1]: { worker: 'sbx: s1' }, [S2]: { worker: 'sbx: s2', agent: 'codex' }, [S3]: { worker: 'sbx: s3' } }, agentFallbackMs: 20 * 60000 };
+  const at = (works, now) => Object.fromEntries(autoDispatchPlan(works, { ...mixed, now }).map(x => [x.id, x]));
+  const other = loose('W-77', { phase: 'fixes', stream: S2, owner: S2, assignments: [{ id: 'R24', kind: 'fixes', status: 'started', owner: 'sbx: s2' }] });
+  const mine = (over = {}) => loose('W-494', { phase: 'implementation', stream: S2, owner: S2, assignments: [
+    { id: 'R1', kind: 'implementation', status: 'blocked', owner: 'sbx: s2', waitingOn: 'R2 verification' },
+    { id: 'R2', kind: 'review', status: 'queued', owner: 'sbx: s2', version: 1, at: '2026-11-19T18:36:00.000Z', evidence: 'brief ~/plans/x.md' }], ...over });
+  const p = at([other, mine()], '2026-11-19T21:00:00.000Z')['W-494'];
+  assert.deepEqual([p.action, p.from, p.assignmentId, p.version], ['offer', S2, 'R2', 1]);
+  assert.notEqual(p.to, S2);
+  assert.match(p.reason, /busy with W-77/);
+  assert.equal(at([other, mine()], '2026-11-19T18:40:00.000Z')['W-494']?.action ?? null, null, 'not before the fallback wait');
+  assert.equal(at([mine()], '2026-11-19T21:00:00.000Z')['W-494']?.action ?? null, null, 'its own stream is free: it stays');
+  assert.equal(at([other, mine({ streamPin: { by: 'Alex' } })], '2026-11-19T21:00:00.000Z')['W-494']?.action ?? null, null, 'a stream Alex pinned keeps it');
+});

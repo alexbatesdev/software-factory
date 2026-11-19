@@ -164,7 +164,17 @@ function autoDispatchTick() {
       { kind: 'event', target: p.id, payload: { type: 'note', text: `Resume sent to ${p.to}: ${p.reason}.` } }], 'factory (auto-dispatch)');
     log(`resume ${p.id} ${p.assignmentId} -> ${p.to}`);
   }
-  for (const p of plan.filter(p => p.action && !['resume', 'route', 'deliver'].includes(p.action))) {
+  // W-582: a queued round offered to a free stream moves there; its new supervisor takes it over, the old one hears.
+  for (const p of plan.filter(p => p.action === 'offer')) {
+    const sup = to => config.routing.supervisors[to]?.worker;
+    try {
+      store.appendAll([{ kind: 'update', target: p.id, payload: { stream: p.to, owner: p.to } }, { kind: 'event', target: p.id, payload: { type: 'note', text: `Factory queue: ${p.assignmentId} goes to ${p.to}: ${p.reason}.` } },
+        { kind: 'message', payload: { to: p.to, work: p.id, about: { offered: `${p.id}/${p.assignmentId}` }, text: `[software factory, automated, not Alex] ${p.id} ${p.assignmentId} (${p.kind}) was queued for ${sup(p.from)}, but ${p.from} is busy with another job, so it's yours: record it for your worker (assign a new round with supersedes ${p.assignmentId}, expectedVersion ${p.version}, owner ${sup(p.to)}) and brief it.${p.evidence ? ` Its record says: ${p.evidence}` : ''}` } },
+        { kind: 'message', payload: { to: p.from, work: p.id, about: { offeredAway: `${p.id}/${p.assignmentId}`, fyi: true }, text: `[software factory, automated, not Alex] ${p.id} ${p.assignmentId} moved to ${p.to}: your worker is busy with another job. Nothing to do.` } }], by('factory (auto-dispatch)'));
+      log(`offer ${p.id} ${p.assignmentId} -> ${p.to}`);
+    } catch (e) { log(`offer ${p.id} refused: ${e.message}`); }
+  }
+  for (const p of plan.filter(p => p.action && !['resume', 'route', 'deliver', 'offer'].includes(p.action))) {
     const w = s.work[p.id], who = 'factory (auto-dispatch)';
     const cmds = [
       ...(p.owner ? [{ kind: 'update', target: p.id, payload: { stream: p.owner, ...(w.owner ? {} : { owner: p.owner }) } }] : []),

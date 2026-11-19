@@ -4,7 +4,7 @@ import { REVIEWING } from '../core/work.mjs';
 
 const NOT_QUEUE = /^(Excluded in config|a trusted review|a factory record)/;
 const forStream = p => !!p.action || /busy|waits its turn/.test(p.reason || '');
-const NEXT = { queue: 'going to', request: 'going to', deliver: 'going to', route: 'moving to', resume: 'resuming on', retune: 'restarting the worker on' };
+const NEXT = { queue: 'going to', request: 'going to', deliver: 'going to', route: 'moving to', resume: 'resuming on', retune: 'restarting the worker on', offer: 'offered to' };
 
 /** @param plan the last autoDispatchPlan, in placement order @param busy [[stream, what it runs]] */
 export function queueView(state, plan, busy, supervisors) {
