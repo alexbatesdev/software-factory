@@ -1,7 +1,7 @@
 // Auto-dispatch (Alex, 2026-10-28): which ready or queued records start themselves this tick, and why the rest wait.
 // Pure: the server applies the plan through ordinary events and logs each one on its record.
 import { routeOf, currentRequest } from './notifier.mjs';
-import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder, needsPrApproval, DEFAULT_REPO } from './work.mjs';
+import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder, isHotfix, needsPrApproval, DEFAULT_REPO } from './work.mjs';
 
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
 const pendingDispatch = w => (w.requests || []).some(r => r.type === 'dispatch' && !r.ack);
@@ -100,7 +100,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   const place = w => {
     const job = waitingRequest(w, told);
     const wait = reason => out.push({ id: w.id, action: null, reason, ...(job ? { request: `${w.id}/${job.id}` } : {}) });
-    const holds = w.priority === 1 || w.hotfix ? runningOn : busy;
+    const holds = w.priority === 1 || isHotfix(w) ? runningOn : busy;
     const track = trackOf(w, cfg);
     if (track === 'excluded') { wait('Excluded in config.autoDispatch.exclude'); return; }
     if (track === 'trusted-review') { wait('a trusted review, not stream work'); return; }
@@ -162,10 +162,10 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     load[to]++;
     const owner = to !== w.stream ? to : undefined;
     out.push({ id: w.id, action: w.phase === 'ready' ? 'queue' : 'request', owner, to,
-      reason: `${w.hotfix ? 'production hotfix: ' : w.priority === 1 ? 'priority: ' : ''}${w.phase}, no open questions or dependencies, ${to} is free${bound ? ` (${bound.why})` : `, least loaded (${spread})`}${flags}` });
+      reason: `${isHotfix(w) ? 'production hotfix: ' : w.priority === 1 ? 'priority: ' : ''}${w.phase}, no open questions or dependencies, ${to} is free${bound ? ` (${bound.why})` : `, least loaded (${spread})`}${flags}` });
   };
   // Priority and support work go before any job not mid-flight, a parked job's resume included (Alex, 11-09).
-  const first = w => w.priority === 1 || w.support || w.hotfix;
+  const first = w => w.priority === 1 || w.support || isHotfix(w);
   order.filter(first).forEach(place);
   // A job the factory paused for a disk recycle resumes before other parked work (W-571): it was stopped mid-round.
   for (const w of works.filter(parkedOnly).sort((a, b) => (b.parked || []).some(x => x.cleared && x.recycle) - (a.parked || []).some(x => x.cleared && x.recycle))) {

@@ -66,7 +66,9 @@ export function skipNotes(works, cfg = {}) {
 /** Queue order everywhere work waits for a stream: priority 1 (Alex's "priority") first, then oldest record. */
 // Support work goes ahead of ordinary work (Alex, 11-09); priority 1 still cuts in first.
 // A production hotfix and its rounds go ahead of everything waiting, priority 1 included (W-591).
-const rank = w => w.hotfix ? 0 : Math.min(w.priority ?? 3, w.support ? 2 : 3);
+// A hotfix: its PR targets production (w.hotfix, from the PR read), or before the PR, its branch is hotfix/….
+export const isHotfix = w => !!w.hotfix || /^hotfix\//.test(w.links?.branch || '');
+const rank = w => isHotfix(w) ? 0 : Math.min(w.priority ?? 3, w.support ? 2 : 3);
 export const queueOrder = (a, b) => rank(a) - rank(b) || (a.priority ?? 3) - (b.priority ?? 3) || Number(a.id.slice(2)) - Number(b.id.slice(2));
 // A dependency counts as finished once its work is through internal review.
 export const SATISFIES_DEPS = ['ready_for_human', 'awaiting_human_approval', 'done'];

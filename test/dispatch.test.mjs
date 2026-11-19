@@ -393,7 +393,7 @@ test("a supervisor's own queued round waiting behind another job on its stream i
 test('a production hotfix and its rounds go first in the queue, ahead of priority-1 work (W-591)', () => {
   const one = { ...cfg, supervisors: { [S1]: {} } };
   const first = works => autoDispatchPlan(works, one).filter(p => p.action).map(p => p.id);
-  assert.deepEqual(first([loose('W-588', { priority: 1 }), loose('W-590', { hotfix: true })]), ['W-590'], 'a new hotfix');
+  assert.deepEqual(first([loose('W-588', { priority: 1 }), loose('W-590', { links: { branch: 'hotfix/hide-login' } })]), ['W-590'], 'a new hotfix, before its PR exists: its branch says so');
   const review = fixesWaiting('W-583', { phase: 'review', stream: S1, owner: S1, hotfix: true, requests: [{ id: 'R2', type: 'review', ack: null, head: 'h1', delivery: 'pending' }] });
   assert.deepEqual(first([loose('W-588', { priority: 1 }), review]), ['W-583'], "a hotfix's review round");
   const running = loose('W-1', { phase: 'implementation', stream: S1, owner: S1, assignments: [{ id: 'R9', kind: 'implementation', status: 'started' }] });
