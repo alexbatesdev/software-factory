@@ -98,3 +98,13 @@ test('an unavailable mount picks the module up once it is installed, on a later 
     assert.equal(r.available, true);
   } finally { f.close(); await r.close(); }
 });
+
+test('a record with a PR in a configured project links to that PR in Megamap; others get no PR link (W-597)', async () => {
+  const { prMapFor } = await import('../hosts/megamap.mjs');
+  const cfg = { projects: [{ id: 'built-rails', repo: 'built-rails' }, { id: 'sf', repo: 'software-factory' }] };
+  assert.equal(prMapFor(cfg, { links: { pr: 'https://github.com/acme/built-rails/pull/8968' } }), '/megamap/?project=built-rails&pr=8968');
+  assert.equal(prMapFor(cfg, { repo: 'built-rails', links: { pr: 'https://github.com/acme/software-factory/pull/12' } }), '/megamap/?project=sf&pr=12', "the PR's own repo picks the project");
+  assert.equal(prMapFor(cfg, { links: { pr: 'https://github.com/acme/other-repo/pull/5' } }), null, 'no configured project for that repo');
+  assert.equal(prMapFor(cfg, { links: {} }), null);
+  assert.equal(prMapFor(null, { links: { pr: 'https://github.com/acme/built-rails/pull/1' } }), null, 'megamap not configured');
+});

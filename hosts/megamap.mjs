@@ -59,3 +59,9 @@ export async function retryingMount(raw, { mount = megamapMount, clock = Date.no
     async close() { await m?.close(); },
   };
 }
+
+/** W-597: the Megamap PR view for a record's PR, when its repo is a configured project; the project comes from config only. */
+export function prMapFor(cfg, w) {
+  const m = String(w.links?.pr || '').match(/github\.com\/[\w.-]+\/([\w.-]+)\/pull\/(\d+)/), p = m && (cfg?.projects || []).find(x => x.repo === m[1]);
+  return p ? `${PREFIX}/?project=${encodeURIComponent(p.id)}&pr=${m[2]}` : null;
+}

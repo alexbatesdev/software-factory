@@ -1,4 +1,4 @@
-import { projectFor } from '../hosts/megamap.mjs';
+import { projectFor, prMapFor } from '../hosts/megamap.mjs';
 // The factory's HTTP API: every write is a board action, checked against the caller's role, appended atomically.
 // The caller's seat comes from the x-seat header, which the MCP server fills from its pane. ponytail: trusted because
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
@@ -166,7 +166,7 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
           taskRequests: Object.values(s.taskRequests || {}).filter(t => ['requested', 'approved', 'failed'].includes(t.status)).map(t => ({ ...t, stuck: t.status === 'approved' && Date.parse(now()) - Date.parse(t.approvedAt) > STUCK_MS, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           threads: Object.values(s.threads || {}).filter(t => !['resolved', 'dismissed'].includes(t.status)).map(t => ({ ...t, title: s.work[t.work]?.title || null, support: supportOf(s, t.work) })),
           drain: Object.fromEntries(o.drain || []), disk, supportPause: s.supportPause || null, megamap: !!config.megamap, cards: boardView(s, { supervisors: Object.keys(config.routing?.supervisors || {}), prApproval: config.prApproval, githubOwner: config.githubOwner, ...o })
-            .map(c => ({ ...c, map: (p => p ? `/megamap/?project=${encodeURIComponent(p.id)}` : null)(projectFor(config.megamap, s.work[c.id] || {})) })) });
+            .map(c => ({ ...c, map: (p => p ? `/megamap/?project=${encodeURIComponent(p.id)}` : null)(projectFor(config.megamap, s.work[c.id] || {})), prMap: prMapFor(config.megamap, s.work[c.id] || {}) })) });
       }
       if (req.method === 'GET' && url.pathname === '/api/escapes') {
         const items = Object.values(store.state.work).flatMap(escapes), count = k => items.reduce((m, e) => ({ ...m, [e[k]]: (m[e[k]] || 0) + 1 }), {});

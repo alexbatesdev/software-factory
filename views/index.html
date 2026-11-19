@@ -147,6 +147,7 @@ function cardEl(c, labels) {
   if (/^https:\/\/github\.com\//.test(c.pr || '')) { const a = el('a', null, `#${c.pr.split('/pull/')[1]}`); a.href = c.pr; a.target = '_blank'; a.rel = 'noopener'; meta.append(a); }
   // W-574: the code map of the record's repo, served by the factory at /megamap/.
   if (c.map) { const m = el('a', null, 'map'); m.href = c.map; m.target = '_blank'; m.title = 'Open this repo in Megamap'; m.style.marginLeft = '6px'; meta.append(m); }
+  if (c.prMap) { const m = el('a', null, 'changes'); m.href = c.prMap; m.target = '_blank'; m.title = "View this PR's changes and their impact in Megamap"; m.style.marginLeft = '6px'; meta.append(m); }
   d.append(meta);
   if (c.waiting) d.append(el('div', 'w', c.waiting.text));
   if (c.approval) { const a = el('div', 'appr', `In Approvals: ${c.approval}`); a.onclick = () => { document.getElementById('side').hidden = false; }; d.append(a); }
