@@ -942,3 +942,25 @@ test("a record with a reviewer's open blocker goes ahead of ordinary work, after
   assert.deepEqual(order, ['W-12', 'W-9', 'W-1']);
   assert.deepEqual([{ id: 'W-1' }, { id: 'W-9', findings: [{ ...blocker, status: 'resolved' }] }].sort(queueOrder).map(w => w.id), ['W-1', 'W-9'], 'a settled blocker no longer counts');
 });
+
+// W-596 (#8245): "an Ability or lookup per row" came back 5 times because each round patched only the named call site.
+test("a fixes round's done names the same class for each reviewer finding it was handed (W-596)", async () => {
+  const { sameClassMissing } = await import('../core/work.mjs');
+  const at = '2026-11-20T01:00:00.000Z';
+  const w = { assignments: [{ id: 'A2', kind: 'fixes', status: 'started', history: [{ status: 'queued', at }], at }],
+    findings: [
+      { id: 'F1', status: 'open', reviewHead: 'aaa1111', text: 'Ability per row' },
+      { id: 'F2', status: 'resolved', at: '2026-11-20T02:00:00.000Z', source: { type: 'threads', human: true } },
+      { id: 'F3', status: 'resolved', at: '2026-11-19T00:00:00.000Z', reviewHead: 'old' },
+      { id: 'F4', status: 'open', source: { type: 'ci' } },
+      { id: 'F5', status: 'open', source: { type: 'merge_main' } },
+    ] };
+  assert.deepEqual(sameClassMissing(w, 'A2', {}), ['F1', 'F2'], 'reviewer findings open now or settled during the round; not CI, merge-main, or older rounds');
+  assert.deepEqual(sameClassMissing(w, 'A2', { sameClass: 'F1 same class: 4 instances, fixed 4, left 0\nF2 same class: 1 instance, fixed 1, left 0' }), []);
+  assert.deepEqual(sameClassMissing(w, 'A2', { sameClass: 'F1 same class: 4 instances, fixed 4' }), ['F2']);
+  assert.deepEqual(sameClassMissing({ ...w, assignments: [{ ...w.assignments[0], kind: 'implementation' }] }, 'A2', {}), [], 'only fixes rounds');
+  const { inboxCommands } = await import('../core/inbox.mjs');
+  const rec = { id: 'W-1', title: 'T', phase: 'fixes', head: 'h1', stream: 'sup: x', requests: [{ id: 'R1', type: 'fixes', head: 'h1', ack: null }], assignments: [], findings: [] };
+  const [m] = inboxCommands({ work: { 'W-1': rec }, questions: {}, messages: {}, notifications: {} }, { supervisors: ['sup: x'], seats: [] }, null).cmds;
+  assert.match(m.payload.text, /Same class \(W-596\).*report\.sameClass/, 'the fixes request says so');
+});

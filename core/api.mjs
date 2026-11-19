@@ -13,7 +13,7 @@ import { reachesAlex } from './derive.mjs';
 import { supportOf, prGateView } from './store.mjs';
 import { decideTaskRequests, STUCK_MS } from './task-requests.mjs';
 import { decideAwsRequests } from './aws-access.mjs';
-import { escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval, DEFAULT_REPO, TERMINAL } from './work.mjs';
+import { sameClassMissing, escapes, needsPrApproval, awaitsPrApproval, wouldAwaitPrApproval, DEFAULT_REPO, TERMINAL } from './work.mjs';
 import { resolveThreads } from '../effects/threads.mjs';
 import { toolsFor, readTool, READ_TOOLS } from '../mcp/server.mjs';
 
@@ -78,6 +78,9 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
       const miss = ['changed', 'proven', 'unverified', 'risk'].filter(k => !args.report?.[k]);
       if (miss.length) return [400, { error: `Record done with the worker's exit report (report: {changed, proven, unverified, risk}; missing ${miss.join(', ')}), checked against ~/Code/plans/standards/DEFINITION_OF_DONE.md "Not done if". If an item fails, brief fixes instead. "unverified" may be "nothing".` }];
     }
+    // W-596: each reviewer finding a fixes round was handed gets its same-class line before done.
+    const missingClass = action === 'done' && !args.noChange && s.work[args.work] ? sameClassMissing(s.work[args.work], args.assignmentId, args.report) : [];
+    if (missingClass.length) return [400, { error: `A fixes round fixes the whole class of each finding (W-596). Pass report.sameClass with one line per finding: "<F-n> same class: <pattern>; N instances (found with <grep or query>), fixed X, left Y (why)". Missing: ${missingClass.join(', ')}. If the worker's report lacks them, brief it to search for the other instances first.` }];
     if (action === 'triage' && args.carriesOut && !['answered', 'settled'].includes(s.questions[args.carriesOut]?.status)) return [409, { error: `carriesOut names a question Alex has answered; ${args.carriesOut} is ${s.questions[args.carriesOut]?.status || 'not a question'}.` }];
     // Alex's decision already has a question: a second, prose wait on him never clears when he answers (W-365: W-271).
     const asked = action === 'progress' && !args.assignmentId && args.actor === 'alex' && args.waitingOn && args.waitingOn !== 'clear'

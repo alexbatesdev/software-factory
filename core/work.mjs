@@ -1203,3 +1203,15 @@ export function prReadyPreflight(w, remote, ctx = {}) {
   else if (remote.head !== w.head) r.push(`GitHub shows ${remote.head}, but the board's head is ${w.head}.`);
   return r;
 }
+
+// W-596 (Alex 11-19): a fixes round fixes the whole class of each reviewer finding, not the one call site named.
+const REVIEWER_FINDING = f => !!f.reviewHead || ['changes_requested', 'threads', 'comments'].includes(f.source?.type);
+/** The reviewer findings a fixes round's done must name with a "F-n … same class: …" line: open now, or settled since it began. */
+export function sameClassMissing(w, assignmentId, report = {}) {
+  const a = (w.assignments || []).find(x => x.id === assignmentId);
+  if (a?.kind !== 'fixes') return [];
+  const began = a.history?.[0]?.at || a.at || '';
+  const lines = String(report.sameClass || '').split('\n');
+  return (w.findings || []).filter(f => REVIEWER_FINDING(f) && (f.status === 'open' || (f.at && f.at >= began)))
+    .map(f => f.id).filter(id => !lines.some(l => new RegExp(`\\b${id}\\b.*same class:`, 'i').test(l)));
+}
