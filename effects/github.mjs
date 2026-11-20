@@ -18,6 +18,22 @@ export const gh = {
     const n = JSON.parse(stdout).data?.node;
     return n?.pullRequest ? { pr: n.pullRequest.url, isResolved: n.isResolved, first: n.first?.nodes?.[0]?.author?.login || null, last: n.last?.nodes?.[0]?.author?.login || null } : null;
   },
+  /** What the resolve checks read from a review thread (Alex, 11-20): its file, its asker, and its last comments with 👍s. */
+  threadFacts: async id => {
+    const q = 'query($id:ID!){node(id:$id){... on PullRequestReviewThread{isResolved path first:comments(first:1){nodes{author{login}}} comments(last:20){nodes{author{login} createdAt reactions(content:THUMBS_UP,first:20){nodes{user{login}}}}}}}}';
+    const n = JSON.parse((await exec('gh', ['api', 'graphql', '-f', `query=${q}`, '-f', `id=${id}`], { timeout: 20000 })).stdout).data?.node;
+    return n ? { isResolved: n.isResolved, path: n.path || null, first: n.first?.nodes?.[0]?.author?.login || null,
+      comments: (n.comments?.nodes || []).map(c => ({ by: c.author?.login || 'ghost', at: c.createdAt, thumbsBy: (c.reactions?.nodes || []).map(r => r.user?.login).filter(Boolean) })) } : null;
+  },
+  /** Whether a commit is on the PR, the files it changes, and its place in the PR's commit list. */
+  fixFacts: async (url, sha) => {
+    const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
+    const shas = (await exec('gh', ['api', '--paginate', `repos/${m[1]}/${m[2]}/pulls/${m[3]}/commits`, '--jq', '.[].sha'], { timeout: 30000, maxBuffer: 1 << 22 })).stdout.split('\n').filter(Boolean);
+    const index = shas.findIndex(x => x.startsWith(sha));
+    if (index < 0) return { onPr: false, files: [], index: null, shas };
+    const files = JSON.parse((await exec('gh', ['api', `repos/${m[1]}/${m[2]}/commits/${shas[index]}`, '--jq', '[.files[].filename]'], { timeout: 30000, maxBuffer: 1 << 22 })).stdout);
+    return { onPr: true, files, index, shas };
+  },
   /** A review thread's last five comments, oldest first. */
   threadComments: async id => {
     const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=query($id:ID!){node(id:$id){... on PullRequestReviewThread{comments(last:5){nodes{author{login} body createdAt url}}}}}', '-f', `id=${id}`], { timeout: 20000 });
@@ -38,7 +54,7 @@ export const gh = {
   /** Submitted reviews on a PR; a pending draft has no submitted time. */
   reviews: async url => {
     const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
-    const { stdout } = await exec('gh', ['api', '--paginate', `repos/${m[1]}/${m[2]}/pulls/${m[3]}/reviews`, '--jq', '.[] | {login: .user.login, state, at: .submitted_at, url: .html_url}'], { timeout: 20000, maxBuffer: 1 << 22 });
+    const { stdout } = await exec('gh', ['api', '--paginate', `repos/${m[1]}/${m[2]}/pulls/${m[3]}/reviews`, '--jq', '.[] | {login: .user.login, state, at: .submitted_at, url: .html_url, commit: .commit_id}'], { timeout: 20000, maxBuffer: 1 << 22 });
     return stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
   },
 };

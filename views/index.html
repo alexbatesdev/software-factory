@@ -118,7 +118,7 @@ button:disabled { opacity: .5; cursor: default; }
   <section class="feed prs"><h3>New PRs to approve <span class="n" id="prN"></span></h3><div class="mute">Company-repo work no Teamwork task asked for. Approve and it queues; Decline withdraws it.</div><div id="prList"></div></section>
   <section class="feed aws"><h3>AWS read access to approve <span class="n" id="awsN"></span></h3><div class="mute">Approve and the factory runs bin/sbx-obs-creds for that sandbox (a one-hour ObservabilityReadOnly token, never your session) and opens the AWS hosts bin/obs reads. It needs your Observer AWS login on this Mac.</div><div id="awsList"></div></section>
   <section class="feed tw"><h3>New Teamwork tasks to approve <span class="n" id="twN"></span></h3><div class="mute">Receipts for work already done or under way; nothing waits on them. Approve and the factory creates the task in Teamwork through teamwork-mini; no agent runs. Decline asks for a reason.</div><div id="taskList"></div></section>
-  <section class="feed thr"><h3>Review threads to resolve <span class="n" id="thrN"></span></h3><div class="mute">Resolve marks the thread resolved on GitHub directly; no agent runs.</div><div id="threadList"></div></section>
+  <section class="feed thr"><h3>Review threads to resolve <span class="n" id="thrN"></span></h3><div class="mute">The factory resolves a thread itself once its checks pass; Resolve marks it resolved on GitHub now. No agent runs.</div><div id="threadList"></div></section>
 </aside>
 <main id="board"></main>
 <div class="seats" id="seats"></div>
@@ -256,6 +256,8 @@ function threadsPanel(list) {
       link.href = t.url; link.target = '_blank'; link.rel = 'noopener';
       left.append(link, el('div', 'ask', t.ask));
       if (t.status === 'failed') left.append(el('div', 'fail', `Failed: ${t.detail}`));
+      // The factory resolves it itself once these pass (Alex, 11-20); Resolve here is the override.
+      if (t.checks?.failed?.length) left.append(el('div', 'mute', `Waiting: ${t.checks.failed.join('; ')}`));
       left.append(threadMessages(t.id), noteBox(t.id));
       const b = el('button', null, t.status === 'approved' ? 'Resolving…' : t.status === 'failed' ? 'Retry' : 'Resolve');
       b.disabled = t.status === 'approved'; b.onclick = () => resolveThreads([t.id], b);

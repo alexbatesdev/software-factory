@@ -1,3 +1,4 @@
+import { threadGate } from '../core/threads.mjs';
 // The dashboard's Resolve button (Alex, 11-09): approve, check the thread on GitHub, resolve it, read it back.
 const BY = 'Alex (dashboard)';
 
@@ -24,10 +25,12 @@ export async function resolveThreads(store, ids, gh, now, by = BY) {
   return out;
 }
 
-// Codex's own review threads resolve once we've replied (Alex, 11-11); a person's thread stays his click.
-const CODEX = 'chatgpt-codex-connector', AUTO = 'factory (auto: codex thread we replied to)';
+const AUTO = 'factory (auto: checks passed)';
 
-/** Requests whose thread Alex resolved on GitHub himself close as resolved, and replied codex threads resolve (at most `limit` reads per call). */
+/**
+ * Requests whose thread was resolved on GitHub close as resolved; the rest are checked (Alex, 11-20: the factory resolves
+ * a thread once threadGate passes, and Alex's click stays the override). At most `limit` threads per call.
+ */
 export async function syncResolvedThreads(store, gh, now, { me, limit = 20, prState = () => null } = {}) {
   // A request on a PR that merged or closed is dismissed, with no GitHub read or write (Alex, 11-11).
   for (const t of Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status))) {
@@ -35,9 +38,18 @@ export async function syncResolvedThreads(store, gh, now, { me, limit = 20, prSt
     if (['MERGED', 'CLOSED'].includes(st)) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'dismissed', detail: `Dismissed: ${t.pr} was ${st.toLowerCase()} before it was resolved.` } }, { now: now(), by: 'factory (thread sync)' });
   }
   const open = Object.values(store.state.threads).filter(t => ['requested', 'failed'].includes(t.status)).slice(0, limit);
+  const prFacts = new Map(); // one PR read per sync, shared by its threads
   for (const t of open) {
-    const th = await gh.thread(t.threadId).catch(() => null);
-    if (th?.isResolved) store.append({ kind: 'thread_op', target: t.id, payload: { status: 'resolved', detail: 'Resolved on GitHub directly.' } }, { now: now(), by: 'factory (thread sync)' });
-    else if (t.status === 'requested' && th && me && th.first === CODEX && th.last === me) await resolveThreads(store, [t.id], gh, now, AUTO);
+    const th = await gh.threadFacts(t.threadId).catch(() => null);
+    if (th?.isResolved) { store.append({ kind: 'thread_op', target: t.id, payload: { status: 'resolved', detail: 'Resolved on GitHub directly.' } }, { now: now(), by: 'factory (thread sync)' }); continue; }
+    if (!th || t.status !== 'requested' || !me) continue;
+    const key = `${t.pr} ${t.fixSha}`;
+    if (!prFacts.has(key)) prFacts.set(key, await Promise.all([t.fixSha ? gh.fixFacts(t.pr, t.fixSha) : null, gh.reviews(t.pr)]).catch(() => null));
+    const read = prFacts.get(key);
+    if (!read) continue;
+    const [fix, reviews] = read, at = sha => fix?.shas ? fix.shas.findIndex(x => x === sha) : -1;
+    const gate = threadGate({ me, fixSha: t.fixSha }, { ...th, fix, approvals: reviews.map(r => ({ by: r.login, state: r.state, at: r.at || '', index: at(r.commit) })) });
+    if (JSON.stringify(t.checks?.failed) !== JSON.stringify(gate.failed)) store.append({ kind: 'thread_check', target: t.id, payload: gate }, { now: now(), by: 'factory (thread sync)' });
+    if (gate.ready) await resolveThreads(store, [t.id], gh, now, AUTO);
   }
 }
