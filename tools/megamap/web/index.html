@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Megamap</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header>
+    <div class="toolbar">
+      <strong class="brand">MEGAMAP</strong>
+      <label title="Select a repository or worktree registered by the local service.">Project <select id="project" aria-label="Project"></select></label>
+      <label class="search-label" title="Find file and folder paths. Enter flies to the next match; Escape clears. Command or Control F focuses search."><input id="search" type="search" placeholder="Search paths…" aria-label="Search paths" autocomplete="off"></label>
+      <button id="fit" title="Fit the visible treemap in the window, keeping filters and trace selection.">Fit</button>
+      <label title="Show ignored entries. Open an ignored folder or file to read it on demand."><input id="ignored" type="checkbox"> Show ignored</label>
+      <label title="Show syntax colors at readable zoom. Relationship call colors remain when syntax is off."><input id="syntax" type="checkbox" checked> Syntax colors</label>
+      <label title="Use file type colors, most recent Git change, or Git change frequency."><select id="color" aria-label="Color mode"><option value="file_type">File type</option><option value="recent">Recent change</option><option value="churn">Change frequency</option></select></label>
+      <label title="Hide test and spec files in the map, file tree and traces."><input id="tests" type="checkbox"> Hide tests</label>
+      <label title="Show the virtualized filesystem tree. Selection stays synchronized with the map and inspector."><input id="tree-toggle" type="checkbox" checked> File tree</label>
+    </div>
+    <div class="toolbar">
+      <label class="filter-label" title="Filter paths. Spaces mean AND, | means OR, leading - excludes, and globs such as app/**/*.rb work. Command or Control Shift F focuses this field."><input id="filter" placeholder="Filter: app/ -spec/" aria-label="Path filter" autocomplete="off"></label>
+      <label title="Show all files, calls made by the trace root, or callers of the trace root."><select id="direction" aria-label="Trace direction"><option value="all">All files</option><option value="callees">Calls made (callees)</option><option value="callers">Called by (callers)</option></select></label>
+      <button id="trace" title="Use the selected source file as the trace root, then fit the result. Starts with outgoing calls when All files is selected." disabled>Trace selected</button>
+      <label title="Follow this many method-call hops. Changing depth preserves the map camera.">Depth <input id="depth" type="number" min="1" max="1" value="1" aria-label="Trace depth"></label>
+      <label title="Choose relationship evidence. Observed execution covers only paths exercised during capture."><select id="evidence" aria-label="Evidence mode"><option value="all">All evidence</option><option value="source">Source resolved</option><option value="static">Static only</option><option value="loaded">Loaded metadata</option><option value="observed">Observed calls</option></select></label>
+      <button id="clear-trace" title="Clear the trace root and return to all files.">Clear trace</button>
+      <button id="refresh" title="Rescan this project from disk, clear imported evidence and traces, preserve filters and camera, and retry source retrieval.">Refresh / rescan</button>
+    </div>
+    <div class="toolbar pr-toolbar">
+      <label title="Inspect a GitHub pull request for the selected registered repository. Its exact merge-base and head are read without switching your checkout.">PR <input id="pr-number" type="number" min="1" step="1" placeholder="Number" aria-label="Pull request number"></label>
+      <button id="pr-load" title="Load this PR's pinned revisions and analyze changed methods and their possible callers.">Load PR</button>
+      <button id="pr-exit" title="Leave the immutable PR snapshots and return to this project's local checkout." hidden>Exit PR</button>
+      <span id="pr-controls" hidden>
+        <label title="Switch source revision while retaining the same file boxes and camera."><select id="pr-side" aria-label="PR revision"><option value="after">After</option><option value="before">Before</option></select></label>
+        <label title="Keep the full codebase as dimmed context, show edited files, or show edited files and possible callers."><select id="pr-scope" aria-label="PR scope"><option value="all">Full context</option><option value="changed">Changed files only</option><option value="impact">Potential impact</option></select></label>
+        <label title="Trace callers of all changed methods, or focus on one changed method. File-level fallbacks are explicitly labeled."><select id="pr-seed" aria-label="Changed method"><option value="">All changes</option></select></label>
+      </span>
+      <span id="pr-summary" role="status"></span>
+    </div>
+    <div id="pr-details" hidden><a id="pr-title" target="_blank" rel="noreferrer"></a><span id="pr-revisions"></span><span class="pr-legend" title="Borders and labels show edits; existing file colors continue to identify relationship destinations.">＋ Added · − Deleted · ~ Modified · → Renamed · ◌ Potential caller</span><details id="pr-warnings" hidden><summary>Analysis coverage</summary><div id="pr-warning-text"></div></details></div>
+    <div class="toolbar evidence-bar">
+      <label class="upload-label" title="Choose an optional local JSON relationship snapshot. Only this explicitly selected JSON file is sent to the local service; source code stays local.">Snapshot <input id="snapshot" type="file" accept=".json,application/json" aria-label="Load relationship snapshot"></label>
+      <button id="static" title="Remove imported or captured evidence and return to static source analysis.">Static only</button>
+      <button id="capture" title="Explicitly collect Rails development metadata. Requires a service started with --allow-capture; never runs automatically." disabled>Capture Rails metadata</button>
+      <span id="evidence-status" role="status">Static source analysis</span>
+    </div>
+  </header>
+  <main>
+    <aside id="sidebar" aria-label="File tree sidebar">
+      <div class="panel-title">Files <span id="tree-count"></span></div>
+      <div id="tree" role="tree" tabindex="0" aria-label="Filesystem tree" title="Up/Down selects; Right opens a folder; Left closes or selects its parent; Enter zooms to a file. Scroll to browse."><div id="tree-spacer"></div><div id="tree-rows"></div></div>
+    </aside>
+    <section id="map" tabindex="0" aria-label="Interactive treemap">
+      <canvas id="geometry" aria-hidden="true"></canvas><canvas id="labels" aria-hidden="true"></canvas>
+      <div id="gpu-error" role="alert" hidden></div>
+      <div id="empty" hidden>No files match these filters.</div>
+      <div id="loading" role="status" hidden><span class="triforce" aria-hidden="true"><i></i><i></i><i></i></span><span id="loading-label">Loading project…</span></div>
+      <div id="map-hint">Scroll to zoom · Drag to pan · Double-click to inspect code</div>
+      <div id="map-tooltip" hidden></div>
+    </section>
+    <aside id="inspector" aria-label="Selected file inspector">
+      <div class="panel-title">Inspector</div>
+      <div id="selection">Select a file in the map or file tree.</div>
+      <div id="pr-inspection" hidden></div>
+      <div id="source-status" role="status"></div>
+      <div id="source-tools" hidden><label title="Jump to this source line in the treemap.">Line <input id="line" type="number" min="1" value="1" aria-label="Source line"></label><button id="jump-line" title="Zoom to the selected line using the treemap's source layout.">Go</button></div>
+      <div id="source-preview" aria-label="Source preview"></div>
+    </aside>
+  </main>
+  <footer><span id="status" role="status">Connecting to the local analysis service…</span><span id="counts"></span><span id="renderer-status"></span><button id="map-help" type="button" aria-label="Map controls" title="Wheel zooms around the pointer; drag pans. Click selects; double-click zooms or opens ignored entries. Click a colored call to jump to its definition. F fits; +/- zooms.">ⓘ</button></footer>
+  <script type="module" src="./viewer.mjs"></script>
+</body>
+</html>

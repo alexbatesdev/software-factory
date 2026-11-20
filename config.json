@@ -223,9 +223,9 @@
     "repos": ["built-rails"]
   },
   "megamap": {
-    "_doc": "W-574 (Alex 11-19, \"megamap yes\"): the megamap web viewer at /megamap/ on this origin. Stable installed paths only, never a worktree. Projects are trusted ids mapped to local roots; no path comes from HTTP. Capture stays off. If the module or binary is missing, /megamap/ says so and the factory runs anyway.",
-    "module": "~/Code/tools/code-map-viewer/code-map/web/server.mjs",
-    "binary": "~/Code/tools/code-map-viewer/code-map/target/release/megamap-data",
+    "_doc": "W-574 (Alex 11-19, \"megamap yes\"): the megamap web viewer at /megamap/ on this origin. In-repo since W-636 (tools/megamap; build: cargo build --manifest-path tools/megamap/Cargo.toml --release --locked --bins); relative paths resolve against this repo, never a worktree. Projects are trusted ids mapped to local roots; no path comes from HTTP. Capture stays off. If the module or binary is missing, /megamap/ says so and the factory runs anyway.",
+    "module": "tools/megamap/web/server.mjs",
+    "binary": "tools/megamap/target/release/megamap-data",
     "allowCapture": false,
     "projects": [
       { "id": "built-rails", "label": "built-rails (built-rails-a)", "root": "~/Code/repos/built-rails-a", "repo": "built-rails" },

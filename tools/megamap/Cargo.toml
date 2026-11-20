@@ -1,0 +1,15 @@
+[package]
+name = "megamap"
+version = "0.1.0"
+edition = "2021"
+default-run = "megamap-data"
+
+[dependencies]
+tree-sitter = "0.25.10"
+tree-sitter-highlight = "0.25.10"
+tree-sitter-ruby = "0.23.1"
+tree-sitter-javascript = "0.25.0"
+tree-sitter-typescript = "0.23.2"
+serde_json = "1"
+
+[workspace]
