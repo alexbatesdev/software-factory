@@ -943,7 +943,7 @@ export const ownTasks = w => new Set([w.source?.key, ...(w.aliases || [])].map(k
   .concat([w.links?.teamwork, w.links?.source].map(u => String(u || '').match(/teamwork\.com\/app\/tasks\/(\d+)/)?.[1])).filter(Boolean));
 
 /** GitHub's merge and CI state at the record's head: one finding per problem per commit, so a red build is assessed once. */
-export function observeHealth(work, { head, conflict, base, failing = [], inherited = [], trackedOn = {}, changesRequested = [], threads = [], comments = [], mainGreen = null, ciCompare = {}, prBodyTasks = null, prOwnTasks = [] }, ctx) {
+export function observeHealth(work, { head, conflict, base, failing = [], inherited = [], trackedOn = {}, changesRequested = [], threads = [], comments = [], mainGreen = null, ciCompare = {}, prBodyTasks = null, prOwnTasks = [], ciTests = null }, ctx) {
   const atHead = !!head && sameSha(head, work.head);
   if (TERMINAL.includes(work.phase) || !head || (!atHead && ctx.now < FEEDBACK_ANY_HEAD_FROM)) return work;
   if (!atHead) { conflict = false; failing = []; inherited = []; mainGreen = null; } // CI and conflicts are judged at the record's head only
@@ -965,9 +965,17 @@ export function observeHealth(work, { head, conflict, base, failing = [], inheri
   const own = new Set([...ownTasks(work), ...prOwnTasks]), linked = prBodyTasks || [], foreign = !own.size && linked.length <= 1 ? [] : linked.filter(t => !own.has(t));
   const openBody = (work.findings || []).filter(f => f.status === 'open' && f.source?.type === 'pr_body');
   const bodyNew = foreign.length > 0 && !openBody.some(f => f.source.ids.join() === foreign.join()), bodyFixed = !!prBodyTasks && !foreign.length && openBody.length > 0;
-  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length && !newInherited && !bodyNew && !bodyFixed) return work;
+  // W-598: the failing tests per CircleCI job go on the open CI finding at this head, so no seat needs CircleCI tools to read them.
+  const untested = ciTests && atHead && Object.keys(ciTests).length ? (work.findings || []).filter(f => f.status === 'open' && f.source?.type === 'ci' && sameSha(f.source.head, head) && !f.source.tests) : [];
+  if (!fresh.length && !reviews.length && !newThreads.length && !newComments.length && !mergeMain && !unquoted.length && !newInherited && !bodyNew && !bodyFixed && !untested.length) return work;
   const w = structuredClone(work);
   if (newInherited) note(w, ctx, inheritedNote);
+  for (const f of w.findings.filter(x => untested.some(u => u.id === x.id))) {
+    const tests = ts => ts === null ? 'failed before any test ran' : ts.length ? `${ts.slice(0, 10).join(', ')}${ts.length > 10 ? `, and ${ts.length - 10} more` : ''}` : 'no failed tests reported';
+    f.source.tests = ciTests;
+    f.text += ` Failing tests, read by the factory from CircleCI: ${Object.entries(ciTests).map(([c, ts]) => `${c}: ${tests(ts)}`).join('; ')}.`;
+    note(w, ctx, `${f.id} now lists its failing tests from CircleCI (W-598).`);
+  }
   for (const f of w.findings.filter(x => unquoted.some(u => u.id === x.id))) {
     f.text = FEEDBACK_TEXT.comments(f.source.ids.map(id => byId.get(id) || { by: 'comment', url: id }));
     f.source.quoted = true;

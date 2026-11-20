@@ -324,6 +324,20 @@ async function branchFiles(repo, head) {
   } catch (e) { once(`branch files ${repo}@${head.slice(0, 7)}: ${e.message}`); return null; }
 }
 
+// W-598: each red CircleCI job's failing tests at the PR head, for the CI finding (read once per head, cached).
+async function readCiTests(health, prs, owner) {
+  const out = new Map();
+  if (!circleReady()) return out;
+  for (const [key, h] of health) {
+    const [repo, n] = key.split(':'), branch = prs.get(`${repo}-${n}`)?.branch, red = h.failing.filter(f => f.startsWith('ci/circleci: '));
+    if (!branch || !red.length) continue;
+    try {
+      const jobs = await ciRun(`gh/${owner}/${repo}@${h.head}`, () => readJobFailures(`gh/${owner}/${repo}`, branch, h.head));
+      if (jobs) out.set(key, Object.fromEntries(red.filter(f => jobs.has(f)).map(f => [f, jobs.get(f).tests])));
+    } catch (e) { once(`circleci tests ${key}: ${e.message}`); }
+  }
+  return out;
+}
 async function compareCi(health, mainFailing, prs, owner) {
   const out = new Map();
   if (!circleReady()) return out;
@@ -360,7 +374,7 @@ async function githubTick() {
     const health = await readPrHealth([...own], owner, undefined, config.githubLogin, COMMENTS_FROM);
     const main = await readMain([...new Set([...own].map(k => k.split(':')[0]))], owner).catch(e => { once(`main CI read: ${e.message}`); return new Map(); });
     const mainGreen = new Map([...main].map(([r, m]) => [r, m.green])), mainFailing = new Map([...main].map(([r, m]) => [r, m.failing])), mainPassing = new Map([...main].map(([r, m]) => [r, m.passing]));
-    const ciCompare = await compareCi(health, mainFailing, prs, owner);
+    const ciCompare = await compareCi(health, mainFailing, prs, owner), ciTests = await readCiTests(health, prs, owner);
     await compareAudit(health, ciCompare);
     // Ancestry is read here and logged on the row, so a replay never asks GitHub; a failed read retries next tick.
     const ancestry = new Map();
@@ -369,7 +383,7 @@ async function githubTick() {
       const prBase = prs.get(recordPrKey(s.work[a.id], owner)?.replace(':', '-'))?.base;
       ancestry.set(a.id, prBase ? { base: a.base, ...await readGrowth(owner, a.repo, prBase, a.base, a.head, config.internalReview?.regrow) } : { base: a.base, status: await readCompare(owner, a.repo, a.base, a.head) });
     } catch (e) { once(`compare ${a.id}: ${e.message}`); }
-    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, ciCompare, subtasks: subtasksOf(projectsRead.trees), branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
+    apply([...headCommands(s, heads, { owner, now: now(), standingWaiver: config.standingWaiver, ancestry }), ...healthCommands(s, health, { owner, now: now(), ...skipped(), mainGreen, mainFailing, mainPassing, ciTests, ciCompare, subtasks: subtasksOf(projectsRead.trees), branches: new Map([...prs].map(([id, p]) => [id, p.branch])) })], 'github');
     apply(sourceCommands(store.state, prs, 'pr', parseAcs, skipped()), 'poller');
     // Hourly audit: anything the read saw that no record holds is a gap in the factory, so the factory developer hears of it.
     if (Date.now() - lastAudit >= 3600000) {

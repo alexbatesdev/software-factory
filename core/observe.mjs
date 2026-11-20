@@ -106,7 +106,7 @@ function prTasks(state, url, subtasks) {
   return [...new Set([...own, ...own.flatMap(t => subtasks.get(t) || [])])];
 }
 
-export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map(), mainFailing = new Map(), mainPassing = new Map(), branches = new Map(), ciCompare = new Map(), subtasks = new Map() }) {
+export function healthCommands(state, health, { owner, now, exclude, mainGreen = new Map(), mainFailing = new Map(), mainPassing = new Map(), branches = new Map(), ciCompare = new Map(), ciTests = new Map(), subtasks = new Map() }) {
   const cmds = [], idx = sourceIndex(state), acting = w => w && [...W.BUILDING, ...W.HEALTH_REOPENS].includes(w.phase);
   // One fixes round per PR: the PR's own record when it is in play, else the first record carrying the PR that is.
   const byPr = new Map(), fromMain = new Map();
@@ -134,7 +134,7 @@ export function healthCommands(state, health, { owner, now, exclude, mainGreen =
     const inherited = h.failing.filter(f => compared[f]?.verdict === 'red on main' || ((baseFailing || []).includes(f) && !compared[f])), failing = baseFailing ? h.failing.filter(f => !inherited.includes(f) && compared[f]?.verdict !== 'pending') : []; // a comparison still running decides nothing yet (W-520)
     if (onMain) for (const f of inherited) fromMain.set(`${repo}:${f}`, [...(fromMain.get(`${repo}:${f}`) || []), key]);
     // Main is green for this PR only where it ran and passed what fails here: a check main never runs is unknown (W-489).
-    const payload = { head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, ...(inherited.length ? { inherited } : {}), ...(onMain && inherited.some(f => tracked.has(`ci:${repo}:${f}`)) ? { trackedOn: Object.fromEntries(inherited.filter(f => tracked.has(`ci:${repo}:${f}`)).map(f => [f, tracked.get(`ci:${repo}:${f}`)])) } : {}), changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], ...(Object.keys(compared).length ? { ciCompare: compared } : {}), ...(h.bodyTasks ? { prBodyTasks: h.bodyTasks, prOwnTasks: prTasks(state, w.links?.pr, subtasks) } : {}), mainGreen: onMain && failing.every(f => (mainPassing.get(repo) || []).includes(f)) && mainGreen.get(repo) || null };
+    const payload = { ...(ciTests.get(key) && Object.keys(ciTests.get(key)).length ? { ciTests: ciTests.get(key) } : {}), head: h.head, conflict: !!h.conflict, ...(onMain ? {} : { base: h.base }), failing, ...(inherited.length ? { inherited } : {}), ...(onMain && inherited.some(f => tracked.has(`ci:${repo}:${f}`)) ? { trackedOn: Object.fromEntries(inherited.filter(f => tracked.has(`ci:${repo}:${f}`)).map(f => [f, tracked.get(`ci:${repo}:${f}`)])) } : {}), changesRequested: h.changesRequested || [], threads: h.threads || [], comments: h.comments || [], ...(Object.keys(compared).length ? { ciCompare: compared } : {}), ...(h.bodyTasks ? { prBodyTasks: h.bodyTasks, prOwnTasks: prTasks(state, w.links?.pr, subtasks) } : {}), mainGreen: onMain && failing.every(f => (mainPassing.get(repo) || []).includes(f)) && mainGreen.get(repo) || null };
     if (W.observeHealth(w, payload, { now, by: 'github' }) !== w) cmds.push({ kind: 'observe_health', target: w.id, payload, ctx: { now, by: 'github' } });
   }
   // One proposal per check red on main, while no open record holds it (Alex, 11-12: unrelated fixes are his to approve).

@@ -964,3 +964,19 @@ test("a fixes round's done names the same class for each reviewer finding it was
   const [m] = inboxCommands({ work: { 'W-1': rec }, questions: {}, messages: {}, notifications: {} }, { supervisors: ['sup: x'], seats: [] }, null).cmds;
   assert.match(m.payload.text, /Same class \(W-596\).*report\.sameClass/, 'the fixes request says so');
 });
+
+// W-598: sup: stream-2 (Codex) has no CircleCI tools, so W-77 R25 parked on F42 it couldn't read.
+test('the factory attaches the failing tests per CircleCI job to the open CI finding, once, whatever the seat can read (W-598)', () => {
+  const H = 'aaaaaaa1';
+  let w = run(updateWork(build(), { links: { pr: PR } }, ctx()), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'transition', to: 'implementation', owner: 'sbx: s' }, { type: 'implementation_done', head: H });
+  const red = observeHealth(w, { head: H, conflict: false, failing: ['ci/circleci: test', 'ci/circleci: unit-tests'] }, ctx());
+  const ciTests = { 'ci/circleci: unit-tests': ['spec/models/a_spec.rb::A works', 'spec/models/b_spec.rb::B works'], 'ci/circleci: test': null };
+  const told = observeHealth(red, { head: H, conflict: false, failing: ['ci/circleci: unit-tests'], inherited: ['ci/circleci: test'], ciTests }, ctx());
+  const f = told.findings.find(x => x.source.type === 'ci');
+  assert.deepEqual(f.source.tests, ciTests);
+  assert.match(f.text, /Failing tests, read by the factory from CircleCI: ci\/circleci: unit-tests: spec\/models\/a_spec\.rb::A works, spec\/models\/b_spec\.rb::B works; ci\/circleci: test: failed before any test ran/);
+  assert.match(told.updates.at(-1).text, new RegExp(`${f.id} now lists its failing tests`));
+  assert.equal(observeHealth(told, { head: H, conflict: false, failing: ['ci/circleci: unit-tests'], ciTests }, ctx()), told, 'once');
+  assert.equal(observeHealth(red, { head: 'bbbbbbb2', failing: [], ciTests }, ctx()).findings.find(x => x.source.type === 'ci').source.tests, undefined, 'only the finding at that head');
+});
