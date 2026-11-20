@@ -595,3 +595,17 @@ test('the New PRs gate covers every repo but those that commit to main, and tria
     assert.equal((await f.act('board lead', 'triage', { work: 'W-2', bucket: 'ready', note: 'n', repo: 'teamwork-mini-mcp' }))[0], 200, 'no proposal asked for work that will not open a PR');
   } finally { f.close(); }
 });
+
+test("a scout's discovery citing a Sentry issue another record tracks is refused, naming that record (W-608: W-607 re-filed W-605's BUILT-GWH)", async () => {
+  const f = await serveWith({ config: { ...config, scout: { projects: ['built'] } } });
+  try {
+    f.store.appendAll([
+      { kind: 'create', payload: { title: 'BUILT-GWH NoMethodError values for Array', objective: 'https://acme.sentry.io/issues/123/' } },
+      { kind: 'create', payload: { title: 'Sentry scout', kind: 'scout', objective: '2. Skip issues the factory already tracks: 123, BUILT-GWH.' } },
+    ], { now: 'n', by: 'test' });
+    const [code, body] = await f.act('triage board worker', 'progress', { work: 'W-2', discovery: 'BUILT-GWH NoMethodError values in _custom_field_value_input.html.slim:1', text: 'events 40' });
+    assert.equal(code, 409); assert.match(body.error, /BUILT-GWH.*W-1/s);
+    assert.equal((await f.act('triage board worker', 'progress', { work: 'W-2', discovery: 'Another error', text: 'https://acme.sentry.io/issues/123/ again' }))[0], 409, 'by issue URL too');
+    assert.equal((await f.act('triage board worker', 'progress', { work: 'W-2', discovery: 'BUILT-NEW error in x.rb:1', text: 'new' }))[0], 200, 'an untracked issue is filed');
+  } finally { f.close(); }
+});

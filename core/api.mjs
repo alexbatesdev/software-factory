@@ -4,6 +4,7 @@ import { projectFor, prMapFor } from '../hosts/megamap.mjs';
 // only local processes reach 127.0.0.1; a cloud deployment needs factory-issued seat tokens instead.
 import { refusal, isTrustedReviewSeat, ROLES, onAlexWord } from './capabilities.mjs';
 import { pathsIn } from './duplicates.mjs';
+import { sentryTracked } from './scout.mjs';
 import { queueView } from '../views/queue.mjs';
 import { commandsFor } from './actions.mjs';
 import { existsSync, readFileSync } from 'node:fs';
@@ -46,6 +47,10 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state, asking = action === 'ask' && !args.withdraw && !args.amend;
+    // A scout's skip list is enforced, not just advised: new evidence on a tracked Sentry issue goes on its record (W-608).
+    const tracked = action === 'progress' && args.discovery && s.work[args.work]?.kind === 'scout' && config.scout?.projects
+      && Object.entries(sentryTracked(Object.values(s.work), config.scout.projects, `${args.discovery}\n${args.text || ''}`));
+    if (tracked?.length) return [409, { error: `The factory already tracks ${tracked.map(([id, ws]) => `${id} (${ws.join(', ')})`).join('; ')}, so this isn't a new record. Add any new evidence there with progress (no discovery), and note the skip in your final report.` }];
     // A discovery split out as pre-existing must show the faulty code on origin/main, checked here (W-435: W-434's
     // "pre-existing on main" was code the PR under review introduced). Otherwise the PR under review fixes it.
     if (action === 'progress' && args.discovery && /pre-?existing|\bon (origin\/)?main\b|already (on|in) main/i.test(`${args.discovery} ${args.text || ''}`)) {

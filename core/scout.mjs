@@ -3,18 +3,26 @@
 import { busyStreams, canTake } from './dispatch.mjs';
 import { TERMINAL, DEFAULT_REPO } from './work.mjs';
 
-/** Sentry issue ids (from issue URLs) and short ids of the scanned projects cited anywhere on the board. */
-export function sentryCited(works, projects) {
+/** Sentry issue ids (from issue URLs) and short ids of the scanned projects in a text. */
+function sentryIds(text, projects) {
   // ponytail: a bare numeric id with no URL isn't recognised; cite the URL.
   const names = [...projects].sort((a, b) => b.length - a.length).map(p => p.toUpperCase()).join('|');
   // All-letter ids (BUILT-ETM) are real, so no digit is required; a stray word like BUILT-IN only adds a harmless skip (W-348).
-  const short = new RegExp(`\\b(?:${names})-[0-9A-Z]+\\b`, 'g'), out = new Set();
-  for (const w of works) {
-    const text = [w.title, w.objective, ...Object.values(w.links || {}), ...(w.updates || []).map(u => u.text)].join('\n');
-    for (const m of text.matchAll(/sentry\.io\/(?:organizations\/[\w-]+\/)?issues\/(\d+)/g)) out.add(m[1]);
-    for (const m of text.matchAll(short)) out.add(m[0]);
-  }
-  return [...out].sort();
+  const short = new RegExp(`\\b(?:${names})-[0-9A-Z]+\\b`, 'g');
+  return [...String(text).matchAll(/sentry\.io\/(?:organizations\/[\w-]+\/)?issues\/(\d+)/g)].map(m => m[1]).concat([...String(text).matchAll(short)].map(m => m[0]));
+}
+const textOf = w => [w.title, w.objective, ...Object.values(w.links || {}), ...(w.updates || []).map(u => u.text)].join('\n');
+
+/** Sentry issue ids (from issue URLs) and short ids of the scanned projects cited anywhere on the board. */
+export function sentryCited(works, projects) {
+  return [...new Set(works.flatMap(w => sentryIds(textOf(w), projects)))].sort();
+}
+
+/** W-608: each Sentry id in `text` that a record other than a scout already cites, with the records citing it. */
+export function sentryTracked(works, projects, text) {
+  const ids = new Set(sentryIds(text, projects)), out = {};
+  for (const w of works) if (w.kind !== 'scout') for (const id of sentryIds(textOf(w), projects)) if (ids.has(id)) out[id] = [...new Set([...(out[id] || []), w.id])];
+  return out;
 }
 
 /** The scout's brief, one template. */
