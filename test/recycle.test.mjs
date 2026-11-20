@@ -233,6 +233,8 @@ test("a recreated sandbox gets the checkout's pinned Ruby as a prebuilt download
   assert.deepEqual(ran, ['box']);
   assert.match(pinnedToolsCommand, /MISE_RUBY_COMPILE=false mise install/);
   assert.match(pinnedToolsCommand, /^cd '?\/Users\/[^ ]+\/[\w-]+'? && /);
+  // W-451: the host checkout can sit on an old release branch (3.4.12) while main pins 3.4.13.
+  assert.match(pinnedToolsCommand, /MISE_RUBY_COMPILE=false mise install "ruby@\$\(git show origin\/main:\.ruby-version\)"/);
 });
 
 test("a finished record's leftover worktree doesn't block a recycle; it is dropped with the sandbox and named (W-493: w439-r5)", async () => {

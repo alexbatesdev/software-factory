@@ -232,7 +232,8 @@ const BUILT_RAILS = join(homedir(), 'Code/repos/built-rails-a');
 // Codex has no claude.ai connectors: Sentry comes through the sandbox's gateway (registered once with `sbx mcp add`, W-306).
 const loadMcp = (name, sandbox) => run('sbx', ['mcp', 'load', name, '--sandbox', sandbox], { timeout: 60000 });
 // The image compiles Ruby (MISE_RUBY_COMPILE=true), but a sandbox can't reach ruby-lang.org; a prebuilt one comes from GitHub (W-448).
-export const pinnedToolsCommand = `cd '${BUILT_RAILS}' && MISE_RUBY_COMPILE=false mise install`;
+// Main's pin too: the checkout may be on an older branch than the one a worker builds on (W-451).
+export const pinnedToolsCommand = `cd '${BUILT_RAILS}' && MISE_RUBY_COMPILE=false mise install && MISE_RUBY_COMPILE=false mise install "ruby@$(git show origin/main:.ruby-version)"`;
 const pinnedTools = sandbox => run('sbx', ['exec', sandbox, 'bash', '-lc', pinnedToolsCommand], { timeout: 900000 });
 const gemSecrets = sandbox => run(join(BUILT_RAILS, 'bin/sbx-secrets'), [sandbox], { cwd: BUILT_RAILS, timeout: 120000 });
 
