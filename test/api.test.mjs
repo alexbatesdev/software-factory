@@ -633,3 +633,16 @@ test("a hold until a PR merges is refused when that PR has already merged, so no
     assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', untilMerged: '#9000', note: 'after #9000' }))[0], 200, 'an open PR holds as before');
   } finally { f.close(); }
 });
+
+test("a Codex stream can't take an internal review: no ack of a review request and no review assignment on it (W-633: W-77 R23/R27 on sup: stream-2)", async () => {
+  const C = 'sup: stream-2', codex = { ...config, routing: { supervisors: { [S1]: { worker: 'sbx: stream-1' }, [C]: { worker: 'sbx: stream-2', agent: 'codex' } } } };
+  const f = await serveWith({ config: codex });
+  try {
+    f.store.append({ kind: 'import', target: 'work/W-77', payload: { id: 'W-77', title: 'PED', phase: 'rereview', kind: 'build', head: 'aaa1111', owner: C, stream: C, links: {}, assignments: [], requests: [{ id: 'R23', type: 'review', at: 't', by: C, ack: null, head: 'aaa1111' }], updates: [], aliases: [], reviews: [], findings: [], checks: [], criteria: [], related: [] } }, { now: '2026-11-20T21:40:00.000Z', by: 'test' });
+    const [code, body] = await f.act(C, 'ack', { ref: 'W-77/R23', outcome: 'received' });
+    assert.equal(code, 409, JSON.stringify(body)); assert.match(body.error, /Claude stream/);
+    const [c2, b2] = await f.act(C, 'assign', { work: 'W-77', assignmentId: 'R27', kind: 'review', status: 'queued', owner: 'sbx: stream-2' });
+    assert.equal(c2, 409, JSON.stringify(b2)); assert.match(b2.error, /Claude stream/);
+    assert.equal(f.store.state.work['W-77'].requests[0].ack, null, 'the request stays for the queue to route');
+  } finally { f.close(); }
+});

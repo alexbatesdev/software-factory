@@ -48,6 +48,12 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state, asking = action === 'ask' && !args.withdraw && !args.amend;
+    // The internal review runs on Claude (W-556), so a Codex stream never takes one up; the queue routes it (W-633).
+    const sups = config.routing?.supervisors || {}, codexSeat = l => sups[l]?.agent === 'codex' || Object.values(sups).some(v => v.agent === 'codex' && v.worker === l);
+    const [ackWork, ackReq] = action === 'ack' ? String(args.ref || '').split('/') : [];
+    const reviewAck = ackReq && args.outcome !== 'declined' && s.work[ackWork]?.requests?.find(r => r.id === ackReq)?.type === 'review';
+    if ((reviewAck && codexSeat(seat)) || (action === 'assign' && args.kind === 'review' && (codexSeat(args.owner) || codexSeat(seat))))
+      return [409, { error: `An internal review runs on a Claude stream (W-556), never on a Codex one. Leave the review request unacked: the factory queue routes it to the next free Claude stream.` }];
     // A deliverable is work delivered to Alex, never his own answer handed back (Alex 11-20, W-614).
     if (action === 'deliver') {
       const flat = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
