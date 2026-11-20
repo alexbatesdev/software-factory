@@ -71,6 +71,8 @@ export function skipNotes(works, cfg = {}) {
 // W-595 (Alex 11-19): a human reviewer's blocker (changes requested, or a person's unresolved thread) joins the record's
 // running round, or puts the record ahead of ordinary work. Findings from before the rule never count.
 export const BLOCKER_FROM = '2026-11-20T00:00:00.000Z';
+// W-624: from here, a park the job's worker or supervisor set during the job ends with it.
+export const PARK_ENDS_WITH_JOB_FROM = '2026-11-20T20:30:00.000Z';
 export const isBlocker = f => f.status === 'open' && f.source?.at >= BLOCKER_FROM && (f.source.type === 'changes_requested' || (f.source.type === 'threads' && !!f.source.human));
 export const isHotfix = w => !!w.hotfix || /^hotfix\//.test(w.links?.branch || '');
 const rank = w => isHotfix(w) ? 0 : (w.findings || []).some(isBlocker) ? 1 : Math.min(w.priority ?? 3, w.support ? 2 : 3);
@@ -732,6 +734,10 @@ export function applyEvent(work, e, ctx) {
       const cur = w.assignments.find(x => x.id === a.id);
       cur.history.push({ status: cur.status, at: ctx.now, by: ctx.by }); cur.status = 'done'; cur.version++; cur.doneHead = e.head || null;
       note(w, ctx, `Assignment ${a.id} done${e.head ? ` at ${e.head}` : ''}.`);
+      const park = w.waitingOn;
+      if (ctx.now >= PARK_ENDS_WITH_JOB_FROM && park && park.at >= cur.at && [cur.owner, cur.by, w.stream].includes(park.by)) {
+        note(w, ctx, `No longer waiting on ${park.who}: it was set during ${a.id}, and ${a.id} is done.`); w.waitingOn = null;
+      }
       break;
     }
     case 'correct_head': {

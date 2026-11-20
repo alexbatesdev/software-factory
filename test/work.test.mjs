@@ -980,3 +980,17 @@ test('the factory attaches the failing tests per CircleCI job to the open CI fin
   assert.equal(observeHealth(told, { head: H, conflict: false, failing: ['ci/circleci: unit-tests'], ciTests }, ctx()), told, 'once');
   assert.equal(observeHealth(red, { head: 'bbbbbbb2', failing: [], ciTests }, ctx()).findings.find(x => x.source.type === 'ci').source.tests, undefined, 'only the finding at that head');
 });
+
+test("a park its job's worker or supervisor set during the job clears when the job is recorded done, so the next round dispatches (W-624: W-610)", () => {
+  const at = h => ({ now: `2026-11-21T${h}:00:00.000Z`, by: 'sup: stream-1' });
+  const started = run(build(), { type: 'transition', to: 'ready' }, { type: 'transition', to: 'queued' },
+    { type: 'assign', assignmentId: 'R1', kind: 'implementation', owner: 'sbx: stream-1', status: 'started', evidence: 'brief', ctx: at('10') });
+  const parked = run(started, { type: 'wait', who: 'sup: stream-1 to pick a failure-path option (A/B/C)', what: 'A, B or C', evidence: 'worker asked', actor: 'other', ctx: { ...at('11'), by: 'sbx: stream-1' } });
+  assert.ok(parked.waitingOn);
+  const a = parked.assignments.at(-1);
+  const done = run(parked, { type: 'assignment_done', assignmentId: 'R1', expectedVersion: a.version, head: 'aaa1111', ctx: at('12') });
+  assert.equal(done.waitingOn, null);
+  assert.match(done.updates.map(u => u.text).join('\n'), /no longer waiting on sup: stream-1 to pick.*R1 is done/i);
+  const other = run(started, { type: 'wait', who: 'TB-9', what: 'Alex', evidence: 'x', ctx: { ...at('11'), by: 'factory lead' } });
+  assert.ok(run(other, { type: 'assignment_done', assignmentId: 'R1', expectedVersion: other.assignments.at(-1).version, head: 'aaa1111', ctx: at('12') }).waitingOn, "someone else's park stays");
+});
