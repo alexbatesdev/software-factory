@@ -47,6 +47,13 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     const why = role ? refusal(role, action, args, { seat, questions: store.state.questions }) : `"${seat || '(no seat)'}" is not a factory seat.`;
     if (why) return [403, { error: why }];
     const s = store.state, asking = action === 'ask' && !args.withdraw && !args.amend;
+    // A deliverable is work delivered to Alex, never his own answer handed back (Alex 11-20, W-614).
+    if (action === 'deliver') {
+      const flat = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const restated = [...`${args.title} ${args.text}`.matchAll(/\bTB-?(\d+)\b/gi)].map(m => ({ id: `TB-${m[1]}`, ...s.questions[`TB-${m[1]}`] })).find(q => q.answer
+        && (/\b(decision|answer|ruling)\b/i.test(args.title) || (flat(q.answer.note).length >= 20 && flat(args.text).includes(flat(q.answer.note)))));
+      if (restated) return [409, { error: `This restates Alex's answer to ${restated.id}, and a deliverable is work delivered to him (a report, findings, an artifact). Put the decision's rationale in a progress note on the record, or in the PR, docs or code it changes.` }];
+    }
     // A scout's skip list is enforced, not just advised: new evidence on a tracked Sentry issue goes on its record (W-608).
     const tracked = action === 'progress' && args.discovery && s.work[args.work]?.kind === 'scout' && config.scout?.projects
       && Object.entries(sentryTracked(Object.values(s.work), config.scout.projects, `${args.discovery}\n${args.text || ''}`));

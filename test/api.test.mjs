@@ -609,3 +609,16 @@ test("a scout's discovery citing a Sentry issue another record tracks is refused
     assert.equal((await f.act('triage board worker', 'progress', { work: 'W-2', discovery: 'BUILT-NEW error in x.rb:1', text: 'new' }))[0], 200, 'an untracked issue is filed');
   } finally { f.close(); }
 });
+
+test("a deliverable that restates Alex's answer to a TB-n is refused; a report that cites one is delivered (W-614: D-3 restated TB-269)", async () => {
+  const f = await serve();
+  try {
+    await f.act('local-head', 'create', { title: 'ADP mapping' });
+    await f.act(S1, 'ask', { title: 'Allow it?', options: [{ key: 'a', text: 'allow' }], work: 'W-1', wwbd: 'none' });
+    await f.act('local-head', 'answer', { id: 'TB-1', choice: 'a', note: 'I agree that we should allow it and document it' });
+    const [code, body] = await f.act(S1, 'deliver', { work: 'W-1', title: 'ADP mapping authority — TB-1 decision', text: '# Authority\nStaff configure mappings.' });
+    assert.equal(code, 409); assert.match(body.error, /answer to TB-1\b.*progress note/);
+    assert.equal((await f.act(S1, 'deliver', { work: 'W-1', title: 'Mapping audit', text: 'Alex answered TB-1: "I agree that we should allow it and document it". Staff configure…' }))[0], 409, 'quoting the answer');
+    assert.equal((await f.act(S1, 'deliver', { work: 'W-1', title: 'Mapping audit findings', text: '# Findings\nThree mappings send compensation (allowed per TB-1).' }))[0], 200);
+  } finally { f.close(); }
+});
