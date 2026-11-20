@@ -2,10 +2,12 @@
 // roots, so no path ever comes from HTTP. It is optional: a missing module, binary or root serves an "unavailable" page
 // under the prefix, and the factory runs either way.
 import { existsSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+import { isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 
 const PREFIX = '/megamap';
+const REPO = fileURLToPath(new URL('..', import.meta.url));
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const under = (req, prefix) => { const p = new URL(req.url, 'http://x').pathname; return p === prefix || p.startsWith(`${prefix}/`); };
 
@@ -30,7 +32,8 @@ function unavailable(prefix, missing) {
  */
 export async function megamapMount(raw, { exists = existsSync, load = p => import(pathToFileURL(p).href) } = {}) {
   if (!raw) return null;
-  const home = p => String(p || '').replace(/^~(?=\/)/, homedir());
+  // A relative path is inside this repo (W-636: tools/megamap).
+  const home = p => { const x = String(p || '').replace(/^~(?=\/)/, homedir()); return x && !isAbsolute(x) ? resolve(REPO, x) : x; };
   const cfg = { ...raw, module: raw.module && home(raw.module), binary: raw.binary && home(raw.binary), projects: (raw.projects || []).map(p => ({ ...p, root: home(p.root) })) };
   const prefix = cfg.prefix || PREFIX;
   const projects = (cfg.projects || []).filter(p => exists(p.root));

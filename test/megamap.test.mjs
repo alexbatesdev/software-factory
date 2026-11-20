@@ -108,3 +108,11 @@ test('a record with a PR in a configured project links to that PR in Megamap; ot
   assert.equal(prMapFor(cfg, { links: {} }), null);
   assert.equal(prMapFor(null, { links: { pr: 'https://github.com/acme/built-rails/pull/1' } }), null, 'megamap not configured');
 });
+
+test('a relative module or binary path resolves against the factory repo, so the in-repo tools/megamap install needs no home path (W-636)', async () => {
+  const seen = [];
+  const m = await megamapMount(cfg({ module: 'test/fixtures/megamap-stub.mjs', binary: 'test/megamap.test.mjs' }), { load: p => { seen.push(p); return import(p); } });
+  assert.equal(m.available, true, JSON.stringify(m.missing));
+  assert.equal(seen[0], STUB);
+  await m.close();
+});
