@@ -409,3 +409,12 @@ test("a host worker's label as owner doesn't hold its record's next round from t
   assert.notEqual(p['W-599'].action, null, p['W-599'].reason);
   assert.match(plan([hostRun('someone-else')])['W-599'].reason, /not a stream/);
 });
+
+test("a round routed off its free stream names why, never \"busy with undefined\" (W-613: W-588 R3)", () => {
+  const c = { ...cfg, supervisors: { [S1]: { agent: 'codex' }, [S2]: {} } };
+  const review = loose('W-1', { phase: 'review', stream: S1, requests: [{ id: 'R3', type: 'review', at: 't', by: 'x', ack: null }] });
+  const p = Object.fromEntries(autoDispatchPlan([review], c).map(x => [x.id, x]));
+  assert.equal(p['W-1'].to, S2);
+  assert.doesNotMatch(p['W-1'].reason, /undefined|busy/, p['W-1'].reason);
+  assert.ok(p['W-1'].reason.includes(`${S1} can't take it`), p['W-1'].reason);
+});

@@ -147,11 +147,13 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (wantAgent && !fitting.length && free.length && !waited && labels.some(l => agentOf(l) === wantAgent && canTake(w, l, cfg.supervisors))) {
       wait(`waits for a ${wantAgent === 'codex' ? 'Codex' : 'Claude'} stream (its kind of job); any free stream takes it after ${Math.round(fallback / 60000)} min`); return;
     }
+    // Why a round left its own stream: busy, unable to take it, the wrong agent, or more loaded (W-613).
+    const offStream = l => holds.has(l) ? `${l} is busy with ${holds.get(l)}` : !free.includes(l) ? `${l} can't take it` : !fitting.includes(l) ? `it prefers a ${wantAgent === 'codex' ? 'Codex' : 'Claude'} stream` : `${l} has more work`;
     const to = bound?.to || (fitting.length ? fitting : free)[0];
     if (!to && labels.some(l => !holds.has(l) && !fits(l))) { wait(`an internal review runs on Claude, and every Claude stream is busy (${[...holds].filter(([l]) => fits(l)).map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     busy.set(to, w.id); runningOn.set(to, w.id);
-    if (job) { out.push({ id: w.id, action: to === w.stream ? 'deliver' : 'route', to, request: `${w.id}/${job.id}`, reason: `its ${job.type} round: ${to} is free${bound ? ` (${bound.why})` : to === w.stream ? '' : `, ${w.stream} is busy with ${busy.get(w.stream) || holds.get(w.stream)}`}` }); return; }
+    if (job) { out.push({ id: w.id, action: to === w.stream ? 'deliver' : 'route', to, request: `${w.id}/${job.id}`, reason: `its ${job.type} round: ${to} is free${bound ? ` (${bound.why})` : to === w.stream || !w.stream ? '' : `, ${offStream(w.stream)}`}` }); return; }
     // An sbx worker restarts with the record's model and effort before it's dispatched; a host worker is started with them.
     const want = { model: w.model || null, effort: w.effort || null }, have = { model: null, effort: null, ...cfg.running?.[to] };
     if (cfg.supervisors[to]?.worker && (want.model !== have.model || want.effort !== have.effort)) {
