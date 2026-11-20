@@ -401,3 +401,11 @@ test('a production hotfix and its rounds go first in the queue, ahead of priorit
   assert.equal(waits.action, null, 'it never interrupts running work');
   assert.match(waits.reason, /with W-1/);
 });
+
+test("a host worker's label as owner doesn't hold its record's next round from the stream that briefed it (W-602)", () => {
+  const hostRun = owner => w('W-599', { phase: 'review', owner, stream: S1, streamPin: null, requests: [{ id: 'R2', type: 'review', at: 't', by: S1, ack: null }],
+    assignments: [{ id: 'R1', kind: 'implementation', owner: 'w599-ped-spec-tb267', status: 'done', by: S1 }] });
+  const p = plan([hostRun('w599-ped-spec-tb267')]);
+  assert.notEqual(p['W-599'].action, null, p['W-599'].reason);
+  assert.match(plan([hostRun('someone-else')])['W-599'].reason, /not a stream/);
+});

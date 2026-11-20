@@ -113,7 +113,9 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     const githubRound = job?.type === 'fixes' && job.by === 'github';
     // A waiting round's derived wait names its stream picking it up, which is this queue, not a blocker; a question doesn't hold GitHub's round.
     if (w.waitingOn && !(job && (labels.includes(w.waitingOn.who) || workers.has(w.waitingOn.who))) && !(githubRound && /^TB-\d+$/.test(w.waitingOn.who))) { wait(`waiting on ${w.waitingOn.who}: ${w.waitingOn.what}`); return; }
-    if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner)) { wait(`owned by ${w.owner}, not a stream`); return; }
+    // A host worker has a per-job label, so it counts as a worker when its stream's supervisor recorded it (W-602).
+    const briefedBy = l => (w.assignments || []).some(a => a.owner === w.owner && a.by === l);
+    if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner) && !(labels.includes(w.stream) && briefedBy(w.stream))) { wait(`owned by ${w.owner}, not a stream`); return; }
     if (w.openQuestions > 0 && !githubRound) { wait(`${w.openQuestions} open question(s)`); return; }
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); return; }
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); return; }
