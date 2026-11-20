@@ -43,7 +43,7 @@
     <div class="toolbar evidence-bar">
       <label class="upload-label" title="Choose an optional local JSON relationship snapshot. Only this explicitly selected JSON file is sent to the local service; source code stays local.">Snapshot <input id="snapshot" type="file" accept=".json,application/json" aria-label="Load relationship snapshot"></label>
       <button id="static" title="Remove imported or captured evidence and return to static source analysis.">Static only</button>
-      <button id="capture" title="Explicitly collect Rails development metadata. Requires a service started with --allow-capture; never runs automatically." disabled>Capture Rails metadata</button>
+      <button id="capture" title="Explicitly collect Rails development metadata. Requires capture to be enabled by the host; never runs automatically." disabled>Capture Rails metadata</button>
       <span id="evidence-status" role="status">Static source analysis</span>
     </div>
   </header>
