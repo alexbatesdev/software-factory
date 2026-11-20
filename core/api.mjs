@@ -5,6 +5,7 @@ import { projectFor, prMapFor } from '../hosts/megamap.mjs';
 import { refusal, isTrustedReviewSeat, ROLES, onAlexWord } from './capabilities.mjs';
 import { pathsIn } from './duplicates.mjs';
 import { sentryTracked } from './scout.mjs';
+import { prRefUrl, PR_REF } from './units.mjs';
 import { queueView } from '../views/queue.mjs';
 import { commandsFor } from './actions.mjs';
 import { existsSync, readFileSync } from 'node:fs';
@@ -108,6 +109,11 @@ export function createApi({ store, config, gh = null, tw = null, awsHost = null,
     const kept = parking && (parking.externalDeps || []).filter(d => (d.text || d.ref) !== args.releaseHold);
     if (parking && !kept.length && !parking.waitingOn && !['untilMerged', 'untilAnswered', 'reviewBy', 'deferredTo'].some(k => args[k]))
       return [409, { error: `Parking ${args.work} in intake needs what releases it: untilMerged (#N), untilAnswered (TB-n), reviewBy (YYYY-MM-DD) with reviewer (the seat that looks again), or deferredTo (who decides, e.g. product).` }];
+    // A hold on a PR that already merged would only release on the next poll, after the triage that set it (W-621).
+    if (action === 'triage' && args.untilMerged && s.work[args.work]) for (const ref of String(args.untilMerged).split(/[\s,]+/).filter(Boolean)) {
+      const pr = PR_REF.test(ref) ? await readPr(prRefUrl({ repo: args.repo || s.work[args.work].repo }, ref, config.githubOwner)).catch(() => null) : null;
+      if (pr?.state === 'MERGED') return [409, { error: `${ref} already merged${pr.mergedAt ? ` at ${pr.mergedAt}` : ''}, so a hold on it would release at once. Check whether ${args.work} is still needed on main and triage it for that instead.` }];
+    }
     // Ready into New PRs only with the breakdown Alex reads there (11-09).
     const tw = action === 'triage' && args.bucket === 'ready' && s.work[args.work];
     if (tw && !tw.proposal && !args.proposal && args.support !== true && !String(args.alexAsked || '').trim() && wouldAwaitPrApproval(prGateView(s, { ...tw, ...(args.repo ? { repo: args.repo } : {}), carriesOut: [...(tw.carriesOut || []), ...(args.carriesOut ? [args.carriesOut] : [])] }), config.prApproval)) return [409, { error: `${args.work} will wait in Alex's New PRs list, so triage it ready with a proposal: {prompted (what made the agent file it), addresses (what the PR fixes), whyThisFix (why this is the right fix), since (how long the issue has existed, with evidence), customerImpact (what changes for existing customers, or "none")}.` }];

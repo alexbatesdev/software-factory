@@ -622,3 +622,14 @@ test("a deliverable that restates Alex's answer to a TB-n is refused; a report t
     assert.equal((await f.act(S1, 'deliver', { work: 'W-1', title: 'Mapping audit findings', text: '# Findings\nThree mappings send compensation (allowed per TB-1).' }))[0], 200);
   } finally { f.close(); }
 });
+
+test("a hold until a PR merges is refused when that PR has already merged, so nothing waits on a past event (W-621: W-616 held on #8994)", async () => {
+  const merged = 'https://github.com/acme-org/built-rails/pull/8994';
+  const f = await serveWith({ config: { ...config, githubOwner: 'acme-org' }, readPr: async url => ({ url, state: url === merged ? 'MERGED' : 'OPEN', mergedAt: url === merged ? '2026-11-20T18:28:30Z' : null }) });
+  try {
+    await f.act('local-head', 'create', { title: 'Loading rule' });
+    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', untilMerged: '#8994', note: 'after #8994' });
+    assert.equal(code, 409); assert.match(body.error, /#8994 already merged.*2026-11-20T18:28:30Z/);
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-1', bucket: 'intake', untilMerged: '#9000', note: 'after #9000' }))[0], 200, 'an open PR holds as before');
+  } finally { f.close(); }
+});
