@@ -175,6 +175,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
       // ...and its PR link when it has none, or the ready gate never sees that PR (W-418: W-359 waited 24h on #8699).
       if (into && ctx.now >= DUP_PR_FROM && cur.links?.pr && state.work[into] && !state.work[into].links?.pr) state.work[into] = { ...state.work[into], links: { ...state.work[into].links, pr: cur.links.pr } };
       if (ctx.now >= SHARED_REVIEW_FROM && cur.phase !== 'ready_for_human' && work.phase === 'ready_for_human') settlePartners(state, id, ctx);
+      if (ctx.now >= SHARED_PR_REVIEW_FROM && payload.type === 'review' && payload.result === 'clean' && !payload.sharedFrom) sharePrReview(state, id, payload, ctx);
       // The request ack is the seat's answer to the message about it; a still-open message would wake the seat for nothing.
       if (payload.type === 'ack') for (const m of Object.values(state.messages))
         if (!m.ackedAt && m.about?.requests === `${id}/${payload.requestId}`) state.messages[m.id] = { ...m, ackedAt: ctx.now, ackedBy: payload.by, outcome: 'request acked' };
@@ -222,6 +223,17 @@ function settlePartners(state, id, ctx) {
     const note = `Settled on ${id} (same PR): its internal review passed at ${w.head}.`;
     const next = { ...p, findings: p.findings.map(f => open.includes(f) ? { ...f, status: 'resolved', note, at: ctx.now } : f), updates: [...p.updates, { at: ctx.now, by: 'board', text: `Findings ${open.map(f => f.id).join(', ')} ${note}` }] };
     state.work[pid] = W.normalize(next, { now: ctx.now, by: 'board', ...derivedCtx(state, pid) });
+  }
+}
+
+// W-628: a clean internal review is of the PR, so every other live record on that PR at the same head takes it. Gated for replay.
+const SHARED_PR_REVIEW_FROM = '2026-11-20T21:30:00.000Z';
+function sharePrReview(state, id, e, ctx) {
+  const key = prKey(state.work[id].links?.pr);
+  if (!key) return;
+  for (const p of Object.values(state.work)) {
+    if (p.id === id || W.TERMINAL.includes(p.phase) || prKey(p.links?.pr) !== key || !W.sameSha(p.head, e.head) || p.reviews.some(r => W.sameSha(r.head, e.head) && r.result === 'clean')) continue;
+    try { state.work[p.id] = W.applyEvent(p, { type: 'review', head: p.head, by: `${e.by} (on ${id}, same PR)`, result: 'clean', link: e.link || null, sharedFrom: id }, ctx).work; } catch { /* not waiting for review */ }
   }
 }
 

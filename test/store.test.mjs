@@ -370,3 +370,19 @@ test("a find the record's own rule covers is filed in scope: an open finding on 
   const { readFileSync } = await import('node:fs');
   assert.match(readFileSync(new URL('../mcp/server.mjs', import.meta.url), 'utf8'), /inScope/);
 });
+
+test("a clean internal review counts for every live record on the same PR at that head (W-628: W-45, W-46, W-143 and W-144 each asked for one of #8245)", () => {
+  const s = openStore();
+  const pr = 'https://github.com/acme-org/app/pull/8245';
+  const at = ctx({ now: '2026-11-21T00:00:00.000Z', by: 'sup: stream-1' });
+  const ids = ['W-45', 'W-46', 'W-9'].map(id => { s.append({ kind: 'import', target: `work/${id}`, payload: { id, title: id, phase: 'intake', kind: 'build', links: { pr: id === 'W-9' ? 'https://github.com/acme-org/app/pull/1' : pr }, assignments: [], requests: [], updates: [], aliases: [], reviews: [], findings: [], checks: [], criteria: [], related: [] } }, at); return id; });
+  for (const id of ids) {
+    for (const to of ['ready', 'queued', 'implementation']) s.append(ev(id, { type: 'transition', to, owner: 'sup: stream-1' }), at);
+    s.append(ev(id, { type: 'implementation_done', head: 'ad3a547' }), at);
+  }
+  s.append(ev('W-45', { type: 'review', head: 'ad3a547', by: 'sbx: stream-1 internal-review', result: 'clean' }), at);
+  assert.equal(s.state.work['W-46'].reviews.length, 1, 'the partner on the same PR has the review');
+  assert.match(s.state.work['W-46'].reviews[0].by, /W-45/);
+  assert.equal(s.state.work['W-46'].phase, s.state.work['W-45'].phase);
+  assert.equal(s.state.work['W-9'].reviews.length, 0, 'another PR is untouched');
+});

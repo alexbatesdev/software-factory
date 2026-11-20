@@ -418,3 +418,20 @@ test("a round routed off its free stream names why, never \"busy with undefined\
   assert.doesNotMatch(p['W-1'].reason, /undefined|busy/, p['W-1'].reason);
   assert.ok(p['W-1'].reason.includes(`${S1} can't take it`), p['W-1'].reason);
 });
+
+test('one PR gets one internal review at a time, after any job running on that PR (W-628: four reviews of #8245 queued while W-77 R26 fixes ran)', () => {
+  const pr = 'https://github.com/acme-org/app/pull/8245', other = 'https://github.com/acme-org/app/pull/9000';
+  const reviewOf = (id, link = pr) => loose(id, { phase: 'rereview', stream: S1, links: { pr: link }, requests: [{ id: 'R3', type: 'review', at: 't', by: 'github', ack: null }] });
+  const fixing = loose('W-77', { phase: 'fixes', stream: S2, links: { pr }, assignments: [{ id: 'R26', kind: 'fixes', status: 'started', owner: 'sbx: stream-2' }] });
+  const c = { ...cfg, supervisors: { [S1]: {}, [S2]: {}, 'sup: host': {} } };
+  const p = Object.fromEntries(autoDispatchPlan([fixing, reviewOf('W-45'), reviewOf('W-46'), reviewOf('W-9', other)], c).map(x => [x.id, x]));
+  for (const id of ['W-45', 'W-46']) {
+    assert.equal(p[id].action, null, `${id} must not start while W-77 moves the head`);
+    assert.ok(p[id].reason.includes("W-77's fixes round (R26) is running on this PR"), p[id].reason);
+  }
+  assert.ok(p['W-9'].action, 'a review of another PR is not held');
+  const q = Object.fromEntries(autoDispatchPlan([reviewOf('W-45'), reviewOf('W-46')], c).map(x => [x.id, x]));
+  assert.ok(q['W-45'].action, 'the first review of the PR goes');
+  assert.equal(q['W-46'].action, null);
+  assert.ok(q['W-46'].reason.includes("W-45's review covers this PR"), q['W-46'].reason);
+});

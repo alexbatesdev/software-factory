@@ -1,6 +1,7 @@
 // Auto-dispatch (Alex, 2026-10-28): which ready or queued records start themselves this tick, and why the rest wait.
 // Pure: the server applies the plan through ordinary events and logs each one on its record.
 import { routeOf, currentRequest } from './notifier.mjs';
+import { prKey } from './units.mjs';
 import { BUILDING, REVIEWING, TERMINAL, LIVE_ASSIGNMENT, parked, trackOf, queueOrder, isHotfix, needsPrApproval, DEFAULT_REPO } from './work.mjs';
 
 const live = w => (w.assignments || []).some(a => a.kind !== 'review' && LIVE_ASSIGNMENT.includes(a.status));
@@ -97,6 +98,9 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
   const out = [], byId = new Map(works.map(w => [w.id, w])), load = streamLoad(works, labels);
   const order = works.filter(w => (['ready', 'queued'].includes(w.phase) && !(w.phase === 'queued' && !unrequested(w))) || waitingRequest(w, told))
     .sort(queueOrder);
+  // W-628: one internal review per PR at a time, and none while another record's job on that PR is moving its head.
+  const reviewing = new Map(), onPr = w => w.links?.pr && prKey(w.links.pr);
+  for (const o of works) if (onPr(o) && !TERMINAL.includes(o.phase) && (o.assignments || []).some(a => a.kind === 'review' && ['started', 'blocked'].includes(a.status) && !parked(a))) reviewing.set(onPr(o), o.id);
   const place = w => {
     const job = waitingRequest(w, told);
     const wait = reason => out.push({ id: w.id, action: null, reason, ...(job ? { request: `${w.id}/${job.id}` } : {}) });
@@ -116,6 +120,13 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     // A host worker has a per-job label, so it counts as a worker when its stream's supervisor recorded it (W-602).
     const briefedBy = l => (w.assignments || []).some(a => a.owner === w.owner && a.by === l);
     if (w.owner && !labels.includes(w.owner) && !workers.has(w.owner) && !(labels.includes(w.stream) && briefedBy(w.stream))) { wait(`owned by ${w.owner}, not a stream`); return; }
+    if (job?.type === 'review' && onPr(w)) {
+      const mover = works.find(o => o.id !== w.id && onPr(o) === onPr(w) && !TERMINAL.includes(o.phase) && liveJob(o));
+      const a = mover && (mover.assignments || []).find(x => ['started', 'blocked'].includes(x.status) && !parked(x));
+      if (mover) { wait(`${mover.id}'s ${a.kind} round (${a.id}) is running on this PR and will move its head; one review follows it (W-628)`); return; }
+      const by = reviewing.get(onPr(w));
+      if (by && by !== w.id) { wait(`${by}'s review covers this PR: one internal review per PR head (W-628)`); return; }
+    }
     if (w.openQuestions > 0 && !githubRound) { wait(`${w.openQuestions} open question(s)`); return; }
     if (w.openDeps?.length) { wait(`waiting on ${w.openDeps.join(', ')}`); return; }
     if (w.externalDeps?.length) { wait(`external dependency: ${w.externalDeps.map(d => d.text || d.ref).join('; ')}`); return; }
@@ -153,6 +164,7 @@ export function autoDispatchPlan(works, cfg, { terminals = [] } = {}) {
     if (!to && labels.some(l => !holds.has(l) && !fits(l))) { wait(`an internal review runs on Claude, and every Claude stream is busy (${[...holds].filter(([l]) => fits(l)).map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     if (!to) { wait(`every stream is busy (${[...holds].map(([l, id]) => `${l} with ${id}`).join(', ')}); waits its turn`); return; }
     busy.set(to, w.id); runningOn.set(to, w.id);
+    if (job?.type === 'review' && onPr(w)) reviewing.set(onPr(w), w.id);
     if (job) { out.push({ id: w.id, action: to === w.stream ? 'deliver' : 'route', to, request: `${w.id}/${job.id}`, reason: `its ${job.type} round: ${to} is free${bound ? ` (${bound.why})` : to === w.stream || !w.stream ? '' : `, ${offStream(w.stream)}`}` }); return; }
     // An sbx worker restarts with the record's model and effort before it's dispatched; a host worker is started with them.
     const want = { model: w.model || null, effort: w.effort || null }, have = { model: null, effort: null, ...cfg.running?.[to] };
