@@ -577,3 +577,21 @@ test('a record flagged for a design check gets its design note asked for, checke
     assert.equal((await done())[0], 200);
   } finally { f.close(); }
 });
+
+// W-600: W-599 (project-planning) was told at triage it "will wait in Alex's New PRs list", then dispatched 15 s later.
+test('the New PRs gate covers every repo but those that commit to main, and triage judges the repo it sets (W-600)', async () => {
+  const { needsPrApproval } = await import('../core/work.mjs');
+  const gate = { trusted: ['teamwork'], direct: ['teamwork-mini-mcp', 'software-factory'] };
+  const rec = repo => ({ kind: 'build', repo, source: { type: 'agent', by: 'sup: stream-1' } });
+  assert.equal(needsPrApproval(rec('project-planning'), gate), true, 'a repo nobody listed waits for Alex');
+  assert.equal(needsPrApproval(rec(undefined), gate), true, 'built-rails');
+  assert.equal(needsPrApproval(rec('teamwork-mini-mcp'), gate), false, 'Alex\'s own tooling commits to main');
+  const f = await serveWith({ config: { ...config, prApproval: gate } });
+  try {
+    await f.act('local-head', 'create', { title: 'Spec drift' });
+    await f.act('local-head', 'create', { title: 'Tool tweak' });
+    const [code, body] = await f.act('board lead', 'triage', { work: 'W-1', bucket: 'ready', note: 'n', repo: 'project-planning' });
+    assert.equal(code, 409); assert.match(body.error, /New PRs/);
+    assert.equal((await f.act('board lead', 'triage', { work: 'W-2', bucket: 'ready', note: 'n', repo: 'teamwork-mini-mcp' }))[0], 200, 'no proposal asked for work that will not open a PR');
+  } finally { f.close(); }
+});

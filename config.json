@@ -124,8 +124,8 @@
   "prApproval": {
     "_why": "A new PR no Teamwork task asked for waits for Alex's go on the dashboard (Alex, 11-09). A source here needs no click: a type (teamwork) or type:by (agent:local-head).",
     "trusted": ["teamwork"],
-    "_repos": "Repos whose work goes through PRs (a record with no repo is built-rails). Alex's own tooling (teamwork-mini-mcp, software-factory) commits to main.",
-    "repos": ["built-rails", "built-customer-implementations", "built-architecture", "built-browser-extension"]
+    "_direct": "Repos that commit to main, so their work opens no PR to approve: Alex's own tooling. Every other repo (a record with no repo is built-rails) goes through PRs and waits for his go, a new one included (W-600: project-planning slipped through the old allow-list).",
+    "direct": ["teamwork-mini-mcp", "software-factory"]
   },
   "autoDispatch": {
     "enabled": true,
