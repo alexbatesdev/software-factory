@@ -54,6 +54,10 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
     if (q.route) fail(`${target} was already asked on ${q.route.channel}.`);
     if (!['teamwork', 'pr'].includes(p.channel) || !p.target) fail('A routed question names its channel (teamwork or pr) and target.');
     next.route = { channel: p.channel, target: String(p.target), url: p.url || null, postedAt: ctx.now };
+  } else if (kind === 'question_reply') {
+    // A teammate's reply where the factory asked it; local-head judges whether it answers (Alex, 11-21).
+    if (!p.id) fail('A reply needs its comment id.');
+    if (!(q.replies || []).some(r => r.id === p.id)) next.replies = [...(q.replies || []), { id: p.id, by: p.by, body: String(p.body || '').slice(0, 2000), url: p.url || null, place: p.place || null, at: ctx.now }];
   } else if (kind === 'question_amend') {
     if (q.status !== 'open') fail(`${target} is not open; ask again instead.`);
     if (!p.note) fail('An amendment needs a note.');

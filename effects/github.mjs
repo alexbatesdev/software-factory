@@ -59,7 +59,7 @@ export const gh = {
   prComment: async (url, body) => (await exec('gh', ['pr', 'comment', url, '--body', body], { timeout: 30000 })).stdout.trim().split('\n').at(-1) || null,
   prComments: async url => {
     const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
-    const { stdout } = await exec('gh', ['api', '--paginate', `repos/${m[1]}/${m[2]}/issues/${m[3]}/comments`, '--jq', '.[] | {by: .user.login, at: .created_at, body, url: .html_url}'], { timeout: 30000, maxBuffer: 1 << 22 });
+    const { stdout } = await exec('gh', ['api', '--paginate', `repos/${m[1]}/${m[2]}/issues/${m[3]}/comments`, '--jq', '.[] | {id: .node_id, by: .user.login, at: .created_at, body, url: .html_url}'], { timeout: 30000, maxBuffer: 1 << 22 });
     return stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
   },
   resolveThread: async id => { await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', '-f', `id=${id}`], { timeout: 20000 }); },

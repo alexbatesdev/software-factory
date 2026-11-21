@@ -121,10 +121,12 @@ export function fold(state, row, { supervisors = [] } = {}) {
   if (MANIFEST_KINDS.includes(kind)) { const t = foldManifest(state, row); state.seq = row.seq; return t; }
   if (kind === 'support_pause') { state.supportPause = payload.paused ? { at: observed.now, by: observed.by } : null; state.seq = row.seq; return null; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
-  if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close', 'question_amend', 'question_thread', 'question_route'].includes(kind)) {
+  if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close', 'question_amend', 'question_thread', 'question_route', 'question_reply'].includes(kind)) {
     const q = foldQuestion(state, row);
     // The last answer frees a record waiting in clarification, by the same rule as triage (V1 did this after every answer).
     const w = state.work[state.questions[q]?.work];
+    // W-640: a reply to a factory question belongs to that question, not feedback for a fixes round.
+    if (kind === 'question_reply' && w) state.work[w.id] = replyToQuestion(w, payload.id, q, observed);
     if (['answer', 'question_verify'].includes(kind) && w?.phase === 'clarification' && !w.waitingOn) {
       const next = W.syncIntake(w, { bucket: w.triage?.bucket || 'clarify', openQuestions: derivedCtx(state, w.id).openQuestions });
       if (next.phase !== w.phase) state.work[w.id] = { ...next, updates: [...w.updates, { at: observed.now, by: observed.by, text: `Questions answered; ${next.phase === 'ready' ? 'ready to queue' : `back to ${next.phase}`}.` }] };
@@ -311,4 +313,12 @@ export function openStore(path = ':memory:', opts = {}) {
     append(cmd, ctx) { return this.appendAll([cmd], ctx)[0]; },
     close: () => db.close(),
   };
+}
+
+function replyToQuestion(w, replyId, q, ctx) {
+  const findings = (w.findings || []).map(f => f.status === 'open' && f.source?.type === 'comments' && f.source.ids?.length === 1 && f.source.ids[0] === replyId
+    ? { ...f, status: 'resolved', note: `Settled: that comment replied to ${q}.` } : f);
+  // Unseen yet: a settled finding carrying its id keeps the next GitHub or Teamwork read from raising it.
+  if (!findings.some(f => f.source?.ids?.includes(replyId))) findings.push({ id: `F${findings.length + 1}`, text: `A reply to ${q}.`, severity: null, status: 'resolved', reviewHead: null, note: `Settled: it replied to ${q}.`, source: { type: 'comments', ids: [replyId], at: ctx.now } });
+  return { ...w, findings };
 }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openStore } from '../core/store.mjs';
-import { syncQuestionThreads, questionBody, pickOption } from '../effects/question-threads.mjs';
+import { syncQuestionThreads, questionBody } from '../effects/question-threads.mjs';
 
 const PR = 'https://github.com/acme-org/app/pull/8635', T = '2026-11-20T23:00:00.000Z', ME = 'alex-gh';
 const ask = { title: 'Keep the legacy export column, @reviewer-jm?', options: [{ key: 'a', text: 'Keep it' }, { key: 'b', text: 'Drop it, see ~/Code/plans/x.md' }], recommend: 'b', work: 'W-1', wwbd: 'no passage applies', threadId: 'PRRT_abc' };
@@ -56,38 +56,12 @@ test('a post that landed on GitHub but not in the factory is found again, not po
   assert.equal(store.state.questions['TB-1'].thread.url, `${PR}#discussion_r9`);
 });
 
-test('the first teammate reply after the post answers it; Alex, bots and codex never do', async () => {
-  const store = setup(), gh = fakeGh();
-  store.append({ kind: 'ask', payload: ask }, { now: T, by: 'sup: stream-1' });
-  await syncQuestionThreads(store, gh, () => '2026-11-20T23:05:01.000Z', { me: ME, enabled: true });
-  gh.comments.push({ by: 'chatgpt-codex-connector', at: '2026-11-20T23:06:00Z', body: 'a', url: 'u1' },
-    { by: 'dependabot[bot]', at: '2026-11-20T23:06:30Z', body: 'a', url: 'u2' }, { by: ME, at: '2026-11-20T23:07:00Z', body: 'a', url: 'u3' });
-  await syncQuestionThreads(store, gh, () => T, { me: ME, enabled: false });
-  assert.equal(store.state.questions['TB-1'].status, 'open');
-  gh.comments.push({ by: 'teammate-kb', at: '2026-11-20T23:08:00Z', body: 'Option B. Nobody reads that column.', url: `${PR}#discussion_r3` });
-  await syncQuestionThreads(store, gh, () => T, { me: ME, enabled: false });
-  const q = store.state.questions['TB-1'];
-  assert.equal(q.status, 'answered', 'read even with posting turned off');
-  assert.equal(q.answer.choice, 'b');
-  assert.equal(q.answer.by, 'teammate-kb (PR thread)');
-  assert.match(q.answer.note, /Nobody reads that column[\s\S]*discussion_r3/);
-});
-
 test('a question with no thread, or on a merged PR, is left alone', async () => {
   const store = setup(), gh = fakeGh();
   store.append({ kind: 'ask', payload: { ...ask, threadId: undefined } }, { now: T, by: 'sup: stream-1' });
   store.append({ kind: 'ask', payload: { ...ask, title: 'second' } }, { now: T, by: 'sup: stream-1' });
   await syncQuestionThreads(store, gh, () => T, { me: ME, enabled: true, prState: () => 'MERGED' });
   assert.equal(gh.posts.length, 0);
-});
-
-test('a reply picks an option by its first word only', () => {
-  const o = ask.options;
-  assert.equal(pickOption('b) drop it', o), 'b');
-  assert.equal(pickOption('**A**', o), 'a');
-  assert.equal(pickOption('Option a, please', o), 'a');
-  assert.equal(pickOption('about that column...', o), null);
-  assert.equal(pickOption('I think b', o), null);
 });
 
 // W-640: decision routing, product to the Teamwork task and dev to the PR discussion.
@@ -97,7 +71,7 @@ function routed() {
   const store = setup(), ctx = { now: T, by: 'sup: stream-1' };
   store.append({ kind: 'create', payload: { title: 'TW task', source: { type: 'teamwork', key: 'tw-41323957' }, stream: 'sup: stream-1' } }, ctx);
   const posts = [], gh = { ...fakeGh(), prComments: async () => gh.discussion, discussion: [], prComment: async (url, body) => { posts.push({ to: url, body }); return `${PR}#issuecomment-1`; } };
-  const tw = { comments: async () => ({ me: 7, comments: tw.list }), list: [], post: async (id, body) => { posts.push({ to: `tw ${id}`, body }); tw.list.push({ by: 7, at: '2026-11-20T23:05:00Z', body }); } };
+  const tw = { comments: async () => ({ me: 7, comments: tw.list }), list: [], post: async (id, body) => { posts.push({ to: `tw ${id}`, body }); tw.list.push({ id: 'tw-comment-0', by: 7, at: '2026-11-20T23:05:00Z', body }); } };
   return { store, gh, tw, posts };
 }
 
@@ -122,19 +96,6 @@ test('decision routing: off logs only; on, dev goes to the PR discussion and pro
   assert.deepEqual([store.state.questions['TB-1'].route.channel, store.state.questions['TB-2'].route.channel, store.state.questions['TB-3'].route], ['pr', 'teamwork', undefined]);
 });
 
-test('decision routing: the first teammate reply answers; Alex, bots and Teamwork Sync never do', async () => {
-  const { store, gh, tw } = routed(), at = () => '2026-11-20T23:05:01.000Z';
-  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
-  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, work: 'W-2', audience: 'product' } }, { now: T, by: 'sup: stream-1' });
-  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME, enabled: true });
-  gh.discussion.push({ by: 'codecov[bot]', at: '2026-11-20T23:06:00Z', body: 'a', url: 'c1' }, { by: ME, at: '2026-11-20T23:06:10Z', body: 'a', url: 'c2' }, { by: 'teammate-kb', at: '2026-11-20T23:07:00Z', body: 'a) keep it', url: 'c3' });
-  tw.list.push({ by: 9, at: '2026-11-20T23:06:00Z', body: 'PR opened: https://github.com/acme-org/app/pull/8635' }, { by: 7, at: '2026-11-20T23:06:30Z', body: 'b' }, { by: 12, at: '2026-11-20T23:08:00Z', body: 'B, product agrees' });
-  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME });
-  const [dev, product] = [store.state.questions['TB-1'], store.state.questions['TB-2']];
-  assert.deepEqual([dev.answer.choice, dev.answer.by], ['a', 'teammate-kb (PR discussion)']);
-  assert.deepEqual([product.answer.choice, product.answer.by], ['b', 'Teamwork user 12 (Teamwork)']);
-});
-
 test('with review-thread questions on, a thread question goes to its thread, not the discussion', async () => {
   const { store, gh, tw, posts } = routed();
   store.append({ kind: 'ask', payload: { ...ask, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
@@ -142,4 +103,74 @@ test('with review-thread questions on, a thread question goes to its thread, not
   assert.equal(posts.length, 0);
   await syncQuestionRoutes(store, { gh, tw }, () => T, { me: ME, enabled: true, threadsOn: false });
   assert.equal(posts.length, 1, 'with threads off it goes to the discussion');
+});
+
+import { awayReport } from '../core/away-report.mjs';
+
+
+const messagesTo = (store, seat) => Object.values(store.state.messages).filter(m => m.to === seat);
+
+test('every teammate reply on the thread goes to local-head to judge; none answers the question by itself (Alex, 11-21)', async () => {
+  const store = setup(), gh = fakeGh();
+  store.append({ kind: 'ask', payload: ask }, { now: T, by: 'sup: stream-1' });
+  await syncQuestionThreads(store, gh, () => '2026-11-20T23:05:01.000Z', { me: ME, enabled: true });
+  gh.comments.push({ by: 'chatgpt-codex-connector', at: '2026-11-20T23:06:00Z', body: 'a', url: 'u1' },
+    { by: 'dependabot[bot]', at: '2026-11-20T23:06:30Z', body: 'a', url: 'u2' }, { by: ME, at: '2026-11-20T23:07:00Z', body: 'a', url: 'u3' },
+    { by: 'teammate-kb', at: '2026-11-20T23:08:00Z', body: "Not sure, I've asked the customer.", url: 'u4' });
+  await syncQuestionThreads(store, gh, () => T, { me: ME });
+  await syncQuestionThreads(store, gh, () => T, { me: ME });
+  let q = store.state.questions['TB-1'];
+  assert.equal(q.status, 'open', 'a reply is not an answer');
+  assert.deepEqual(q.replies.map(r => r.by), ['teammate-kb'], 'bots, codex and Alex are not relayed; each reply once');
+  const [m] = messagesTo(store, 'local-head');
+  assert.match(m.payload?.text || m.text, /teammate-kb replied to TB-1[\s\S]*asked the customer[\s\S]*Judge it/);
+  gh.comments.push({ by: 'teammate-kb', at: '2026-11-21T09:00:00Z', body: 'Customer says drop it: b', url: 'u5' });
+  await syncQuestionThreads(store, gh, () => T, { me: ME });
+  q = store.state.questions['TB-1'];
+  assert.equal(q.replies.length, 2);
+  assert.equal(messagesTo(store, 'local-head').length, 2, 'the later reply is sent too');
+});
+
+test('decision routing relays PR-discussion and Teamwork replies, skipping Alex, bots and Teamwork Sync', async () => {
+  const { store, gh, tw } = routed(), at = () => '2026-11-20T23:05:01.000Z';
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, work: 'W-2', audience: 'product' } }, { now: T, by: 'sup: stream-1' });
+  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME, enabled: true });
+  gh.discussion.push({ id: 'IC_0', by: 'codecov[bot]', at: '2026-11-20T23:06:00Z', body: 'a', url: 'c1' }, { id: 'IC_2', by: ME, at: '2026-11-20T23:06:10Z', body: 'a', url: 'c2' }, { id: 'IC_3', by: 'teammate-kb', at: '2026-11-20T23:07:00Z', body: 'a) keep it', url: 'c3' });
+  tw.list.push({ id: 'tw-comment-1', by: 9, at: '2026-11-20T23:06:00Z', body: '**alex-gh** opened https://github.com/acme-org/app/pull/8635', sync: true }, { id: 'tw-comment-2', by: 7, at: '2026-11-20T23:06:30Z', body: 'b' }, { id: 'tw-comment-3', by: 12, at: '2026-11-20T23:08:00Z', body: 'B, product agrees' });
+  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME });
+  const [dev, product] = [store.state.questions['TB-1'], store.state.questions['TB-2']];
+  assert.deepEqual([dev.status, dev.replies.map(r => r.id)], ['open', ['IC_3']]);
+  assert.deepEqual([product.status, product.replies.map(r => r.by)], ['open', ['Teamwork user 12']]);
+  assert.equal(messagesTo(store, 'local-head').length, 2);
+});
+
+test('a reply to a factory question is never PR feedback, whether the poll saw it before or after the relay', async () => {
+  const { store, gh, tw } = routed(), at = () => '2026-11-20T23:05:01.000Z';
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
+  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME, enabled: true });
+  store.append({ kind: 'observe_health', target: 'W-1', payload: { head: 'aaaaaaa1', comments: [{ id: 'IC_1', by: 'teammate-kb', url: 'c1' }] } }, { now: '2026-11-20T23:06:30Z', by: 'github' });
+  const raised = store.state.work['W-1'].findings.find(f => f.source?.ids?.includes('IC_1'));
+  assert.equal(raised.status, 'open');
+  gh.discussion.push({ id: 'IC_1', by: 'teammate-kb', at: '2026-11-20T23:06:00Z', body: 'b', url: 'c1' }, { id: 'IC_9', by: 'teammate-kb', at: '2026-11-20T23:07:00Z', body: 'and one more thing', url: 'c9' });
+  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME });
+  assert.equal(store.state.work['W-1'].findings.find(f => f.id === raised.id).status, 'resolved', 'seen first: settled');
+  store.append({ kind: 'observe_health', target: 'W-1', payload: { head: 'aaaaaaa1', comments: [{ id: 'IC_9', by: 'teammate-kb', url: 'c9' }] } }, { now: '2026-11-20T23:08:00Z', by: 'github' });
+  assert.deepEqual(store.state.work['W-1'].findings.filter(f => f.status === 'open' && f.source?.ids?.includes('IC_9')), [], 'relayed first: never raised');
+});
+
+test('the away report lists what was asked, the replies, the answer and what the record did after', async () => {
+  const { store, gh, tw } = routed(), at = () => '2026-11-21T01:00:00.000Z';
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, work: 'W-2', audience: 'product', title: 'Nobody answered this' } }, { now: T, by: 'sup: stream-1' });
+  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME, enabled: true });
+  gh.discussion.push({ id: 'IC_1', by: 'teammate-kb', at: '2026-11-21T02:00:00Z', body: 'b) drop it', url: 'c1' });
+  await syncQuestionRoutes(store, { gh, tw }, () => '2026-11-21T02:01:00.000Z', { me: ME });
+  store.append({ kind: 'answer', target: 'TB-1', payload: { choice: 'b', note: 'teammate-kb on the PR discussion: b) drop it' } }, { now: '2026-11-21T02:05:00.000Z', by: 'local-head' });
+  store.append({ kind: 'event', target: 'W-1', payload: { type: 'note', text: 'Dropped the column per TB-1' } }, { now: '2026-11-21T03:00:00.000Z', by: 'sup: stream-1' });
+  const md = awayReport(store.state, { since: '2026-11-21' });
+  assert.match(md, /Asked off the dashboard: 2\. Got a reply: 1\. Answered: 1\. Still open: 1\./);
+  assert.match(md, /### TB-1[\s\S]*teammate-kb: b\) drop it[\s\S]*Answered by local-head[\s\S]*option b[\s\S]*Dropped the column per TB-1/);
+  assert.match(md, /Still open[\s\S]*### TB-2[\s\S]*Teamwork task 41323957[\s\S]*Replies: none/);
+  assert.doesNotMatch(awayReport(store.state, { since: '2026-11-22' }), /TB-1/);
 });

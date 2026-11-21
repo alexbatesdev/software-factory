@@ -108,5 +108,5 @@ export async function findTask({ name, tasklistId, parentTaskId }) {
 export async function postTaskComment(id, body) { await (await client()).sendNoContent('POST', `/tasks/${id}/comments.json`, { comment: { body, 'content-type': 'TEXT' } }); }
 export async function taskComments(id) {
   const c = await client(), me = (await c.getCurrentUser())?.id ?? null, { comments } = await c.getTaskComments(id, { limit: 20 });
-  return { me, comments: comments.map(x => ({ by: x.userId ?? x.createdBy ?? x.postedByUserId ?? null, at: x.dateCreated ?? x.postedAt ?? x.createdAt ?? '', body: stripHtml(x.body || '') })) };
+  return { me, comments: comments.filter(x => !x.deleted).map(x => ({ id: `tw-comment-${x.id}`, by: x.postedByUserId ?? null, at: x.postedDateTime ?? '', body: stripHtml(x.body || ''), sync: SYNC_NOTICE.test(x.body || ''), url: `https://${process.env.TEAMWORK_SITE}/app/tasks/${id}?c=${x.id}` })) };
 }
