@@ -89,3 +89,57 @@ test('a reply picks an option by its first word only', () => {
   assert.equal(pickOption('about that column...', o), null);
   assert.equal(pickOption('I think b', o), null);
 });
+
+// W-640: decision routing, product to the Teamwork task and dev to the PR discussion.
+import { syncQuestionRoutes } from '../effects/question-threads.mjs';
+
+function routed() {
+  const store = setup(), ctx = { now: T, by: 'sup: stream-1' };
+  store.append({ kind: 'create', payload: { title: 'TW task', source: { type: 'teamwork', key: 'tw-41323957' }, stream: 'sup: stream-1' } }, ctx);
+  const posts = [], gh = { ...fakeGh(), prComments: async () => gh.discussion, discussion: [], prComment: async (url, body) => { posts.push({ to: url, body }); return `${PR}#issuecomment-1`; } };
+  const tw = { comments: async () => ({ me: 7, comments: tw.list }), list: [], post: async (id, body) => { posts.push({ to: `tw ${id}`, body }); tw.list.push({ by: 7, at: '2026-11-20T23:05:00Z', body }); } };
+  return { store, gh, tw, posts };
+}
+
+test('an audience is product or dev', () => {
+  const { store } = routed();
+  assert.throws(() => store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, audience: 'qa' } }, { now: T, by: 'x' }), /audience/);
+});
+
+test('decision routing: off logs only; on, dev goes to the PR discussion and product to the Teamwork task, once each', async () => {
+  const { store, gh, tw, posts } = routed(), logs = [];
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, work: 'W-2', audience: 'product' } }, { now: T, by: 'sup: stream-1' });
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, work: 'W-2', audience: 'dev', title: 'no PR yet' } }, { now: T, by: 'sup: stream-1' });
+  await syncQuestionRoutes(store, { gh, tw }, () => T, { me: ME, log: l => logs.push(l) });
+  assert.equal(posts.length, 0);
+  assert.equal(logs.length, 2, 'the record with no PR stays on the dashboard only');
+  await syncQuestionRoutes(store, { gh, tw }, () => '2026-11-20T23:05:01.000Z', { me: ME, enabled: true });
+  await syncQuestionRoutes(store, { gh, tw }, () => '2026-11-20T23:05:01.000Z', { me: ME, enabled: true });
+  assert.deepEqual(posts.map(p => p.to), [PR, 'tw 41323957']);
+  assert.match(posts[0].body, /^🤖[\s\S]*Reply here[\s\S]*🤖$/);
+  assert.doesNotMatch(posts[1].body, /\*\*/, 'plain text on Teamwork');
+  assert.deepEqual([store.state.questions['TB-1'].route.channel, store.state.questions['TB-2'].route.channel, store.state.questions['TB-3'].route], ['pr', 'teamwork', undefined]);
+});
+
+test('decision routing: the first teammate reply answers; Alex, bots and Teamwork Sync never do', async () => {
+  const { store, gh, tw } = routed(), at = () => '2026-11-20T23:05:01.000Z';
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
+  store.append({ kind: 'ask', payload: { ...ask, threadId: undefined, work: 'W-2', audience: 'product' } }, { now: T, by: 'sup: stream-1' });
+  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME, enabled: true });
+  gh.discussion.push({ by: 'codecov[bot]', at: '2026-11-20T23:06:00Z', body: 'a', url: 'c1' }, { by: ME, at: '2026-11-20T23:06:10Z', body: 'a', url: 'c2' }, { by: 'teammate-kb', at: '2026-11-20T23:07:00Z', body: 'a) keep it', url: 'c3' });
+  tw.list.push({ by: 9, at: '2026-11-20T23:06:00Z', body: 'PR opened: https://github.com/acme-org/app/pull/8635' }, { by: 7, at: '2026-11-20T23:06:30Z', body: 'b' }, { by: 12, at: '2026-11-20T23:08:00Z', body: 'B, product agrees' });
+  await syncQuestionRoutes(store, { gh, tw }, at, { me: ME });
+  const [dev, product] = [store.state.questions['TB-1'], store.state.questions['TB-2']];
+  assert.deepEqual([dev.answer.choice, dev.answer.by], ['a', 'teammate-kb (PR discussion)']);
+  assert.deepEqual([product.answer.choice, product.answer.by], ['b', 'Teamwork user 12 (Teamwork)']);
+});
+
+test('with review-thread questions on, a thread question goes to its thread, not the discussion', async () => {
+  const { store, gh, tw, posts } = routed();
+  store.append({ kind: 'ask', payload: { ...ask, audience: 'dev' } }, { now: T, by: 'sup: stream-1' });
+  await syncQuestionRoutes(store, { gh, tw }, () => T, { me: ME, enabled: true, threadsOn: true });
+  assert.equal(posts.length, 0);
+  await syncQuestionRoutes(store, { gh, tw }, () => T, { me: ME, enabled: true, threadsOn: false });
+  assert.equal(posts.length, 1, 'with threads off it goes to the discussion');
+});

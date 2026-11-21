@@ -121,7 +121,7 @@ export function fold(state, row, { supervisors = [] } = {}) {
   if (MANIFEST_KINDS.includes(kind)) { const t = foldManifest(state, row); state.seq = row.seq; return t; }
   if (kind === 'support_pause') { state.supportPause = payload.paused ? { at: observed.now, by: observed.by } : null; state.seq = row.seq; return null; }
   if (kind === 'message' || kind === 'ack_message') { const m = foldMessage(state, row); state.seq = row.seq; return m; }
-  if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close', 'question_amend', 'question_thread'].includes(kind)) {
+  if (['ask', 'answer', 'route', 'question_ack', 'question_verify', 'question_close', 'question_amend', 'question_thread', 'question_route'].includes(kind)) {
     const q = foldQuestion(state, row);
     // The last answer frees a record waiting in clarification, by the same rule as triage (V1 did this after every answer).
     const w = state.work[state.questions[q]?.work];

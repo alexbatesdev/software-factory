@@ -24,7 +24,7 @@ import { mergeCloses, holdReleases, closedPrWithdrawals, questionHolds, watchedP
 import { TERMINAL, trackOf, stranded, observeHealth, skipNotes, REVIEW_CAP_FROM } from '../core/work.mjs';
 import { readPrLines, readPrHealth, readPrs, readMain, readCompare, readGrowth, readOpenPrFiles, readTeamPrs } from '../sources/github.mjs';
 import { duplicateCommands, unbuiltProposals, repoOf } from '../core/duplicates.mjs';
-import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask, readTree } from '../sources/teamwork.mjs';
+import { readTasks, readTopParents, readTaskFeedback, createTask, getTask, findTask, readTree, postTaskComment, taskComments } from '../sources/teamwork.mjs';
 import { readPlanning } from '../sources/planning.mjs';
 import { circleReady, readJobFailures } from '../sources/circleci.mjs';
 import { compareCheck, compareWarnings, withStaleness } from '../core/ci-compare.mjs';
@@ -39,7 +39,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
-import { syncQuestionThreads } from '../effects/question-threads.mjs';
+import { syncQuestionThreads, syncQuestionRoutes } from '../effects/question-threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles, releaseFinished, blockKey, diskNote } from '../core/recycle.mjs';
 import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
@@ -422,9 +422,11 @@ async function githubTick() {
       for (const c of found) apply([{ kind: 'message', payload: { to: lead, work: c.id, about: { contradiction: `${c.kind}/${c.id}` }, text: `[software factory, automated, not Alex] Contradiction on ${c.id} (${c.kind}): ${c.evidence}. Next: ${c.next}.` } }], 'factory (audit)');
     }
     await syncResolvedThreads(store, gh, now, { me: config.githubLogin, prState: u => openPrs.get(u)?.state || null });
-    // Read fresh each tick, so Alex turns it on or off in config.json with no restart (W-639).
-    const ptq = (() => { try { return JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8')).prThreadQuestions?.enabled === true; } catch { return false; } })();
-    await syncQuestionThreads(store, gh, now, { me: config.githubLogin, enabled: ptq, prState: u => openPrs.get(u)?.state || null, log: once });
+    // Read fresh each tick, so Alex turns these on or off in config.json with no restart (W-639, W-640).
+    const fresh = (() => { try { return JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8')); } catch { return {}; } })();
+    const ptq = fresh.prThreadQuestions?.enabled === true, prState = u => openPrs.get(u)?.state || null;
+    await syncQuestionThreads(store, gh, now, { me: config.githubLogin, enabled: ptq, prState, log: once });
+    await syncQuestionRoutes(store, { gh, tw: { post: postTaskComment, comments: taskComments } }, now, { me: config.githubLogin, enabled: fresh.decisionRouting?.enabled === true, threadsOn: ptq, prState, log: once });
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
 }

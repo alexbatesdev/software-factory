@@ -6,11 +6,11 @@ const bot = (login, me) => !login || login === me || login === CODEX || login ==
 // Posted as Alex: no @mention pings anyone, and no local paths leave the machine.
 const scrub = s => String(s || '').replace(/(~|\/Users\/[^\s/]+)\/\S+/g, '(a local file)').replace(/@([\w-]+)/g, '`@$1`').trim();
 
-export function questionBody(id, q) {
+export function questionBody(id, q, where = 'on this thread') {
   const opts = (q.options || []).map(o => `- **${o.key}**: ${scrub(o.text)}${o.key === q.recommend ? ' (recommended)' : ''}`);
   return ['🤖', `**A decision for the team (${id})**`, '', scrub(q.title),
     ...(q.why ? ['', scrub(q.why)] : []), ...(opts.length ? ['', ...opts] : []), ...(q.recommendWhy ? ['', `Why the recommendation: ${scrub(q.recommendWhy)}`] : []),
-    '', `Reply on this thread${opts.length ? ' with the option letter, or' : ' with'} your answer in words. The first reply is taken as the answer.`, '🤖'].join('\n');
+    '', `Reply ${where}${opts.length ? ' with the option letter, or' : ' with'} your answer in words. The first reply is taken as the answer.`, '🤖'].join('\n');
 }
 
 /** The option a reply picks: its first word, e.g. "b", "b)", "Option B". */
@@ -38,5 +38,48 @@ export async function syncQuestionThreads(store, gh, now, { me, enabled = false,
       if (!reply) continue;
       store.append({ kind: 'answer', target: id, payload: { choice: pickOption(reply.body, q.options), note: `${reply.by} answered on the PR thread: ${reply.body}\n${reply.url}` } }, { now: now(), by: `${reply.by} (PR thread)` });
     } catch (e) { log(`PR thread question ${id}: ${e.message}`); }
+  }
+}
+
+const twId = w => w?.source?.type === 'teamwork' && /^tw-(\d+)$/.exec(w.source.key || '')?.[1] || null;
+// ponytail: a Teamwork comment linking a GitHub PR is taken as Teamwork Sync's, not an answer; a known sync user id is the upgrade.
+const synced = body => /github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/.test(body);
+
+/**
+ * W-640 (Alex, 11-21): with config.decisionRouting.enabled, a product question is also asked on its record's Teamwork
+ * task and a dev question in its PR's discussion; the first reply there from anyone but Alex or a bot answers it. A
+ * question with no task or PR stays on the dashboard only. A review-thread question (W-639, when on) goes there instead.
+ */
+export async function syncQuestionRoutes(store, { gh, tw }, now, { me, enabled = false, threadsOn = false, prState = () => null, log = () => {} } = {}) {
+  for (const [id, q] of Object.entries(store.state.questions)) {
+    if (q.status !== 'open' || !['product', 'dev'].includes(q.audience) || q.thread?.postedAt || (q.thread && threadsOn)) continue;
+    const w = store.state.work[q.work];
+    try {
+      if (!q.route) {
+        const channel = q.audience === 'product' ? 'teamwork' : 'pr', target = channel === 'teamwork' ? twId(w) : w?.links?.pr;
+        if (!target || (channel === 'pr' && ['MERGED', 'CLOSED'].includes(prState(target)))) continue;
+        if (!enabled) { log(`decision routing (off): would ask ${id} on ${channel} ${target}`); continue; }
+        if (channel === 'pr') {
+          const earlier = (await gh.prComments(target)).find(c => c.by === me && c.body.includes(`(${id})`));
+          const url = earlier?.url || await gh.prComment(target, questionBody(id, q, 'here'));
+          store.append({ kind: 'question_route', target: id, payload: { channel, target, url } }, { now: now(), by: BY });
+        } else {
+          const { me: twMe, comments } = await tw.comments(target);
+          if (!comments.some(c => c.by === twMe && c.body.includes(`(${id})`))) await tw.post(target, questionBody(id, q, 'on this task').replace(/\*\*/g, ''));
+          store.append({ kind: 'question_route', target: id, payload: { channel, target } }, { now: now(), by: BY });
+        }
+        continue;
+      }
+      const { channel, target, postedAt } = q.route;
+      let reply;
+      if (channel === 'pr') reply = (await gh.prComments(target)).find(c => c.at > postedAt && !bot(c.by, me));
+      else {
+        const { me: twMe, comments } = await tw.comments(target);
+        reply = comments.filter(c => c.at > postedAt && c.by !== twMe && c.body.trim() && !synced(c.body)).sort((a, b) => a.at.localeCompare(b.at))[0];
+        if (reply) reply = { ...reply, by: `Teamwork user ${reply.by}`, url: `Teamwork task ${target}` };
+      }
+      if (!reply) continue;
+      store.append({ kind: 'answer', target: id, payload: { choice: pickOption(reply.body, q.options), note: `${reply.by} answered on the ${channel === 'pr' ? 'PR discussion' : 'Teamwork task'}: ${reply.body}\n${reply.url}` } }, { now: now(), by: `${reply.by} (${channel === 'pr' ? 'PR discussion' : 'Teamwork'})` });
+    } catch (e) { log(`decision routing ${id}: ${e.message}`); }
   }
 }

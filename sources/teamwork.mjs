@@ -103,3 +103,10 @@ export async function findTask({ name, tasklistId, parentTaskId }) {
   const t = (tasks || []).find(x => x.name === name && (parentTaskId || x.tasklistId === tasklistId));
   return t ? { id: t.id, url: `https://${String(process.env.TEAMWORK_SITE).replace(/^https?:\/\//, '')}/app/tasks/${t.id}` } : null;
 }
+
+/** W-640: a decision asked on a task, as the API key's user, and the task's comments (author id, time, text) with that user's id. */
+export async function postTaskComment(id, body) { await (await client()).sendNoContent('POST', `/tasks/${id}/comments.json`, { comment: { body, 'content-type': 'TEXT' } }); }
+export async function taskComments(id) {
+  const c = await client(), me = (await c.getCurrentUser())?.id ?? null, { comments } = await c.getTaskComments(id, { limit: 20 });
+  return { me, comments: comments.map(x => ({ by: x.userId ?? x.createdBy ?? x.postedByUserId ?? null, at: x.dateCreated ?? x.postedAt ?? x.createdAt ?? '', body: stripHtml(x.body || '') })) };
+}

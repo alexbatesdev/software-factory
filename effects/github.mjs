@@ -1,5 +1,5 @@
 // GitHub writes and the reads that confirm them. Writes: `gh pr ready`, resolving a review thread Alex resolved on the
-// dashboard, a factory question asked on the review thread that raised it (W-639, off by default), and GitHub auto-merge on and off for small, quick fixes (W-564; enabling auto-merge is not a merge). Never
+// dashboard, a factory question asked on the review thread that raised it (W-639) or in the PR discussion (W-640), both off by default, and GitHub auto-merge on and off for small, quick fixes (W-564; enabling auto-merge is not a merge). Never
 // merge, never request reviewers.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -54,6 +54,13 @@ export const gh = {
   replyThread: async (id, body) => {
     const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{url}}}', '-f', `id=${id}`, '-f', `body=${body}`], { timeout: 20000 });
     return JSON.parse(stdout).data?.addPullRequestReviewThreadReply?.comment?.url || null;
+  },
+  /** W-640: a PR discussion comment, and the discussion's comments oldest first. */
+  prComment: async (url, body) => (await exec('gh', ['pr', 'comment', url, '--body', body], { timeout: 30000 })).stdout.trim().split('\n').at(-1) || null,
+  prComments: async url => {
+    const m = String(url).match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/);
+    const { stdout } = await exec('gh', ['api', '--paginate', `repos/${m[1]}/${m[2]}/issues/${m[3]}/comments`, '--jq', '.[] | {by: .user.login, at: .created_at, body, url: .html_url}'], { timeout: 30000, maxBuffer: 1 << 22 });
+    return stdout.split('\n').filter(Boolean).map(l => JSON.parse(l));
   },
   resolveThread: async id => { await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', '-f', `id=${id}`], { timeout: 20000 }); },
   /** Submitted reviews on a PR; a pending draft has no submitted time. */
