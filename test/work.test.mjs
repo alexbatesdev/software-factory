@@ -994,3 +994,13 @@ test("a park its job's worker or supervisor set during the job clears when the j
   const other = run(started, { type: 'wait', who: 'TB-9', what: 'Alex', evidence: 'x', ctx: { ...at('11'), by: 'factory lead' } });
   assert.ok(run(other, { type: 'assignment_done', assignmentId: 'R1', expectedVersion: other.assignments.at(-1).version, head: 'aaa1111', ctx: at('12') }).waitingOn, "someone else's park stays");
 });
+
+test('once a PR outgrew its reviewed head, a later head with less measured growth still needs the new review (W-646: a main merge into #8245 cut 977 lines to 359)', () => {
+  const late = { now: '2026-11-21T05:00:00.000Z', by: 'github' };
+  const grow = (w, sha, grown) => observeHead(w, { sha, via: 'github', isDraft: true, ancestry: { base: 'aaa1111', status: 'ahead', grown, size: 2361, limit: 709 } }, ctx(late));
+  const over = grow(reviewedAt('clean'), 'bbb2222', 977);
+  assert.equal(over.phase, 'rereview');
+  const merged = grow(over, 'ccc3333', 359);
+  assert.deepEqual([merged.phase, merged.lineage.status, gate(merged, late).ok], ['rereview', 'outgrown', false]);
+  assert.match(merged.updates.at(-1).text, /grew 977 lines, 41% since the reviewed aaa1111/);
+});

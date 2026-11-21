@@ -226,7 +226,7 @@ function healTick() {
   for (const w of Object.values(store.state.work)) {
     // Only open PRs on a stream: a closed PR's record is the merge/close path's, a trusted review is Alex's to rerun.
     if (!stranded(w, new Date(t).toISOString()) || trackOf(w, skipped()) !== 'stream' || openPrs.get(w.links?.pr)?.state !== 'OPEN'
-      || derivedCtx(store.state, w.id).openQuestions) { delete strandedSince[w.id]; continue; } // an open question: it waits on the answer
+      || derivedCtx(store.state, w.id).openQuestions || derivedCtx(store.state, w.id).samePr.length) { delete strandedSince[w.id]; continue; } // an open question: it waits on the answer
     strandedSince[w.id] ??= Math.min(t, Date.parse(w.updatedAt) || t); // its last change, so a server restart doesn't restart the grace (W-511)
     if (t - strandedSince[w.id] < (config.notify?.strandedGraceMs ?? 600000)) continue;
     apply([{ kind: 'event', target: w.id, payload: { type: 'heal', isDraft: openPrs.get(w.links?.pr)?.isDraft ?? null } }], 'factory (heal)');

@@ -386,3 +386,25 @@ test("a clean internal review counts for every live record on the same PR at tha
   assert.equal(s.state.work['W-46'].phase, s.state.work['W-45'].phase);
   assert.equal(s.state.work['W-9'].reviews.length, 0, 'another PR is untouched');
 });
+
+test("a record on a shared PR isn't reviewed while another record's fixes round runs or its review findings are open on that PR (W-646: W-144 went to awaiting approval during W-77 R30)", async () => {
+  const { derivedCtx } = await import('../core/store.mjs');
+  const { gate } = await import('../core/work.mjs');
+  const s = openStore();
+  const pr = 'https://github.com/acme-org/app/pull/8245';
+  const at = ctx({ now: '2026-11-21T05:00:00.000Z', by: 'sup: stream-1' });
+  for (const id of ['W-77', 'W-144']) {
+    s.append({ kind: 'import', target: `work/${id}`, payload: { id, title: id, phase: 'intake', kind: 'build', links: { pr }, assignments: [], requests: [], updates: [], aliases: [], reviews: [], findings: [], checks: [], criteria: [], related: [] } }, at);
+    for (const to of ['ready', 'queued', 'implementation']) s.append(ev(id, { type: 'transition', to, owner: 'sup: stream-1' }), at);
+    s.append(ev(id, { type: 'implementation_done', head: 'e803438' }), at);
+  }
+  s.append(ev('W-144', { type: 'review', head: 'e803438', by: 'old review', result: 'clean' }), at);
+  s.append(ev('W-77', { type: 'review', head: 'e803438', by: 'R28', result: 'findings', findings: [{ text: 'A1 non-reader sees the cascaded end date' }] }), at);
+  const held = () => gate(s.state.work['W-144'], { now: at.now, ...derivedCtx(s.state, 'W-144') });
+  assert.match(held().reasons.join(' '), /W-77 has 1 open review finding\(s\) on this PR/);
+  s.append(ev('W-77', { type: 'assign', assignmentId: 'A9', kind: 'fixes', owner: 'sbx: stream-1', status: 'started', evidence: 'R30' }), at);
+  assert.match(held().reasons.join(' '), /W-77's fixes round \(A9\) is changing this PR/);
+  s.append(ev('W-77', { type: 'finding', findingId: 'F1', status: 'resolved', note: 'fixed' }), at);
+  s.append(ev('W-77', { type: 'assignment_done', assignmentId: 'A9', expectedVersion: 1, head: 'e803438' }), at);
+  assert.equal(held().reasons.some(r => /W-77/.test(r)), false, 'clear once the sibling is settled');
+});

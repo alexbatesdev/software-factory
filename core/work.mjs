@@ -204,6 +204,7 @@ export function gate(w, ctx = {}) {
   if (ctx.openQuestions > 0) reasons.push(`${ctx.openQuestions} open question(s).`);
   if (ctx.openDeps?.length) reasons.push(`Waiting on ${ctx.openDeps.join(', ')}.`);
   for (const d of w.externalDeps || []) reasons.push(`Waiting on ${d.text || d.ref}.`);
+  if (!ctx.now || ctx.now >= SAME_PR_FROM) for (const s of ctx.samePr || []) reasons.push(`${s}.`);
   if (!isPr(w)) return { ok: false, reasons: ['This kind finishes with an accepted artifact, not the PR ready gate.'] };
   if (!w.head) reasons.push('No commit recorded yet.');
   else if (prLinked(w) && !w.headVerified) reasons.push(`The PR's current head is not verified (GitHub isn't showing it); report the current head before marking ready.`);
@@ -251,6 +252,8 @@ function setHead(w, sha, ctx, via = 'report', ancestry = null) {
   }
 }
 
+// W-646: once a PR outgrew its reviewed head, a later head never inherits that review (a merge can shrink the measured growth).
+const SAME_PR_FROM = '2026-11-21T04:30:00.000Z';
 // Alex, 2026-11-09: one internal review per PR; a later head counts as reviewed while it descends from the reviewed one.
 export const REVIEW_CAP_FROM = '2026-11-09T20:10:00.000Z';
 const DESCENDS = ['ahead', 'identical', 'assumed'];
@@ -274,8 +277,9 @@ function trace(w, ancestry, had, ctx) {
   const status = otherPr ? 'other-pr' : ancestry && sameSha(ancestry.base, r.head) ? ancestry.status
     : sameSha(r.head, had) || (l && sameSha(l.reviewed, r.head) && sameSha(l.head, had) && DESCENDS.includes(l.status)) ? 'assumed' : 'unknown';
   // W-593 (Alex 11-19): a descending head re-reviews once the PR grew past its limit since the reviewed head (read with the ancestry).
-  const grew = status === 'ahead' && ancestry?.limit != null && sameSha(ancestry.base, r.head) && ancestry.grown >= ancestry.limit;
-  w.lineage = { reviewed: r.head, head: w.head, status: grew ? 'outgrown' : status, ...(grew ? { grown: ancestry.grown, size: ancestry.size } : {}) };
+  const wasOutgrown = (ctx.now || '') >= SAME_PR_FROM && l?.status === 'outgrown' && sameSha(l.reviewed, r.head);
+  const grew = status === 'ahead' && (wasOutgrown || ancestry?.limit != null && sameSha(ancestry.base, r.head) && ancestry.grown >= ancestry.limit);
+  w.lineage = { reviewed: r.head, head: w.head, status: grew ? 'outgrown' : status, ...(grew ? { grown: Math.max(ancestry?.grown || 0, wasOutgrown ? l.grown : 0), size: wasOutgrown ? l.size : ancestry.size } : {}) };
   return DESCENDS.includes(w.lineage.status);
 }
 /** Under the cap, the current head is internally reviewed (at it, or inherited) so no other review is asked for. */

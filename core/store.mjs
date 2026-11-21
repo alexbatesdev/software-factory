@@ -48,6 +48,7 @@ export function derivedCtx(state, id, { prState = () => null, owner } = {}) {
   return {
     openQuestions: Object.values(state.questions).filter(q => q.status === 'open' && (q.work === id || keys.has(q.item))).length,
     openDeps: (rec(id)?.deps || []).filter(d => !W.SATISFIES_DEPS.includes(rec(d)?.phase)),
+    samePr: samePrHolds(state, w),
     depPhase: d => rec(d)?.phase,
     depWorkerDone: d => [...(rec(d)?.assignments || [])].reverse().find(a => a.kind !== 'review')?.status === 'done',
     parked: (w?.assignments || []).filter(W.parked).map(a => {
@@ -59,6 +60,17 @@ export function derivedCtx(state, id, { prState = () => null, owner } = {}) {
         cleared: /^TB-\d+$/.test(a.waitingOn) ? state.questions[a.waitingOn]?.status !== 'open' : /^W-\d+$/.test(a.waitingOn) ? W.SATISFIES_DEPS.includes(rec(a.waitingOn)?.phase) : merged || recycle };
     }),
   };
+}
+
+// W-646: a PR is reviewed as a whole, so another live record's fixes round or open review findings on it hold this one.
+function samePrHolds(state, w) {
+  const key = prKey(w?.links?.pr);
+  if (!key) return [];
+  return Object.values(state.work).filter(o => o.id !== w.id && !W.TERMINAL.includes(o.phase) && prKey(o.links?.pr) === key).flatMap(o => {
+    const run = [...(o.assignments || [])].reverse().find(a => W.BUILDING.includes(a.kind) && W.LIVE_ASSIGNMENT.includes(a.status));
+    const open = (o.findings || []).filter(f => f.status === 'open' && f.reviewHead);
+    return [...(run ? [`${o.id}'s ${run.kind} round (${run.id}) is changing this PR`] : []), ...(open.length ? [`${o.id} has ${open.length} open review finding(s) on this PR`] : [])];
+  });
 }
 
 // A record opened for a Teamwork task an earlier support record carried (a reopened investigation) is support too (W-405).
