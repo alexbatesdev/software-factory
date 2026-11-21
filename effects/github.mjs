@@ -1,5 +1,5 @@
 // GitHub writes and the reads that confirm them. Writes: `gh pr ready`, resolving a review thread Alex resolved on the
-// dashboard, and GitHub auto-merge on and off for small, quick fixes (W-564; enabling auto-merge is not a merge). Never
+// dashboard, a factory question asked on the review thread that raised it (W-639, off by default), and GitHub auto-merge on and off for small, quick fixes (W-564; enabling auto-merge is not a merge). Never
 // merge, never request reviewers.
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -49,6 +49,11 @@ export const gh = {
     const mutation = on ? 'mutation($id:ID!){enablePullRequestAutoMerge(input:{pullRequestId:$id,mergeMethod:MERGE}){clientMutationId}}'
       : 'mutation($id:ID!){disablePullRequestAutoMerge(input:{pullRequestId:$id}){clientMutationId}}';
     await run('gh', ['api', 'graphql', '-f', `query=${mutation}`, '-f', `id=${id}`], { timeout: 30000 });
+  },
+  /** Reply on a review thread (W-639); returns the new comment's url. */
+  replyThread: async (id, body) => {
+    const { stdout } = await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{url}}}', '-f', `id=${id}`, '-f', `body=${body}`], { timeout: 20000 });
+    return JSON.parse(stdout).data?.addPullRequestReviewThreadReply?.comment?.url || null;
   },
   resolveThread: async id => { await exec('gh', ['api', 'graphql', '-f', 'query=mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}', '-f', `id=${id}`], { timeout: 20000 }); },
   /** Submitted reviews on a PR; a pending draft has no submitted time. */

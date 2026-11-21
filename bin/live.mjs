@@ -39,6 +39,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createLogWake } from '../wake/log.mjs';
 import { syncResolvedThreads } from '../effects/threads.mjs';
+import { syncQuestionThreads } from '../effects/question-threads.mjs';
 import { autoReadyTick } from '../effects/pr-ready.mjs';
 import { planRecycles, releaseFinished, blockKey, diskNote } from '../core/recycle.mjs';
 import { retainArtifacts, unretainedStreams } from '../core/artifacts.mjs';
@@ -421,6 +422,9 @@ async function githubTick() {
       for (const c of found) apply([{ kind: 'message', payload: { to: lead, work: c.id, about: { contradiction: `${c.kind}/${c.id}` }, text: `[software factory, automated, not Alex] Contradiction on ${c.id} (${c.kind}): ${c.evidence}. Next: ${c.next}.` } }], 'factory (audit)');
     }
     await syncResolvedThreads(store, gh, now, { me: config.githubLogin, prState: u => openPrs.get(u)?.state || null });
+    // Read fresh each tick, so Alex turns it on or off in config.json with no restart (W-639).
+    const ptq = (() => { try { return JSON.parse(readFileSync(join(ROOT, 'config.json'), 'utf8')).prThreadQuestions?.enabled === true; } catch { return false; } })();
+    await syncQuestionThreads(store, gh, now, { me: config.githubLogin, enabled: ptq, prState: u => openPrs.get(u)?.state || null, log: once });
     await alexReviewTick();
   } catch (e) { log(`github: ${e.message}`); }
 }

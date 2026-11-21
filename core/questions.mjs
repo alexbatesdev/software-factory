@@ -6,10 +6,17 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
   if (kind === 'ask') {
     if (!p.title) fail('A question needs a title.');
     if (p.work && !state.work[p.work]) fail(`There is no work item ${p.work}.`);
+    // A question raised by PR feedback names its review thread, so the factory can ask it there (Alex, 11-20, W-639).
+    let thread = null;
+    if (p.threadId) {
+      const w = state.work[p.work] || fail('A question on a review thread needs the work item whose PR has it.');
+      if (!(w.findings || []).some(f => f.source?.type === 'threads' && f.source.ids?.includes(p.threadId))) fail(`GitHub never reported thread ${p.threadId} on ${p.work}'s PR.`);
+      thread = { id: p.threadId, pr: w.links.pr, url: null, postedAt: null };
+    }
     const id = `TB-${state.nextQuestion++}`;
     // Origin fields carry where the question came from (Alex, 10-22: every decision names what prompted it).
     const origin = Object.fromEntries(['promptedBy', 'why', 'ac', 'recommendWhy', 'item', 'wwbd'].map(k => [k, p[k] ?? null]));
-    state.questions[id] = { title: p.title, options: p.options || [], recommend: p.recommend || null, work: p.work || null, ...origin, from: ctx.by, source: 'inbox', verification: 'verified', status: 'open', at: ctx.now };
+    state.questions[id] = { title: p.title, options: p.options || [], recommend: p.recommend || null, work: p.work || null, ...origin, from: ctx.by, source: 'inbox', verification: 'verified', status: 'open', at: ctx.now, ...(thread && { thread }) };
     return id;
   }
   const q = state.questions[target] || fail(`There is no question ${target}.`);
@@ -36,6 +43,11 @@ export function foldQuestion(state, { kind, target, payload: p, ctx }) {
     // Settled without an answer, e.g. Alex merged the record's PR past it (W-248).
     if (q.status !== 'open') fail(`${target} is not open.`);
     Object.assign(next, { status: 'superseded', verificationNote: String(p.note || '').slice(0, 500), verificationSource: `closed by ${ctx.by}` });
+  } else if (kind === 'question_thread') {
+    // The factory asked it on its review thread; a teammate's reply there answers it.
+    if (!q.thread) fail(`${target} names no review thread.`);
+    if (q.thread.postedAt) fail(`${target} is already on its thread.`);
+    next.thread = { ...q.thread, url: p.url || null, postedAt: ctx.now };
   } else if (kind === 'question_amend') {
     if (q.status !== 'open') fail(`${target} is not open; ask again instead.`);
     if (!p.note) fail('An amendment needs a note.');
