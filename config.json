@@ -223,11 +223,11 @@
     "repos": ["built-rails"]
   },
   "prThreadQuestions": {
-    "_doc": "W-639 (Alex, 11-20): a question raised by PR review feedback, filed with ask's threadId, is also asked on that review thread (posted as Alex, wrapped in 🤖 lines, no @mentions), and the first reply there from anyone but Alex or a bot becomes its answer, routed like one from Alex. The TB stays on Alex's dashboard; whichever answer comes first wins. Read every GitHub poll, so flipping enabled needs no restart. While off it only logs \"would ask\".",
+    "_doc": "W-639 (Alex, 11-20): a question raised by PR review feedback, filed with ask's threadId, is also asked on that review thread (posted as Alex, wrapped in 🤖 lines, no @mentions), and each reply there from anyone but Alex or a bot goes to local-head, which judges whether it answers the question (Alex, 11-21). The TB stays on Alex's dashboard; whichever answer comes first wins. Read every GitHub poll, so flipping enabled needs no restart. While off it only logs \"would ask\".",
     "enabled": false
   },
   "decisionRouting": {
-    "_doc": "W-640 (Alex, 11-21), separate from prThreadQuestions: a question filed with ask's audience is also asked where its owners decide it, posted as Alex in 🤖 lines with no @mentions. product: a comment on the record's Teamwork task; dev: a comment in the PR's discussion. The first reply there from anyone but Alex, a bot, or (on Teamwork) a comment linking a GitHub PR becomes its answer. No task or PR: dashboard only. A review-thread question goes to its thread when prThreadQuestions is on. Read every GitHub poll, so no restart. While off it only logs \"would ask\".",
+    "_doc": "W-640 (Alex, 11-21), separate from prThreadQuestions: a question filed with ask's audience is also asked where its owners decide it, posted as Alex in 🤖 lines with no @mentions. product: a comment on the record's Teamwork task; dev: a comment in the PR's discussion. Each reply there from anyone but Alex, a bot or Teamwork Sync goes to local-head, which judges whether it answers the question (Alex, 11-21). No task or PR: dashboard only. A review-thread question goes to its thread when prThreadQuestions is on. Read every GitHub poll, so no restart. While off it only logs \"would ask\".",
     "enabled": false
   },
   "megamap": {
