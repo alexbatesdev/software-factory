@@ -393,3 +393,15 @@ test('a week-old message to a seat that is neither configured nor running expire
   assert.equal(s.state.messages[ids[0]].outcome, 'expired');
   assert.throws(() => s.append({ kind: 'ack_message', target: 'M-2', payload: { outcome: 'received' } }, { now: '2026-11-19T20:00:00Z', by: 'factory (expired)' }), /only that seat acks it/, 'the factory only expires, it never acks for a seat');
 });
+
+test('a server start tells the factory lead to bring every seat up, once per start (W-638)', async () => {
+  const { restartCommands } = await import('../core/inbox.mjs');
+  const { openStore } = await import('../core/store.mjs');
+  const store = openStore(':memory:', { supervisors: [] }), bootAt = '2026-11-21T00:32:24.000Z';
+  const [cmd] = restartCommands(store.state, { lead: 'factory lead', bootAt });
+  assert.equal(cmd.payload.to, 'factory lead');
+  assert.match(cmd.payload.text, /factory\.mjs up/);
+  store.append(cmd, { now: bootAt, by: 'factory (restart)' });
+  assert.deepEqual(restartCommands(store.state, { lead: 'factory lead', bootAt }), []);
+  assert.equal(restartCommands(store.state, { lead: 'factory lead', bootAt: '2026-11-21T09:00:00.000Z' }).length, 1, 'the next start tells it again');
+});

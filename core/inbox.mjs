@@ -217,3 +217,9 @@ export function inboxCommands(state, cfg, fleet = null) {
 export function expiredMessages(state, { known, running, nowMs, days = 7 }) {
   return Object.values(state.messages).filter(m => !m.ackedAt && !known.has(m.to) && !running.has(m.to) && nowMs - Date.parse(m.at) > days * 86400000).map(m => m.id);
 }
+
+/** W-638: a server start tells the factory lead at once to bring every seat back, instead of waiting for its check-in. */
+export function restartCommands(state, { lead, bootAt }) {
+  if (Object.values(state.messages).some(m => m.about?.restart === bootAt)) return [];
+  return [msg(lead, null, { restart: bootAt }, `The factory server started at ${bootAt}. Run \`node ~/Code/repos/software-factory/bin/factory.mjs up\` now so every seat is running (it never restarts a running pane), then ack this message. Notices sent while a seat was down are waiting in its inbox.`)];
+}

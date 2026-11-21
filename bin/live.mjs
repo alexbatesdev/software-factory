@@ -16,7 +16,7 @@ import { randomBytes } from 'node:crypto';
 import { projectPrs, projectTasks, headCommands, ancestryWanted, healthCommands, recordPrKey, taskIdOf, projectCommands, auditMissed } from '../core/observe.mjs';
 import { sourceCommands, sourceIndex } from '../core/correlate.mjs';
 import { parseAcs } from '../core/derive.mjs';
-import { inboxCommands, expiredMessages } from '../core/inbox.mjs';
+import { inboxCommands, expiredMessages, restartCommands } from '../core/inbox.mjs';
 import { wakePlan } from '../core/wake.mjs';
 import { autoDispatchPlan, busyStreams } from '../core/dispatch.mjs';
 import { scoutPlan } from '../core/scout.mjs';
@@ -586,7 +586,7 @@ http.createServer(createApi({ store, config, artifactRoot: ARTIFACTS, mounts: [m
   return !git || git('cat-file', '-e', `origin/main:${path}`).then(() => true, () => false);
 }, awsHost: DRY ? null : (await import('../hosts/sbx.mjs')).obsAccess(config.aws?.profile), readPr: async url => (await readPrs([url]))[0] || null,
   observed: () => ({ specs: () => ({ ...specView(store.state, specRead()), readAt: projectsRead.readAt }), projects: () => ({ ...buildProjects({ ...projectsRead, works: store.state.work, prs: ownPrs, me: config.githubLogin, meName: config.teamworkName }), readAt: projectsRead.readAt, me: config.githubLogin }), units: fleet?.units || [], prs: openPrs, prsReadAt, idleSince: watches.idleQueues || {}, graceMs: config.notify?.idleQueueGraceMs ?? 300000, queue: lastPlan, busy: lastBusy, drain, health }) }))
-  .listen(PORT, '127.0.0.1', () => log(`API and page on http://127.0.0.1:${PORT}`));
+  .listen(PORT, '127.0.0.1', () => { log(`API and page on http://127.0.0.1:${PORT}`); apply(restartCommands(store.state, { lead: LEAD, bootAt: now() }), 'factory (restart)'); });
 
 // The sandbox port (sbx workers on the board): MCP over HTTP only. The sandbox network policy allows this port and never
 // PORT, so a sandbox can't reach the seat-trusting API; here the seat comes only from the sandbox's factory-minted token.
