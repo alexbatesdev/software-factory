@@ -166,8 +166,12 @@ export function planIdleQueues({ units, works, watch = {}, sent = {}, now, grace
     const to = u.supervisor?.label;
     if (!supervisors.includes(to) || streamHold(u, works)) continue;
     const mine = Object.values(works).flatMap(r => r.stream === to ? (r.assignments || []).map(a => [r, a]) : []);
-    const q = mine.filter(([, a]) => a.status === 'queued').sort(([r1], [r2]) => queueOrder(r1, r2))
-      .map(([r, a]) => ({ to, work: r.id, assignment: a.id, kind: a.kind, key: `${r.id}/${a.id}/v${a.version ?? 1}` })).find(d => !sent[d.key]);
+    const queued = mine.filter(([, a]) => a.status === 'queued').map(([r, a]) => [r, { to, work: r.id, assignment: a.id, kind: a.kind, key: `${r.id}/${a.id}/v${a.version ?? 1}` }]);
+    // W-651: a dispatch acked `received` with no assignment recorded since is a job nobody briefed.
+    const acked = Object.values(works).filter(r => r.stream === to && !TERMINAL_PHASES.includes(r.phase)).flatMap(r => (r.requests || [])
+      .filter(q => q.type === 'dispatch' && q.ack?.outcome === 'received' && !(r.assignments || []).some(a => (a.at || '') >= (q.at || '')))
+      .map(q => [r, { to, work: r.id, assignment: q.id, kind: 'dispatch', acked: true, key: `${r.id}/${q.id}/acked` }]));
+    const q = [...queued, ...acked].sort(([r1], [r2]) => queueOrder(r1, r2)).map(([, d]) => d).find(d => !sent[d.key]);
     if (!q) continue;
     next[u.id] = watch[u.id] ?? now;
     if (now - next[u.id] >= graceMs) due.push(q);

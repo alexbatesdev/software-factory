@@ -88,6 +88,17 @@ test('a stream left idle with an acked, queued assignment wakes its supervisor o
   assert.equal(plan(plan({}, {}, T0, u('done', 'done'), parked).watch, {}, T0 + 301000, u('done', 'done'), parked).due.length, 1, 'work blocked on a person does not hold the stream');
 });
 
+test('a dispatch acked received with no assignment since wakes its idle supervisor once to brief its worker (W-651)', () => {
+  const units = [{ id: 'u2', supervisor: { label: SUP, status: 'idle' }, worker: { label: 'sbx: stream-1', status: 'idle' } }];
+  const req = { id: 'R1', type: 'dispatch', at: '2026-11-21T10:14:00Z', ack: { outcome: 'received', at: '2026-11-21T10:34:00Z' } };
+  const rec = assignments => ({ 'W-650': { id: 'W-650', kind: 'scout', phase: 'queued', stream: SUP, requests: [req], assignments } });
+  const plan = (works, sent = {}) => planIdleQueues({ units, works, watch: { u2: 0 }, sent, now: 600000, supervisors: [SUP] });
+  assert.deepEqual(plan(rec([])).due.map(d => [d.work, d.assignment, d.acked, d.key]), [['W-650', 'R1', true, 'W-650/R1/acked']]);
+  assert.deepEqual(plan(rec([]), { 'W-650/R1/acked': {} }).due, [], 'one notice per acked dispatch');
+  assert.deepEqual(plan(rec([{ id: 'R1', status: 'started', at: '2026-11-21T10:35:00Z' }])).due, [], 'an assignment recorded after the request settles it');
+  assert.deepEqual(plan({ 'W-650': { ...rec([])['W-650'], requests: [{ ...req, ack: null }] } }).due, [], 'an unacked dispatch is the wake loop\'s, not this');
+});
+
 test('a queued assignment says what holds its stream: started work, a busy pane, or the wake-up the board has scheduled', async () => {
   const { streamHold } = await import('../core/notifier.mjs');
   const to = 'sup: s1', u = { id: 'u1', supervisor: { label: to, status: 'idle' }, worker: { label: 'sbx: s1', status: 'idle' } };

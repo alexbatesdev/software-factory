@@ -116,7 +116,9 @@ export function inboxCommands(state, cfg, fleet = null) {
       cmds.push(msg(to, null, { drainLifted: last.id }, `The drain on ${u.worker.label} (${last.id}) is over without a recycle: its disk ${pct == null ? 'has no fresh reading yet' : `reads ${Math.round(pct * 100)}% now`}, under the recycle threshold. Take queued work again.`));
     }
     const idle = planIdleQueues({ units: fleet.units.filter(u => !drain.has(u.supervisor?.label)), works: state.work, watch: watches.idleQueues, sent, now: fleet.now, supervisors: cfg.supervisors });
-    for (const d of idle.due) cmds.push(msg(d.to, d.work, { idleQueue: d.key }, `Your stream is free and ${d.work} ${d.assignment} (${d.kind}) is queued on it: start it.`));
+    for (const d of idle.due) cmds.push(msg(d.to, d.work, { idleQueue: d.key }, d.acked
+      ? `You acked ${d.work}'s dispatch (${d.assignment}) as received, but no assignment is recorded and your stream is free: brief your worker and record \`assign … --status started\` now.`
+      : `Your stream is free and ${d.work} ${d.assignment} (${d.kind}) is queued on it: start it.`));
     // A seat with unread messages is the wake loop's to remind; this nudges only a seat with nothing new to read.
     const unread = new Set(Object.values(state.messages).filter(m => !m.ackedAt).map(m => m.to));
     const owners = planIdleOwners({ seats: (fleet.others || []).filter(a => !unread.has(a.label) && !isTrustedReviewSeat(a.label)), works: state.work, watch: watches.idleOwners, now: fleet.now });
