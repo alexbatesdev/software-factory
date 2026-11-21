@@ -849,8 +849,8 @@ export function applyEvent(work, e, ctx) {
       // A hold on merging only (W-572: waiting on product's answer): auto-merge stays off; the record's work still flows.
       if (!e.why) fail('A merge hold names why (and, to release it, the answer).');
       if (e.release) { if (!w.mergeHold) fail(`${w.id} has no merge hold.`); w.mergeHold = null; note(w, ctx, `Merge hold released: ${e.why}`); break; }
-      w.mergeHold = { why: e.why, at: ctx.now, by: ctx.by };
-      note(w, ctx, `Merge hold: ${e.why}. Auto-merge stays off until it is released.`);
+      w.mergeHold = { why: e.why, at: ctx.now, by: ctx.by, ...(e.draft ? { draft: true } : {}) };
+      note(w, ctx, e.draft ? `Draft hold: ${e.why}. The PR stays draft and auto-merge stays off until it is released.` : `Merge hold: ${e.why}. Auto-merge stays off until it is released.`);
       break;
     }
     case 'wait': {
@@ -1206,6 +1206,7 @@ export function migrate(state, now) {
 export function prReadyPreflight(w, remote, ctx = {}) {
   const r = [];
   if (w.phase !== 'ready_for_human') r.push(`${w.id} is ${w.phase}, not ready for review.`);
+  if (w.mergeHold?.draft) r.push(`Kept draft: ${w.mergeHold.why}.`);
   const g = gate(w, ctx);
   if (!g.ok) r.push(...g.reasons);
   const a = w.prReadyAuth;

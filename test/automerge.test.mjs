@@ -93,3 +93,19 @@ test('a merge hold is set and released by an event, each noted on the record (W-
   assert.equal(s.state.work['W-1'].mergeHold, null);
   assert.match(s.state.work['W-1'].updates.at(-1).text, /Merge hold released: Casey answered/);
 });
+
+test('a draft hold keeps a reviewed PR draft: the standing ready tick refuses it until the hold is released (W-641)', async () => {
+  const { openStore } = await import('../core/store.mjs');
+  const { commandsFor } = await import('../core/actions.mjs');
+  const { prReadyPreflight } = await import('../core/work.mjs');
+  const { waitingOn } = await import('../core/derive.mjs');
+  const s = openStore(':memory:', { supervisors: [] }), c = by => ({ now: '2026-11-21T02:10:00Z', by });
+  s.append({ kind: 'create', payload: { title: 'x' } }, c('t'));
+  for (const cmd of commandsFor('merge_hold', { work: 'W-1', why: 'Alex: stays draft until Casey answers on #8922', draft: true })) s.append(cmd, c('factory-developer'));
+  const w = { ...s.state.work['W-1'], phase: 'ready_for_human' };
+  assert.ok(prReadyPreflight(w, null).some(r => /Kept draft: Alex: stays draft until Casey answers/.test(r)));
+  assert.match(w.updates.at(-1).text, /Draft hold: .*stays draft/);
+  assert.match(waitingOn(w).text, /^Kept draft: Alex: stays draft/);
+  for (const cmd of commandsFor('merge_hold', { work: 'W-1', why: 'Casey answered', release: true })) s.append(cmd, c('local-head'));
+  assert.ok(!prReadyPreflight({ ...s.state.work['W-1'], phase: 'ready_for_human' }, null).some(r => /Kept draft/.test(r)));
+});

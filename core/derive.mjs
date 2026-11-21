@@ -75,6 +75,7 @@ export function waitingOn(w, { questions = [] } = {}) {
   if (w.intakeHold) return { who: w.intakeHold.by, text: `Held out of triage by ${w.intakeHold.by}: ${w.intakeHold.reason}` };
   if (w.waitingOn) return { who: w.waitingOn.who, text: `Waiting on ${w.waitingOn.who}: ${w.waitingOn.what}` };
   if (w.externalDeps?.length) return { who: null, text: `Waiting on ${w.externalDeps.map(d => d.text || d.ref).join('; ')}` };
+  if (w.mergeHold?.draft && w.phase === 'ready_for_human') return { who: null, text: `Kept draft: ${w.mergeHold.why}` };
   if (w.openDeps?.length) return { who: null, text: `Waiting on ${w.openDeps.join(', ')} to finish` };
   if (workerStopCurrent(w) && w.workerStop.notifiedAt) {
     const t = new Date(w.workerStop.notifiedAt), hh = String(t.getHours()).padStart(2, '0'), mm = String(t.getMinutes()).padStart(2, '0');

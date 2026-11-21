@@ -104,7 +104,7 @@ const BUILD = {
     fail('decision is approve or decline.');
   },
   // W-572: hold a record's PR from auto-merge (waiting on product's answer) without holding its work.
-  merge_hold: a => { need(a, 'work', 'why'); return [ev(a.work, { type: 'merge_hold', why: a.why, release: !!a.release })]; },
+  merge_hold: a => { need(a, 'work', 'why'); return [ev(a.work, { type: 'merge_hold', why: a.why, release: !!a.release, draft: !!a.draft })]; },
   // The deliverable inbox (Alex 11-18): a report for a record, kept by the factory; archived when it no longer matters.
   deliver: a => { need(a, 'work', 'title', 'text'); return [{ kind: 'deliverable', payload: { work: a.work, title: a.title, text: a.text } }]; },
   archive_deliverable: a => { need(a, 'id'); return [{ kind: 'deliverable_archive', target: a.id, payload: { note: a.note || null, unarchive: !!a.unarchive } }]; },
