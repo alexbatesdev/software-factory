@@ -268,9 +268,15 @@ const atShell = async worker => !(await herdr('pane', 'process-info', '--pane', 
 export function exitChoice(screen, quit) {
   const m = /Background work is running[\s\S]*?(\d)\.\s*Exit and stop tasks/.exec(String(screen));
   if (m) return m[1];
+  // W-652: Codex's rate-limit nudge sits over the prompt and swallows the quit; keep the model, and say nothing permanent.
+  const k = /Approaching rate limits[\s\S]*?(\d)\.\s*Keep current model\s*$/m.exec(String(screen));
+  if (k) return k[1];
   return quit && String(screen).split('\n').some(l => /^\s*[›❯>]\s*(\S.*)$/.exec(l)?.[1].trim() === quit) ? 'enter' : null;
 }
 
+let lastScreen = '';
+/** What a pane that wouldn't quit showed, for the failure notice (W-652). */
+export const stuckScreen = screen => String(screen).split('\n').map(l => l.trim()).filter(Boolean).slice(-6).join(' / ').slice(0, 400);
 /** Quit the worker's agent and wait for its pane's shell; false when it didn't exit within a minute. */
 async function exitAgent(worker) {
   const quit = QUIT[worker.agent] || QUIT.claude;
@@ -279,10 +285,15 @@ async function exitAgent(worker) {
   for (let i = 0; i < 20 && !(await atShell(worker)); i++) {
     await pause(3000);
     // Callers exit only between jobs, so the tasks it stops are a finished job's leftovers (Alex, TB-158 a).
-    const key = exitChoice((await herdr('pane', 'read', worker.ref, '--source', 'visible').catch(() => ({ stdout: '' }))).stdout, quit);
+    const screen = (await herdr('pane', 'read', worker.ref, '--source', 'visible').catch(() => ({ stdout: '' }))).stdout;
+    const key = exitChoice(screen, quit);
     if (key) await herdr('pane', 'send-keys', worker.ref, key);
+    // The dialog ate the quit, so it is typed again once the prompt is back.
+    if (key && /Approaching rate limits/.test(screen)) { await pause(1000); await herdr('pane', 'send-text', worker.ref, quit); await pause(500); await herdr('pane', 'send-keys', worker.ref, 'enter'); }
   }
-  return atShell(worker);
+  if (await atShell(worker)) return true;
+  lastScreen = (await herdr('pane', 'read', worker.ref, '--source', 'visible').catch(() => ({ stdout: '' }))).stdout;
+  return false;
 }
 
 // A record's model and effort (deep-model, Alex 11-11) live in the sandbox agent's own config, read at start; the
@@ -308,7 +319,7 @@ async function tune(worker, want) {
 /** A fresh agent session in the same sandbox: its disk, repo and installed board MCP stay; its context doesn't. `want` sets its model and effort. */
 export async function restart(worker, want = null) {
   const line = await bridgeLine(worker);
-  if (!(await atShell(worker)) && !(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit' };
+  if (!(await atShell(worker)) && !(await exitAgent(worker))) return { ok: false, detail: `the agent did not exit; its pane shows: ${stuckScreen(lastScreen) || '(nothing read)'}` };
   if (worker.agent !== 'codex') await markNudgeSeen(worker.sandbox).catch(() => {}); // the unblocker rule still covers the dialog if this fails
   if (want) try { await tune(worker, want); } catch (e) { return { ok: false, detail: `couldn't set model/effort: ${e.message}` }; }
   await herdr('pane', 'run', worker.ref, line);
@@ -327,7 +338,7 @@ export async function restart(worker, want = null) {
 /** Exit the agent, remove the sandbox, then the plugin's bridge recreates it (same name, template and kit) in the same pane. */
 export async function recycle(worker, log = () => {}) {
   const line = await bridgeLine(worker);
-  if (!(await exitAgent(worker))) return { ok: false, detail: 'the agent did not exit; nothing removed' };
+  if (!(await exitAgent(worker))) return { ok: false, detail: `the agent did not exit; nothing removed; its pane shows: ${stuckScreen(lastScreen) || '(nothing read)'}` };
   // The old sandbox's own Codex sign-in, kept in memory across the rebuild (W-570).
   const codexAuth = worker.agent === 'codex' ? await sbxRead(worker.sandbox)(CODEX_AUTH) : '';
   log(`recycle ${worker.label}: agent exited; removing ${worker.sandbox}`);

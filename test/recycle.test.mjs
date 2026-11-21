@@ -280,3 +280,11 @@ test("a recycled Codex sandbox keeps its sign-in: the old sandbox's own auth goe
   assert.equal(await carryCodexLogin(async () => '', async text => written.push(text)), false, 'nothing to carry: Alex signs it in, and the login check raises it');
   assert.equal(written.length, 1);
 });
+
+test("a quit swallowed by Codex's rate-limit nudge keeps the current model, never the 'never show again' choice, and a stuck pane's screen is quoted (W-652)", async () => {
+  const { exitChoice, stuckScreen } = await import('../hosts/sbx.mjs');
+  const screen = '  Approaching rate limits\n  Switch to gpt-6-luna for lower credit usage?\n\n› 1. Switch to gpt-6-luna                   Fast and affordable model for easier tasks.\n  2. Keep current model\n  3. Keep current model (never show again)  Hide future rate limit reminders about switching models\n\n  enter select · esc back\n';
+  assert.equal(exitChoice(screen, '/quit'), '2');
+  assert.equal(exitChoice(screen.replace('2. Keep current model\n', '4. Keep current model\n'), '/quit'), '4', 'the number shown, not a guess');
+  assert.match(stuckScreen(screen), /Keep current model \(never show again\).*enter select/);
+});
